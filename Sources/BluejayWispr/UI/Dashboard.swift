@@ -416,8 +416,6 @@ enum VocabPacks {
 struct DictionaryView: View {
     @ObservedObject var settings: AppSettings
     @State private var newWord = ""
-    @State private var bulkText = ""
-    @State private var showBulk = false
     @State private var generateTopic = ""
     @State private var generating = false
     @State private var generateNote: String?
@@ -426,7 +424,7 @@ struct DictionaryView: View {
     var body: some View {
         Page(title: "Dictionary", subtitle: "Words and names the recognizer should spell correctly.") {
             HStack(spacing: 8) {
-                TextField("Add a word or phrase", text: $newWord)
+                TextField("Add a word or phrase — or several, separated by commas", text: $newWord)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .padding(10)
@@ -434,45 +432,20 @@ struct DictionaryView: View {
                     .onSubmit(addWord)
                 Button("Add", action: addWord)
                     .buttonStyle(CapsuleButtonStyle())
-                Button("Bulk add") {
-                    withAnimation(.easeOut(duration: 0.15)) { showBulk.toggle() }
-                }
-                .buttonStyle(CapsuleButtonStyle(filled: false))
                 Spacer()
                 Toggle(isOn: $settings.injectDictionary) {
-                    Text("Use in cleanup")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.inkTertiary)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("Use in cleanup")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.inkTertiary)
+                        Text("Respells mishears: \"work tree\" → \"worktree\"")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Theme.inkSubtle)
+                    }
+                    .multilineTextAlignment(.trailing)
                 }
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .help("Corrects mishears like \"work tree\" to \"worktree\" during cleanup")
-            }
-
-            if showBulk {
-                VStack(alignment: .leading, spacing: 8) {
-                    TextEditor(text: $bulkText)
-                        .font(.system(size: 13))
-                        .scrollContentBackground(.hidden)
-                        .padding(8)
-                        .frame(height: 90)
-                        .background(fieldBackground)
-                    HStack {
-                        Text("Separate terms with commas or newlines.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.inkSubtle)
-                        Spacer()
-                        Button("Import") {
-                            let words = bulkText
-                                .split(whereSeparator: { $0 == "," || $0.isNewline })
-                                .map(String.init)
-                            settings.addDictionaryWords(words)
-                            bulkText = ""
-                            withAnimation(.easeOut(duration: 0.15)) { showBulk = false }
-                        }
-                        .buttonStyle(CapsuleButtonStyle())
-                    }
-                }
             }
 
             VStack(alignment: .leading, spacing: 9) {
@@ -560,8 +533,11 @@ struct DictionaryView: View {
         return terms.filter { !existing.contains($0.lowercased()) }.count
     }
 
+    /// One field for one term or a whole list — commas and newlines both split.
     private func addWord() {
-        settings.addDictionaryWords([newWord])
+        settings.addDictionaryWords(
+            newWord.split(whereSeparator: { $0 == "," || $0.isNewline }).map(String.init)
+        )
         newWord = ""
     }
 

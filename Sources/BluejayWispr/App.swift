@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pill: RecordingPillController!
     private var dashboard: DashboardWindowController!
     private var statusItem: NSStatusItem!
+    private var quitMenu: NSMenu!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = DictationController()
@@ -49,20 +50,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Open Bluejay Wispr", action: #selector(openDashboard), keyEquivalent: "o")
-            .target = self
-        menu.addItem(.separator())
-        let hint = NSMenuItem(title: "Hold fn to dictate · double-tap to lock", action: nil, keyEquivalent: "")
-        hint.isEnabled = false
-        menu.addItem(hint)
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        statusItem.menu = menu
+        // Left-click opens the app directly; right-click is the only place a menu appears
+        // (an accessory app has no main menu, so this is the sole route to Quit).
+        quitMenu = NSMenu()
+        quitMenu.addItem(withTitle: "Quit Bluejay Wispr", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem.button?.toolTip = "Bluejay Wispr — hold fn to dictate, double-tap to lock"
     }
 
-    @objc private func openDashboard() {
-        dashboard.show()
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            statusItem.menu = quitMenu           // attach only for this click…
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil                // …so left-clicks stay menu-free
+        } else {
+            dashboard.show()
+        }
     }
 
     /// `open BluejayWispr.app` while running (or Dock/Launchpad click) reopens the dashboard.
