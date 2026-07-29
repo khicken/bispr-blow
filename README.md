@@ -48,4 +48,5 @@ The fn key needs no system changes: the app's event tap consumes bare-fn presses
 | `Sources/BluejayWispr/ContextDetector.swift` | frontmost app + window title (AX) |
 | `Sources/BluejayWispr/TextInserter.swift` | clipboard-swap paste |
 | `Sources/BluejayWispr/UI/` | pill, dashboard, theme (Bluejay palette) |
+| `make-icon.swift` | regenerates `AppIcon.icns` (Bluejay squircle + symbol) |
 | `shared/plans/design/20260611_bluejay_wispr_plan.md` | design plan |
