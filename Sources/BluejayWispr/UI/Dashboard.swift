@@ -69,6 +69,7 @@ struct DashboardView: View {
     @StateObject private var history = HistoryStore.shared
     @StateObject private var settings = AppSettings.shared
     @State private var section: Section = .home
+    @Namespace private var navPill
 
     var body: some View {
         HStack(spacing: 0) {
@@ -83,25 +84,21 @@ struct DashboardView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                LogoView(name: "Symbol_Black", size: 20)
-                Text("Bluejay Wispr")
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 44)
-            .padding(.bottom, 20)
+            BrandLockup(state: controller.state)
+                .padding(.horizontal, 16)
+                .padding(.top, 44)
+                .padding(.bottom, 20)
 
-            ForEach(Section.allCases) { item in
-                SidebarItem(item: item, selected: section == item) { section = item }
+            ForEach(Array(Section.allCases.enumerated()), id: \.element) { index, item in
+                SidebarItem(item: item, selected: section == item, namespace: navPill) {
+                    withAnimation(.bjSnap) { section = item }
+                }
+                .appearIn(0.05 + Double(index) * 0.035)
             }
 
             Spacer()
 
-            Text("Hold fn to dictate")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.inkSubtle)
+            LiveStatus(state: controller.state)
                 .padding(.horizontal, 18)
                 .padding(.bottom, 16)
         }
@@ -117,18 +114,22 @@ struct DashboardView: View {
             case .history: HistoryView(history: history)
             case .dictionary: DictionaryView(settings: settings)
             case .team: TeamView(settings: settings)
-            case .settings: SettingsView(settings: settings)
+            case .settings: SettingsView(settings: settings, controller: controller)
             }
         }
         .id(section)
-        .transition(.opacity)
-        .animation(.easeOut(duration: 0.12), value: section)
+        .transition(.asymmetric(
+            insertion: .offset(y: 10).combined(with: .opacity),
+            removal: .offset(y: -6).combined(with: .opacity)
+        ))
+        .animation(.bjSoft, value: section)
     }
 }
 
 struct SidebarItem: View {
     let item: DashboardView.Section
     let selected: Bool
+    let namespace: Namespace.ID
     let action: () -> Void
     @State private var hovering = false
 
@@ -138,6 +139,7 @@ struct SidebarItem: View {
                 Image(systemName: item.icon)
                     .font(.system(size: 12.5, weight: .medium))
                     .frame(width: 18)
+                    .symbolEffect(.bounce, options: .speed(1.5), value: selected)
                 Text(item.rawValue)
                     .font(.system(size: 13, weight: selected ? .semibold : .regular))
                 Spacer()
@@ -146,16 +148,101 @@ struct SidebarItem: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(selected ? Theme.surfaceActive : (hovering ? Theme.surfaceActive.opacity(0.5) : .clear))
-            )
+            .background {
+                // One pill that slides between rows, rather than a fill per row.
+                if selected {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.surfaceActive)
+                        .matchedGeometryEffect(id: "navPill", in: namespace)
+                } else if hovering {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.surfaceActive.opacity(0.5))
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 7))
+            .offset(x: hovering && !selected ? 2 : 0)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 8)
+        .pointerStyle(.link)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.1), value: hovering)
+        .animation(.bjHover, value: hovering)
+    }
+}
+
+/// Sidebar wordmark: gradient badge echoing the app icon, pinwheel spinning while live.
+struct BrandLockup: View {
+    let state: DictationController.State
+    @State private var hovering = false
+
+    private var live: Bool { state != .idle }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(LinearGradient(colors: [Theme.blue, Theme.blueDeep],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .shadow(color: Theme.blue.opacity(live ? 0.5 : 0.22),
+                            radius: live ? 8 : 3, y: 1.5)
+                // Driven by the clock, not an animation, so it never snaps back on stop.
+                TimelineView(.animation(minimumInterval: 1 / 30, paused: !live && !hovering)) { ctx in
+                    LogoView(name: "Symbol_White", size: 15)
+                        .rotationEffect(.degrees(
+                            ctx.date.timeIntervalSinceReferenceDate * (live ? 115 : 26)
+                        ))
+                }
+            }
+            .frame(width: 27, height: 27)
+            .scaleEffect(hovering ? 1.07 : 1)
+
+            HStack(spacing: 0) {
+                Text("Bluejay")
+                    .foregroundStyle(Theme.ink)
+                Text(" Wispr")
+                    .foregroundStyle(LinearGradient(colors: [Theme.blue, Theme.blueDeep],
+                                                    startPoint: .leading, endPoint: .trailing))
+            }
+            .font(.system(size: 13.5, weight: .semibold))
+            .tracking(-0.2)
+        }
+        .onHover { hovering = $0 }
+        .animation(.bjSnap, value: hovering)
+        .animation(.bjSoft, value: live)
+    }
+}
+
+/// Sidebar footer: what the app is doing right now, with a breathing dot while live.
+struct LiveStatus: View {
+    let state: DictationController.State
+
+    private var live: Bool { state != .idle }
+
+    private var label: String {
+        switch state {
+        case .idle: return "Hold fn to dictate"
+        case .recording(let locked): return locked ? "Locked — tap fn to finish" : "Listening"
+        case .processing: return "Cleaning up"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TimelineView(.animation(minimumInterval: 1 / 20, paused: !live)) { ctx in
+                let beat = abs(sin(ctx.date.timeIntervalSinceReferenceDate * 2.6))
+                Circle()
+                    .fill(live ? Theme.blue : Theme.inkSubtle.opacity(0.5))
+                    .frame(width: 6, height: 6)
+                    .scaleEffect(live ? 1 + 0.4 * beat : 1)
+                    .opacity(live ? 0.65 + 0.35 * beat : 1)
+            }
+            .frame(width: 9, height: 9)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(live ? Theme.inkTertiary : Theme.inkSubtle)
+                .contentTransition(.opacity)
+        }
+        .animation(.bjSoft, value: label)
     }
 }
 
@@ -197,7 +284,9 @@ struct Page<Content: View>: View {
                             .foregroundStyle(Theme.inkTertiary)
                     }
                 }
+                .appearIn()
                 content()
+                    .appearIn(0.07)
             }
             .padding(.horizontal, 32)
             .padding(.top, 36)
@@ -255,8 +344,13 @@ struct HomeView: View {
                     VStack(spacing: 6) {
                         ForEach(history.entries.prefix(8)) { entry in
                             HistoryRow(entry: entry)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .top).combined(with: .opacity),
+                                    removal: .scale(scale: 0.96).combined(with: .opacity)
+                                ))
                         }
                     }
+                    .animation(.bjSnap, value: history.entries.map(\.id))
                 }
             }
         }
@@ -266,6 +360,7 @@ struct HomeView: View {
 struct StatCard: View {
     let value: String
     let label: String
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -274,9 +369,15 @@ struct StatCard: View {
                 .monospacedDigit()
                 .tracking(-0.4)
                 .foregroundStyle(Theme.ink)
+                .contentTransition(.numericText())   // digits roll as stats update
+                .animation(.bjSoft, value: value)
             SectionLabel(label)
         }
         .card()
+        .scaleEffect(hovering ? 1.015 : 1)
+        .shadow(color: Theme.ink.opacity(hovering ? 0.07 : 0), radius: 8, y: 3)
+        .onHover { hovering = $0 }
+        .animation(.bjHover, value: hovering)
     }
 }
 
@@ -288,6 +389,7 @@ struct EmptyHint: View {
             Image(systemName: "waveform")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.blue)
+                .symbolEffect(.variableColor.iterative, options: .repeating)
             Text(text)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.inkTertiary)
@@ -315,8 +417,13 @@ struct HistoryView: View {
                 VStack(spacing: 6) {
                     ForEach(history.entries) { entry in
                         HistoryRow(entry: entry, showRaw: true)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .top).combined(with: .opacity),
+                                removal: .scale(scale: 0.96).combined(with: .opacity)
+                            ))
                     }
                 }
+                .animation(.bjSnap, value: history.entries.map(\.id))
             }
         }
     }
@@ -346,6 +453,13 @@ struct HistoryRow: View {
                 Text(copied ? "Copied" : hovering ? "Click to copy" : Self.timeFormatter.string(from: entry.date))
                     .font(.system(size: 11))
                     .foregroundStyle(copied ? Theme.green : Theme.inkSubtle)
+                    .contentTransition(.numericText())
+                if copied {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.green)
+                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                }
             }
             Text(entry.cleaned)
                 .font(.system(size: 13))
@@ -361,14 +475,24 @@ struct HistoryRow: View {
             }
         }
         .card(padding: 13)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Theme.green.opacity(copied ? 0.45 : 0), lineWidth: 1)
+        )
         .contentShape(Rectangle())
+        .pointerStyle(.link)
+        .scaleEffect(copied ? 0.99 : hovering ? 1.02 : 1)
+        .shadow(color: Theme.ink.opacity(hovering ? 0.10 : 0), radius: hovering ? 12 : 7, y: hovering ? 5 : 2)
         .onTapGesture {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(entry.cleaned, forType: .string)
-            copied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+            withAnimation(.bjSnap) { copied = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                withAnimation(.bjSoft) { copied = false }
+            }
         }
         .onHover { hovering = $0 }
+        .animation(.bjHover, value: hovering)
     }
 }
 
@@ -413,7 +537,7 @@ struct DictionaryView: View {
     var body: some View {
         Page(title: "Dictionary", subtitle: "Words and names the recognizer should spell correctly.") {
             HStack(spacing: 8) {
-                TextField("Add a word or phrase — or several, separated by commas", text: $newWord)
+                TextField("Add words, separated by commas", text: $newWord)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .padding(10)
@@ -423,18 +547,13 @@ struct DictionaryView: View {
                     .buttonStyle(CapsuleButtonStyle())
                 Spacer()
                 Toggle(isOn: $settings.injectDictionary) {
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text("Use in cleanup")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.inkTertiary)
-                        Text("Respells mishears: \"work tree\" → \"worktree\"")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Theme.inkSubtle)
-                    }
-                    .multilineTextAlignment(.trailing)
+                    Text("Use in cleanup")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.inkTertiary)
                 }
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .help("Respells mishears: \"work tree\" → \"worktree\"")
             }
 
             VStack(alignment: .leading, spacing: 9) {
@@ -443,11 +562,12 @@ struct DictionaryView: View {
                     ForEach(VocabPacks.all, id: \.name) { pack in
                         let missing = missingCount(pack.terms)
                         Button {
-                            settings.addDictionaryWords(pack.terms)
+                            withAnimation(.bjSnap) { settings.addDictionaryWords(pack.terms) }
                         } label: {
                             Text(missing > 0 ? "\(pack.name) +\(missing)" : "\(pack.name) ✓")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(missing > 0 ? Theme.blue : Theme.inkSubtle)
+                                .contentTransition(.numericText())
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(Capsule().fill(missing > 0 ? Theme.blueSoft : Theme.tableHeader))
@@ -455,6 +575,7 @@ struct DictionaryView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(missing == 0)
+                        .animation(.bjSoft, value: missing)
                     }
                 }
 
@@ -503,10 +624,12 @@ struct DictionaryView: View {
                 WrapStack(spacing: 8) {
                     ForEach(settings.dictionary, id: \.self) { word in
                         TagChip(word: word) {
-                            settings.dictionary.removeAll { $0 == word }
+                            withAnimation(.bjSnap) { settings.dictionary.removeAll { $0 == word } }
                         }
+                        .transition(.scale(scale: 0.7).combined(with: .opacity))
                     }
                 }
+                .animation(.bjSnap, value: settings.dictionary)
             }
         }
     }
@@ -572,7 +695,9 @@ struct TagChip: View {
         .padding(.trailing, 5)
         .padding(.vertical, 5)
         .background(Capsule().fill(hovering ? Theme.surfaceActive : Theme.tableHeader))
+        .scaleEffect(hovering ? 1.04 : 1)
         .onHover { hovering = $0 }
+        .animation(.bjHover, value: hovering)
     }
 }
 
@@ -646,10 +771,15 @@ struct TeamView: View {
                 VStack(spacing: 6) {
                     ForEach(settings.teamMembers) { member in
                         TeamRow(member: member) {
-                            settings.teamMembers.removeAll { $0.id == member.id }
+                            withAnimation(.bjSnap) { settings.teamMembers.removeAll { $0.id == member.id } }
                         }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .scale(scale: 0.94).combined(with: .opacity)
+                        ))
                     }
                 }
+                .animation(.bjSnap, value: settings.teamMembers.map(\.id))
             }
         }
     }
@@ -663,7 +793,9 @@ struct TeamView: View {
     private func addMember() {
         let name = newName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
-        settings.teamMembers.append(TeamMember(name: name, role: newRole.trimmingCharacters(in: .whitespaces)))
+        withAnimation(.bjSnap) {
+            settings.teamMembers.append(TeamMember(name: name, role: newRole.trimmingCharacters(in: .whitespaces)))
+        }
         newName = ""
         newRole = ""
     }
@@ -706,7 +838,9 @@ struct TeamRow: View {
             }
         }
         .card(padding: 11)
+        .scaleEffect(hovering ? 1.012 : 1)
+        .shadow(color: Theme.ink.opacity(hovering ? 0.07 : 0), radius: 8, y: 3)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.1), value: hovering)
+        .animation(.bjHover, value: hovering)
     }
 }

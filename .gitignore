@@ -1,4 +1,3 @@
 .build/
-BluejayWispr.app/
 .DS_Store
 icon-1024.png   # regenerate with `swift make-icon.swift`

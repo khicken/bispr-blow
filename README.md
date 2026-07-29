@@ -23,11 +23,14 @@ hold fn / double-tap fn
 
 ```bash
 ./setup-signing.sh   # once: creates a stable signing identity so permissions persist
-./build.sh
-open BluejayWispr.app
+./build.sh           # builds, installs to /Applications, relaunches
 ```
 
-Requires macOS 26+ and Swift 6.2+ (Xcode CLT). Always launch via `open` (or Finder) — launching the bare binary from a terminal makes macOS attribute permissions to the terminal instead of the app.
+`build.sh` stages the bundle in `.build/` and installs a single copy to `/Applications` — two installed copies means two fn event taps fighting each other. Never launch the bare binary from a terminal: macOS attributes permissions to the terminal instead of the app.
+
+`.build/release/BluejayWispr --self-check` asserts the cleanup/dictionary text logic.
+
+Requires macOS 26+ and Swift 6.2+ (Xcode CLT).
 
 ## First-run setup
 

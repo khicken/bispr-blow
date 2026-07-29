@@ -12,6 +12,7 @@ enum Theme {
     static let inkTertiary = Color(hex: 0x5C5C5C)
     static let inkSubtle = Color(hex: 0x8C8C8C)
     static let blue = Color(hex: 0x1FA2FF)         // accent
+    static let blueDeep = Color(hex: 0x0B2A45)     // app-icon gradient end
     static let blueSoft = Color(hex: 0x1FA2FF).opacity(0.12)
     static let red = Color(hex: 0xEF4444)
     static let green = Color(hex: 0x15803D)
@@ -55,6 +56,30 @@ struct Card: ViewModifier {
 
 extension View {
     func card(padding: CGFloat = 16) -> some View { modifier(Card(padding: padding)) }
+
+    /// Fade + rise on first appearance; `delay` staggers siblings.
+    func appearIn(_ delay: Double = 0) -> some View { modifier(AppearIn(delay: delay)) }
+}
+
+struct AppearIn: ViewModifier {
+    let delay: Double
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 9)
+            .onAppear {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.86).delay(delay)) { shown = true }
+            }
+    }
+}
+
+/// Shared motion vocabulary so every surface eases the same way.
+extension Animation {
+    static let bjSnap = Animation.spring(response: 0.30, dampingFraction: 0.78)
+    static let bjSoft = Animation.spring(response: 0.42, dampingFraction: 0.88)
+    static let bjHover = Animation.easeOut(duration: 0.13)
 }
 
 /// Standard pill button: full-capsule hit area + pressed feedback.
@@ -69,9 +94,10 @@ struct CapsuleButtonStyle: ButtonStyle {
             .padding(.vertical, 9)
             .background(Capsule().fill(filled ? Theme.blue : Theme.surfaceActive))
             .contentShape(Capsule())
+            .pointerStyle(.link)
             .opacity(configuration.isPressed ? 0.8 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.bjSnap, value: configuration.isPressed)
     }
 }
 
@@ -88,6 +114,9 @@ struct QuietButtonStyle: ButtonStyle {
                     .fill(configuration.isPressed ? Theme.surfaceActive : .clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 6))
+            .pointerStyle(.link)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.bjSnap, value: configuration.isPressed)
     }
 }
 

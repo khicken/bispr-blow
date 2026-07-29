@@ -23,6 +23,14 @@ final class LLMCleaner {
 
     func invalidate() { resolved = nil }
 
+    /// What cleanup will actually use — shown in Settings so a silently-swapped model
+    /// (or a fall back to rules) is visible instead of just feeling slow or lossy.
+    var activeDescription: String {
+        guard settings.provider != .off else { return "Off — raw transcript" }
+        guard let resolved else { return "Rule-based (no local model reachable)" }
+        return "\(resolved.endpoint.name) · \(resolved.model)"
+    }
+
     /// Returns (cleaned text, provider used). Never throws — falls back to rules.
     func clean(_ raw: String, context: AppContext) async -> (text: String, provider: String) {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,6 +49,12 @@ final class LLMCleaner {
             messages.append(["role": "user", "content": Self.userMessage(context: context, transcript: trimmed)])
             let cleaned = try await complete(endpoint: endpoint, model: model, messages: messages)
             let result = Self.sanitize(cleaned, fallback: trimmed)
+            // Small models summarize long dictations or stop mid-sentence with an ellipsis.
+            // Losing the speaker's words is worse than leaving fillers in, so keep everything.
+            if Self.looksTruncated(result, raw: trimmed) {
+                NSLog("BluejayWispr: cleanup dropped content (\(result.count) of \(trimmed.count) chars); using rules")
+                return (Self.ruleClean(trimmed), "rules")
+            }
             return (result, endpoint.name)
         } catch {
             NSLog("BluejayWispr: LLM cleanup failed (\(error)); using rule-based fallback")
@@ -120,12 +134,19 @@ final class LLMCleaner {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let models = json["data"] as? [[String: Any]] else { return nil }
         let ids = models.compactMap { $0["id"] as? String }
-        let chatIDs = ids.filter { !$0.lowercased().contains("embed") && !$0.lowercased().contains("whisper") }
+        let chatIDs = ids.filter {
+            let id = $0.lowercased()
+            // Reasoning variants burn seconds thinking before every dictation, and sub-1B
+            // models summarize instead of cleaning — both look like "the app got worse".
+            return !id.contains("embed") && !id.contains("whisper")
+                && !id.contains("thinking") && !id.contains("reason") && !id.contains("-r1")
+                && !id.contains("0.5b") && !id.contains("0.6b")
+        }
         // Measured on this machine with the cache-friendly prompt: qwen3-4b-2507 ≈ 0.6s
         // warm and matches gpt-oss-20b (~2-3s) on cleanup quality, so it leads. Specific
         // "qwen3-4b-2507" must outrank generic "qwen" — Qwen3.5's DeltaNet runs ~14x
         // slower on llama.cpp Metal. Small llamas drop clauses; nemotron leaks reasoning.
-        let priority = ["qwen3-4b-2507", "gpt-oss", "ministral", "qwen", "llama", "mistral", "gemma"]
+        let priority = ["qwen3-4b-2507", "qwen3-4b", "gpt-oss", "ministral", "qwen", "llama", "mistral", "gemma"]
         for family in priority {
             if let match = chatIDs.first(where: { $0.lowercased().contains(family) }) { return match }
         }
@@ -165,12 +186,18 @@ final class LLMCleaner {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let key = endpoint.apiKey { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "temperature": 0.2,
             "max_tokens": 2048,
             "messages": messages,
         ]
+        // Local servers only — a strict hosted API 400s on unknown fields. Both keys are
+        // ignored by non-reasoning models; together they cover gpt-oss and the Qwen3 templates.
+        if endpoint.name != "Custom" {
+            body["reasoning_effort"] = "low"
+            body["chat_template_kwargs"] = ["enable_thinking": false]
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -203,6 +230,7 @@ final class LLMCleaner {
         - Apply self-corrections, keeping only the speaker's final phrasing ("at 2 actually 3" → "at 3").
         - Rewrite disfluent speech into complete, coherent sentences: fix grammar, smooth awkward word order, break run-ons into sentences, and add natural punctuation and capitalization. The result should read like text the speaker would have typed, not a verbatim transcript.
         - Preserve the speaker's meaning, tone, and level of detail. Never condense, drop, or add points.
+        - Clean the transcript from its first word to its last. Never summarize, never stop early, never trail off with an ellipsis, and never write anything like "and so on" — a long transcript produces a long result.
         - Correct obvious mis-hearings from context.
 
         Style by app category:
@@ -269,6 +297,15 @@ final class LLMCleaner {
             text = String(text.dropFirst().dropLast())
         }
         return text.isEmpty ? fallback : text
+    }
+
+    /// True when cleanup clearly lost content: it trailed off, or came back far shorter than
+    /// the transcript. Filler removal shrinks text ~10-25%, so half-length means dropped points.
+    static func looksTruncated(_ cleaned: String, raw: String) -> Bool {
+        if cleaned.hasSuffix("...") || cleaned.hasSuffix("…") { return true }
+        let rawWords = raw.split(whereSeparator: \.isWhitespace).count
+        guard rawWords >= 25 else { return false }  // short dictations legitimately vary a lot
+        return cleaned.split(whereSeparator: \.isWhitespace).count < Int(Double(rawWords) * 0.55)
     }
 
     // MARK: - Rule-based fallback

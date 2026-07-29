@@ -4,6 +4,10 @@ import SwiftUI
 @main
 enum Main {
     static func main() {
+        if CommandLine.arguments.contains("--self-check") {
+            SelfCheck.run()
+            return
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate

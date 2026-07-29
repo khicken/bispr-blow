@@ -5,10 +5,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
+    @ObservedObject var controller: DictationController
     @State private var micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     @State private var axTrusted = AXIsProcessTrusted()
     @State private var inputMonitoringGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
     @State private var micName = AudioRecorder.defaultInputDeviceName()
+    @State private var devices = AudioRecorder.inputDevices()
 
     private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -38,9 +40,18 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 320, alignment: .leading)
 
-                Text(providerHint)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.inkSubtle)
+                if !controller.cleanupModel.isEmpty {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(controller.cleanupModel.hasPrefix("Rule-based") ? Theme.red : Theme.green)
+                            .frame(width: 6, height: 6)
+                        Text(controller.cleanupModel)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.inkSubtle)
+                            .textSelection(.enabled)
+                    }
+                    .transition(.opacity)
+                }
 
                 if settings.provider == .custom {
                     labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
@@ -56,13 +67,17 @@ struct SettingsView: View {
                     Image(systemName: "mic")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.blue)
-                    Text(micName.isEmpty ? "No input device" : micName)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.inkSecondary)
+                        .symbolEffect(.bounce, value: settings.inputDeviceUID)
+                    Picker("", selection: $settings.inputDeviceUID) {
+                        Text(micName.isEmpty ? "System default" : "System default (\(micName))").tag("")
+                        ForEach(devices, id: \.uid) { device in
+                            Text(device.name).tag(device.uid)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 320, alignment: .leading)
                 }
-                Text("Uses the system default input.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.inkSubtle)
             }
 
             // Only route out of the app — the menu bar icon just opens this window.

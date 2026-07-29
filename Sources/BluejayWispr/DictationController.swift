@@ -21,6 +21,8 @@ final class DictationController: ObservableObject {
     /// Device name flashed on the pill — only when the input device changed since last time.
     /// The current device is always visible in Settings.
     @Published private(set) var micFlash: String?
+    /// Endpoint + model cleanup resolved to, surfaced in Settings.
+    @Published private(set) var cleanupModel = ""
 
     private var axPollTimer: Timer?
     private var keepAliveTimer: Timer?
@@ -76,6 +78,7 @@ final class DictationController: ObservableObject {
             await LLMCleaner.bootLMStudioIfNeeded()
             try? await Task.sleep(nanoseconds: 2_000_000_000)  // give the server a moment
             await cleaner.warmUp()
+            await MainActor.run { self.cleanupModel = cleaner.activeDescription }
         }
         // Keepalive: LM Studio idle-unloads models after ~60 min; a periodic warm call
         // keeps the model and the prompt-prefix cache hot so dictations never hit a
@@ -184,6 +187,7 @@ final class DictationController: ObservableObject {
             let llmStart = Date()
             let (cleaned, provider) = await self.cleaner.clean(raw, context: context)
             let llmMs = Date().timeIntervalSince(llmStart) * 1000
+            self.cleanupModel = self.cleaner.activeDescription
             NSLog("BluejayWispr: timings transcribe=%.0fms llm=%.0fms provider=%@ words=%d",
                   transcribeMs, llmMs, provider, cleaned.split(separator: " ").count)
             guard self.sessionGeneration == generation else { return }

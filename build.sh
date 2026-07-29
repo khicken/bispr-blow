@@ -1,14 +1,13 @@
 #!/bin/bash
-# Builds BluejayWispr.app from the SPM package and signs it.
-# Run ./setup-signing.sh once to create a stable "Bluejay Wispr Dev" identity —
-# with it, TCC permission grants (Accessibility etc.) survive rebuilds.
-# Without it, falls back to ad-hoc signing (permissions reset every build).
+# Builds, signs, and installs Bluejay Wispr to /Applications, then relaunches it.
+# Run ./setup-signing.sh once for a stable identity, or TCC grants reset every build.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 swift build -c release
 
-APP=BluejayWispr.app
+# Staged in .build: a second launchable copy means two fn event taps fighting.
+APP=.build/BluejayWispr.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/BluejayWispr "$APP/Contents/MacOS/"
@@ -24,4 +23,10 @@ else
     codesign --force -s - --identifier ai.getbluejay.wispr "$APP"
     echo "Signed ad-hoc (run ./setup-signing.sh once for stable permissions)."
 fi
-echo "Built $APP — launch with: open $APP"
+DEST=/Applications/BluejayWispr.app
+pkill -x BluejayWispr 2>/dev/null || true
+sleep 1
+rm -rf "$DEST"
+cp -R "$APP" "$DEST"
+open "$DEST"
+echo "Installed $DEST and relaunched."

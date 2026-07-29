@@ -30,6 +30,34 @@ final class AudioRecorder {
         else { return "" }
         return name.takeRetainedValue() as String
     }
+    /// Selectable input devices. `uid` is the Core Audio device UID (also AVCaptureDevice.uniqueID).
+    static func inputDevices() -> [(uid: String, name: String)] {
+        AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        ).devices.map { (uid: $0.uniqueID, name: $0.localizedName) }
+    }
+
+    /// Core Audio device for a UID, so the engine can be pointed at a non-default mic.
+    private static func deviceID(forUID uid: String) -> AudioDeviceID? {
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var cfUID = uid as CFString
+        let status = withUnsafeMutablePointer(to: &cfUID) { uidPtr in
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &address,
+                UInt32(MemoryLayout<CFString>.size), uidPtr, &size, &deviceID)
+        }
+        guard status == noErr, deviceID != 0 else { return nil }
+        return deviceID
+    }
+
     private let engine = AVAudioEngine()
     private(set) var isRunning = false
 
@@ -43,6 +71,13 @@ final class AudioRecorder {
     func start() throws {
         guard !isRunning else { return }
         let input = engine.inputNode
+
+        // Empty UID = follow the system default input.
+        let uid = AppSettings.shared.inputDeviceUID
+        if !uid.isEmpty, let deviceID = Self.deviceID(forUID: uid) {
+            try? input.auAudioUnit.setDeviceID(deviceID)
+        }
+
         let format = input.outputFormat(forBus: 0)
         input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
             guard let self else { return }
