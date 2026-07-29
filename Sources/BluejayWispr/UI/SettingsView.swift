@@ -64,6 +64,10 @@ struct SettingsView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.inkSubtle)
             }
+
+            // Only route out of the app — the menu bar icon just opens this window.
+            Button("Quit Bluejay Wispr") { NSApp.terminate(nil) }
+                .buttonStyle(QuietButtonStyle())
         }
         .onReceive(refresh) { _ in
             micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized

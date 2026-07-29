@@ -17,7 +17,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pill: RecordingPillController!
     private var dashboard: DashboardWindowController!
     private var statusItem: NSStatusItem!
-    private var quitMenu: NSMenu!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = DictationController()
@@ -50,26 +49,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Left-click opens the app directly; right-click is the only place a menu appears
-        // (an accessory app has no main menu, so this is the sole route to Quit).
-        quitMenu = NSMenu()
-        quitMenu.addItem(withTitle: "Quit Bluejay Wispr", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
-
+        // No menu at all: clicking the icon opens the app. Quit lives in Settings.
         statusItem.button?.target = self
-        statusItem.button?.action = #selector(statusItemClicked)
-        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem.button?.action = #selector(openDashboard)
         statusItem.button?.toolTip = "Bluejay Wispr — hold fn to dictate, double-tap to lock"
     }
 
-    @objc private func statusItemClicked() {
-        let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
-            statusItem.menu = quitMenu           // attach only for this click…
-            statusItem.button?.performClick(nil)
-            statusItem.menu = nil                // …so left-clicks stay menu-free
-        } else {
-            dashboard.show()
-        }
+    @objc private func openDashboard() {
+        dashboard.show()
     }
 
     /// `open BluejayWispr.app` while running (or Dock/Launchpad click) reopens the dashboard.

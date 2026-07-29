@@ -326,7 +326,6 @@ struct HistoryRow: View {
     let entry: DictationEntry
     var showRaw = false
     @State private var copied = false
-    @State private var expanded = false
     @State private var hovering = false
 
     private static let timeFormatter: DateFormatter = {
@@ -343,33 +342,18 @@ struct HistoryRow: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.blue)
                 Spacer()
-                Text(Self.timeFormatter.string(from: entry.date))
+                // Timestamp gives way to the copy affordance on hover — the row itself is the button.
+                Text(copied ? "Copied" : hovering ? "Click to copy" : Self.timeFormatter.string(from: entry.date))
                     .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkSubtle)
-                if hovering || copied {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(entry.cleaned, forType: .string)
-                        copied = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
-                    } label: {
-                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 11))
-                            .foregroundStyle(copied ? Theme.green : Theme.inkSubtle)
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy")
-                }
+                    .foregroundStyle(copied ? Theme.green : Theme.inkSubtle)
             }
             Text(entry.cleaned)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.inkSecondary)
                 .lineSpacing(2)
-                .lineLimit(expanded ? nil : 3)
+                .lineLimit(showRaw ? nil : 3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if showRaw, expanded, entry.raw != entry.cleaned {
+            if showRaw, entry.raw != entry.cleaned {
                 Text(entry.raw)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.inkSubtle)
@@ -378,7 +362,12 @@ struct HistoryRow: View {
         }
         .card(padding: 13)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } }
+        .onTapGesture {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(entry.cleaned, forType: .string)
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+        }
         .onHover { hovering = $0 }
     }
 }
