@@ -230,7 +230,8 @@ final class LLMCleaner {
         - Apply self-corrections, keeping only the speaker's final phrasing ("at 2 actually 3" → "at 3").
         - Rewrite disfluent speech into complete, coherent sentences: fix grammar, smooth awkward word order, break run-ons into sentences, and add natural punctuation and capitalization. The result should read like text the speaker would have typed, not a verbatim transcript.
         - Preserve the speaker's meaning, tone, and level of detail. Never condense, drop, or add points.
-        - Clean the transcript from its first word to its last. Never summarize, never stop early, never trail off with an ellipsis, and never write anything like "and so on" — a long transcript produces a long result.
+        - Clean the transcript from its first word to its last. Never summarize, never stop early, and never write anything like "and so on" — a long transcript produces a long result.
+        - Never write an ellipsis ("..."). If you are tempted to elide part of the transcript, write it out in full instead. Every question, clause, and sentence in the transcript must appear in the output.
         - Correct obvious mis-hearings from context.
 
         Style by app category:
@@ -299,12 +300,15 @@ final class LLMCleaner {
         return text.isEmpty ? fallback : text
     }
 
-    /// True when cleanup clearly lost content: it trailed off, or came back far shorter than
-    /// the transcript. Filler removal shrinks text ~10-25%, so half-length means dropped points.
+    /// True when cleanup clearly lost content: it elided part of the transcript, or came back
+    /// far shorter than it. Filler removal shrinks text ~10-25%, so half-length means dropped
+    /// points. An ellipsis anywhere counts — speech-to-text never emits one, so it can only
+    /// be the model standing in for words it skipped, mid-sentence as often as at the end.
     static func looksTruncated(_ cleaned: String, raw: String) -> Bool {
-        if cleaned.hasSuffix("...") || cleaned.hasSuffix("…") { return true }
+        let elides = { (text: String) in text.contains("...") || text.contains("…") }
+        if elides(cleaned), !elides(raw) { return true }
         let rawWords = raw.split(whereSeparator: \.isWhitespace).count
-        guard rawWords >= 25 else { return false }  // short dictations legitimately vary a lot
+        guard rawWords >= 12 else { return false }  // a few words legitimately vary a lot
         return cleaned.split(whereSeparator: \.isWhitespace).count < Int(Double(rawWords) * 0.55)
     }
 

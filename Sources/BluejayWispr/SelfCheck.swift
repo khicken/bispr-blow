@@ -11,6 +11,12 @@ enum SelfCheck {
         // Trailing off, or coming back half-length, means content was dropped.
         precondition(LLMCleaner.looksTruncated("We should update the prompt and tailor...", raw: raw))
         precondition(LLMCleaner.looksTruncated("I tested the new build and found two issues.", raw: raw))
+        // Elision mid-sentence, on a short dictation — "what's in this PR?" became "...".
+        precondition(LLMCleaner.looksTruncated(
+            "Yeah, wait... Can you see the link again?",
+            raw: "Yeah, wait, what's in this PR? Can you see the link again?"))
+        // An ellipsis the speaker actually dictated is not the model's doing.
+        precondition(!LLMCleaner.looksTruncated("Wait... never mind.", raw: "wait ... never mind"))
         precondition(!LLMCleaner.looksTruncated(
             "I tested the new build and the login flow is mostly working, but I found two issues. "
             + "First, the spinner never goes away. Second, when you log out it doesn't clear the "
