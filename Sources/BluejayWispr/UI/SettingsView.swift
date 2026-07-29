@@ -5,7 +5,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
-    @ObservedObject var controller: DictationController
     @State private var micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     @State private var axTrusted = AXIsProcessTrusted()
     @State private var inputMonitoringGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
@@ -40,19 +39,6 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 320, alignment: .leading)
 
-                if !controller.cleanupModel.isEmpty {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(controller.cleanupModel.hasPrefix("Rule-based") ? Theme.red : Theme.green)
-                            .frame(width: 6, height: 6)
-                        Text(controller.cleanupModel)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.inkSubtle)
-                            .textSelection(.enabled)
-                    }
-                    .transition(.opacity)
-                }
-
                 if settings.provider == .custom {
                     labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
                                  placeholder: "https://api.groq.com/openai/v1")
@@ -79,26 +65,12 @@ struct SettingsView: View {
                     .frame(maxWidth: 320, alignment: .leading)
                 }
             }
-
-            // Only route out of the app — the menu bar icon just opens this window.
-            Button("Quit Bluejay Wispr") { NSApp.terminate(nil) }
-                .buttonStyle(QuietButtonStyle())
         }
         .onReceive(refresh) { _ in
             micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
             axTrusted = AXIsProcessTrusted()
             inputMonitoringGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
             micName = AudioRecorder.defaultInputDeviceName()
-        }
-    }
-
-    private var providerHint: String {
-        switch settings.provider {
-        case .auto: return "Tries LM Studio, then Ollama. Falls back to basic cleanup if neither is running."
-        case .lmStudio: return "Uses the best chat model in LM Studio."
-        case .ollama: return "Uses the first model available in Ollama."
-        case .custom: return "Any OpenAI-compatible endpoint, like Groq or Gemini."
-        case .off: return "Inserts the raw transcript with basic filler removal only."
         }
     }
 

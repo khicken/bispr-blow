@@ -59,6 +59,11 @@ extension View {
 
     /// Fade + rise on first appearance; `delay` staggers siblings.
     func appearIn(_ delay: Double = 0) -> some View { modifier(AppearIn(delay: delay)) }
+
+    /// Pointing-hand cursor. Set through AppKit — `pointerStyle` no-ops on hosted views.
+    func handCursor() -> some View {
+        onHover { $0 ? NSCursor.pointingHand.set() : NSCursor.arrow.set() }
+    }
 }
 
 struct AppearIn: ViewModifier {
@@ -94,7 +99,7 @@ struct CapsuleButtonStyle: ButtonStyle {
             .padding(.vertical, 9)
             .background(Capsule().fill(filled ? Theme.blue : Theme.surfaceActive))
             .contentShape(Capsule())
-            .pointerStyle(.link)
+            .handCursor()
             .opacity(configuration.isPressed ? 0.8 : 1)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.bjSnap, value: configuration.isPressed)
@@ -114,7 +119,7 @@ struct QuietButtonStyle: ButtonStyle {
                     .fill(configuration.isPressed ? Theme.surfaceActive : .clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 6))
-            .pointerStyle(.link)
+            .handCursor()
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.bjSnap, value: configuration.isPressed)
     }

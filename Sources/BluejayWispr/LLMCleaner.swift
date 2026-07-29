@@ -136,11 +136,11 @@ final class LLMCleaner {
         let ids = models.compactMap { $0["id"] as? String }
         let chatIDs = ids.filter {
             let id = $0.lowercased()
-            // Reasoning variants burn seconds thinking before every dictation, and sub-1B
-            // models summarize instead of cleaning — both look like "the app got worse".
+            // Reasoning variants burn seconds thinking before every dictation. Small models
+            // stay eligible — they're the fast ones, and looksTruncated() catches the cases
+            // where one summarizes instead of cleaning.
             return !id.contains("embed") && !id.contains("whisper")
                 && !id.contains("thinking") && !id.contains("reason") && !id.contains("-r1")
-                && !id.contains("0.5b") && !id.contains("0.6b")
         }
         // Measured on this machine with the cache-friendly prompt: qwen3-4b-2507 ≈ 0.6s
         // warm and matches gpt-oss-20b (~2-3s) on cleanup quality, so it leads. Specific

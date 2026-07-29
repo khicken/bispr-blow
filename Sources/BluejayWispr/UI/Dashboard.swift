@@ -85,9 +85,9 @@ struct DashboardView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
             BrandLockup(state: controller.state)
-                .padding(.horizontal, 16)
-                .padding(.top, 44)
-                .padding(.bottom, 20)
+                .padding(.horizontal, 18)
+                .padding(.top, 42)
+                .padding(.bottom, 22)
 
             ForEach(Array(Section.allCases.enumerated()), id: \.element) { index, item in
                 SidebarItem(item: item, selected: section == item, namespace: navPill) {
@@ -104,6 +104,9 @@ struct DashboardView: View {
         }
         .frame(width: 192)
         .background(Theme.surface)
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(Theme.border.opacity(0.55)).frame(width: 1)
+        }
     }
 
     @ViewBuilder
@@ -114,7 +117,7 @@ struct DashboardView: View {
             case .history: HistoryView(history: history)
             case .dictionary: DictionaryView(settings: settings)
             case .team: TeamView(settings: settings)
-            case .settings: SettingsView(settings: settings, controller: controller)
+            case .settings: SettingsView(settings: settings)
             }
         }
         .id(section)
@@ -132,6 +135,9 @@ struct SidebarItem: View {
     let namespace: Namespace.ID
     let action: () -> Void
     @State private var hovering = false
+    /// Bumped only on becoming selected — keying off `selected` also bounces the row
+    /// you just navigated away from.
+    @State private var bounce = 0
 
     var body: some View {
         Button(action: action) {
@@ -139,12 +145,12 @@ struct SidebarItem: View {
                 Image(systemName: item.icon)
                     .font(.system(size: 12.5, weight: .medium))
                     .frame(width: 18)
-                    .symbolEffect(.bounce, options: .speed(1.5), value: selected)
+                    .symbolEffect(.bounce, options: .speed(1.5), value: bounce)
                 Text(item.rawValue)
                     .font(.system(size: 13, weight: selected ? .semibold : .regular))
                 Spacer()
             }
-            .foregroundStyle(selected ? Theme.ink : Theme.inkTertiary)
+            .foregroundStyle(selected ? Theme.blue : Theme.inkTertiary)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,11 +158,11 @@ struct SidebarItem: View {
                 // One pill that slides between rows, rather than a fill per row.
                 if selected {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Theme.surfaceActive)
+                        .fill(Theme.blueSoft)
                         .matchedGeometryEffect(id: "navPill", in: namespace)
                 } else if hovering {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Theme.surfaceActive.opacity(0.5))
+                        .fill(Theme.surfaceActive.opacity(0.6))
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 7))
@@ -164,51 +170,34 @@ struct SidebarItem: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 8)
-        .pointerStyle(.link)
+        .handCursor()
         .onHover { hovering = $0 }
         .animation(.bjHover, value: hovering)
+        .onChange(of: selected) { _, isSelected in
+            if isSelected { bounce += 1 }
+        }
     }
 }
 
-/// Sidebar wordmark: gradient badge echoing the app icon, pinwheel spinning while live.
+/// Sidebar wordmark. Symbol sits on the nav icons' 18pt column so the two align;
+/// it spins while dictating, driven by the clock so it never snaps back on stop.
 struct BrandLockup: View {
     let state: DictationController.State
-    @State private var hovering = false
 
     private var live: Bool { state != .idle }
 
     var body: some View {
         HStack(spacing: 9) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(LinearGradient(colors: [Theme.blue, Theme.blueDeep],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .shadow(color: Theme.blue.opacity(live ? 0.5 : 0.22),
-                            radius: live ? 8 : 3, y: 1.5)
-                // Driven by the clock, not an animation, so it never snaps back on stop.
-                TimelineView(.animation(minimumInterval: 1 / 30, paused: !live && !hovering)) { ctx in
-                    LogoView(name: "Symbol_White", size: 15)
-                        .rotationEffect(.degrees(
-                            ctx.date.timeIntervalSinceReferenceDate * (live ? 115 : 26)
-                        ))
-                }
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: !live)) { ctx in
+                LogoView(name: "Symbol_Black", size: 18)
+                    .rotationEffect(.degrees(ctx.date.timeIntervalSinceReferenceDate * 115))
             }
-            .frame(width: 27, height: 27)
-            .scaleEffect(hovering ? 1.07 : 1)
-
-            HStack(spacing: 0) {
-                Text("Bluejay")
-                    .foregroundStyle(Theme.ink)
-                Text(" Wispr")
-                    .foregroundStyle(LinearGradient(colors: [Theme.blue, Theme.blueDeep],
-                                                    startPoint: .leading, endPoint: .trailing))
-            }
-            .font(.system(size: 13.5, weight: .semibold))
-            .tracking(-0.2)
+            .frame(width: 18, height: 18)
+            Text("Bluejay Wispr")
+                .font(.system(size: 13.5, weight: .semibold))
+                .tracking(-0.2)
+                .foregroundStyle(Theme.ink)
         }
-        .onHover { hovering = $0 }
-        .animation(.bjSnap, value: hovering)
-        .animation(.bjSoft, value: live)
     }
 }
 
@@ -453,7 +442,7 @@ struct HistoryRow: View {
                 Text(copied ? "Copied" : hovering ? "Click to copy" : Self.timeFormatter.string(from: entry.date))
                     .font(.system(size: 11))
                     .foregroundStyle(copied ? Theme.green : Theme.inkSubtle)
-                    .contentTransition(.numericText())
+                    .contentTransition(.opacity)
                 if copied {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
@@ -480,7 +469,7 @@ struct HistoryRow: View {
                 .stroke(Theme.green.opacity(copied ? 0.45 : 0), lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .pointerStyle(.link)
+        .handCursor()
         .scaleEffect(copied ? 0.99 : hovering ? 1.02 : 1)
         .shadow(color: Theme.ink.opacity(hovering ? 0.10 : 0), radius: hovering ? 12 : 7, y: hovering ? 5 : 2)
         .onTapGesture {

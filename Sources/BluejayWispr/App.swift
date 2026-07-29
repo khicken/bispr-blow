@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         setupMenuBar()
+        setupQuitShortcut()
         DictationController.requestPermissions()
         controller.start()
         SystemFnKey.suppressWhileRunning()
@@ -53,10 +54,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // No menu at all: clicking the icon opens the app. Quit lives in Settings.
+        // No menu at all: clicking the icon opens the app.
         statusItem.button?.target = self
         statusItem.button?.action = #selector(openDashboard)
         statusItem.button?.toolTip = "Bluejay Wispr — hold fn to dictate, double-tap to lock"
+    }
+
+    /// Nothing in the UI offers Quit, but ⌘Q should still work while a window is focused —
+    /// an accessory app gets no main menu, and therefore no key equivalent, unless one is set.
+    private func setupQuitShortcut() {
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Quit Bluejay Wispr",
+                        action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let item = NSMenuItem()
+        item.submenu = appMenu
+        let mainMenu = NSMenu()
+        mainMenu.addItem(item)
+        NSApp.mainMenu = mainMenu
     }
 
     @objc private func openDashboard() {
