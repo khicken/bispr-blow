@@ -112,9 +112,15 @@ enum SelfCheck {
         precondition(Anchor.leftCentre.zone(in: screen)
             .contains(NSPoint(x: 60, y: 440)))
         precondition(Anchor.leftCentre.landing(in: screen).size == CGSize(width: 48, height: 122))
-        precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 12, y: 415))
-        precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1218, y: 415))
+        precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 4, y: 415))
+        precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1226, y: 415))
         precondition(Anchor.bottomCentre.origin(size: pill, in: screen) == NSPoint(x: 615, y: 0))
+        // The bar hugs its panel's edge, and `rotation` maps that local edge onto the parked screen
+        // edge. Get this pair out of step and the sliver drifts to the middle of the panel or, worse,
+        // to the side facing away from the bezel.
+        precondition(Anchor.bottomCentre.contentAlignment == .bottom)
+        precondition(Anchor.leftCentre.contentAlignment == .top
+                     && Anchor.rightCentre.contentAlignment == .top)
         // A side-anchored pill is the same bar turned 90°, so its panel is the transpose. If these
         // ever disagree the panel clips the pill or claims mouse events beside it.
         let flat = PillView.size(for: .idle, anchor: .bottomCentre)

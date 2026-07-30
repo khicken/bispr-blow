@@ -97,11 +97,24 @@ final class RecordingPillController {
             }
         }
 
-        /// Bottom-left origin for a panel of `size`, within the screen's *visible* frame. That is
-        /// what makes the bar sit on top of the Dock when the Dock is showing and drop to the
-        /// screen edge when it is not — visibleFrame already tracks that, including fullscreen
-        /// spaces, so there is nothing to detect. The inset keeps the side anchors off the bezel.
-        func origin(size: CGSize, in frame: CGRect, inset: CGFloat = 12) -> NSPoint {
+        /// Which edge of its own panel the bar sits against, in the panel's *unrotated* space.
+        /// `rotation` then maps that onto the screen edge the pill is parked on: rotating clockwise
+        /// sends the local top edge to the right and counter-clockwise sends it to the left, so both
+        /// side anchors want `.top` and only the bottom anchor wants `.bottom`.
+        ///
+        /// This exists because the panel is always as big as the *expanded* row — it cannot be sized
+        /// from hover state — so without it the resting sliver is centred in a box four times its
+        /// size, floating off the bezel with nothing anchoring the expansion.
+        var contentAlignment: Alignment {
+            self == .bottomCentre ? .bottom : .top
+        }
+
+        /// Bottom-left origin for a panel of `size`, within the frame the pill lays out in.
+        ///
+        /// The inset keeps the side anchors off the bezel. It is small because the bar inside the
+        /// panel now hugs the panel's own edge (see `contentAlignment`) and carries a 6pt shadow
+        /// margin of its own, so the gap the user sees is this plus that.
+        func origin(size: CGSize, in frame: CGRect, inset: CGFloat = 4) -> NSPoint {
             switch self {
             case .bottomCentre: NSPoint(x: frame.midX - size.width / 2, y: frame.minY)
             case .leftCentre: NSPoint(x: frame.minX + inset, y: frame.midY - size.height / 2)
@@ -333,8 +346,7 @@ struct PillView: View {
             // hover region out from under a stationary pointer and the pill flaps open and shut.
             // `targetSize` only grows around the same bottom-centre anchor, so a pointer inside
             // the collapsed rect is always inside the expanded one.
-            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: controller.state)
-            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: hovering)
+            .animation(Self.grow, value: controller.state)
             // Rotation keeps the unrotated layout size, so the transposed frame below is exactly
             // what the turned bar occupies, and the panel matches it.
             .rotationEffect(.degrees(model.anchor.rotation))
@@ -361,6 +373,8 @@ struct PillView: View {
             }
     }
 
+    static let grow = Animation.spring(response: 0.32, dampingFraction: 0.82)
+
     @ViewBuilder
     private var pill: some View {
         Group {
@@ -368,37 +382,50 @@ struct PillView: View {
             case .idle:
                 idlePill
             case .recording(let locked):
-                recordingPill(locked: locked)
+                capsule(recordingPill(locked: locked))
             case .processing:
-                processingPill
+                capsule(processingPill)
             }
         }
-        .background(
+        .padding(Self.margin)
+    }
+
+    /// The dark capsule a state sits on. Applied to whatever actually carries that state's size,
+    /// rather than wrapped around the whole pill: for idle the capsule is the thing that grows, and
+    /// a background around a fixed-size parent would just draw it full size the whole time.
+    private func capsule(_ content: some View) -> some View {
+        content.background(
             Capsule().fill(Theme.pillBackground)
                 // Fits inside `margin`. A shadow wider than the panel gets clipped by the window
                 // edge, and a clipped gaussian reads as a translucent rectangle around the pill.
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
         )
-        .padding(Self.margin)
     }
 
-    /// Idle: a tiny sliver that grows into three circular action buttons on hover.
+    /// Idle: a sliver on the parked edge that grows into three circular action buttons on hover.
     ///
-    /// One view whose frame animates, not two views swapped by an `if`. The swap gave the capsule a
-    /// size to interpolate but gave the buttons none, so they appeared at full size inside a capsule
-    /// that was still growing — which is what read as clunky and unaligned. The buttons sit in an
-    /// overlay so they never drive the layout: the frame is the only thing animating, and they fade
-    /// and scale up from the middle of it.
+    /// Exactly one thing animates — the capsule's own frame — and it is pinned to the edge the pill
+    /// is parked on, so the expansion has a single fixed anchor. Everything else is a constant: the
+    /// outer box is always the expanded size, and the buttons are centred in *that*, so they fade in
+    /// where they will end up rather than travelling with a capsule that is still growing.
+    ///
+    /// The animation modifier stays inside the outer frame. Outside it, the fixed box interpolates
+    /// too, and a hit region that slides under a stationary pointer makes the pill flap open and
+    /// shut.
     private var idlePill: some View {
-        Color.clear
-            .frame(width: hovering ? 110 : 42, height: hovering ? 36 : 9)
-            .overlay {
-                hoverButtons
-                    .opacity(hovering ? 1 : 0)
-                    .scaleEffect(hovering ? 1 : 0.82)
-                    .allowsHitTesting(hovering)
-            }
-            .contentShape(Capsule())
+        capsule(
+            Color.clear.frame(width: hovering ? 110 : 42, height: hovering ? 36 : 9)
+        )
+        .animation(Self.grow, value: hovering)
+        .frame(width: 110, height: 36, alignment: model.anchor.contentAlignment)
+        .overlay {
+            hoverButtons
+                .opacity(hovering ? 1 : 0)
+                .scaleEffect(hovering ? 1 : 0.86)
+                .animation(Self.grow, value: hovering)
+                .allowsHitTesting(hovering)
+        }
+        .contentShape(Capsule())
     }
 
     /// The glyphs counter-rotate: the bar turns 90° on a side edge, but an icon lying on its side
