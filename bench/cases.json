@@ -1,0 +1,65 @@
+[
+  {
+    "name": "short_question",
+    "app": "Slack (chat)",
+    "raw": "yeah wait what's in this PR can you see the link again",
+    "must_include": ["PR", "link"],
+    "must_exclude": [],
+    "retain": 0.6,
+    "note": "Shipped broken: 0.6b turned this into 'Yeah, wait... Can you see the link again?'"
+  },
+  {
+    "name": "long_ramble",
+    "app": "Claude (coding)",
+    "raw": "we should also update the system prompt um to not just strictly remove filler words but also um tailor that is towards like developers so when we set up like accounts and stuff we can tailor oh it's more of a developer or a designer whatever the other categories you can think of put like 5 default options during onboarding but we also have to inject more context of the app and at the beginning of the system prompt or the end of it because i'm noticing that when i say for example dev or prod uh keeps saying like devin or prod or proud instead of dev or prod",
+    "must_include": ["system prompt", "developer", "onboarding", "context"],
+    "must_exclude": ["um ", " uh "],
+    "retain": 0.5,
+    "note": "The truncation case: models summarize this instead of cleaning it"
+  },
+  {
+    "name": "terminal_flags",
+    "app": "Terminal (coding)",
+    "raw": "run the the tests with um dash dash verbose and then uh commit and push to dev not prod",
+    "must_include": ["--verbose", "dev", "prod"],
+    "must_exclude": ["um ", " uh "],
+    "retain": 0.5,
+    "note": "Spoken symbols become symbols; dev/prod must not become devin/proud"
+  },
+  {
+    "name": "jargon",
+    "app": "Cursor (coding)",
+    "raw": "the work tree is dirty so i had to stash before rebasing onto main and the dot env file was missing",
+    "must_include": [".env", "main"],
+    "must_exclude": [],
+    "retain": 0.6,
+    "note": "Dictionary terms and spoken filenames"
+  },
+  {
+    "name": "self_correction",
+    "app": "Messages (chat)",
+    "raw": "let's meet at 2 actually 3 pm tomorrow at the the office",
+    "must_include": ["3"],
+    "must_exclude": ["at 2", "actually"],
+    "retain": 0.4,
+    "note": "Keeps only the speaker's final phrasing"
+  },
+  {
+    "name": "bug_report",
+    "app": "Notes (general)",
+    "raw": "okay so um i tested the new build and uh the login flow it's it's mostly working but i found like two issues one is the the spinner never goes away on slow connections and two um when you log out it doesn't actually clear the session so so yeah we should probably fix those before before friday",
+    "must_include": ["spinner", "session", "Friday"],
+    "must_exclude": ["um ", " uh ", "the the"],
+    "retain": 0.55,
+    "note": "Two distinct points, both must survive"
+  },
+  {
+    "name": "question_not_instruction",
+    "app": "Slack (chat)",
+    "raw": "hey can you review my PR when you get a chance it's the one that fixes the webhook retry logic",
+    "must_include": ["PR", "webhook"],
+    "must_exclude": ["I'll", "Sure"],
+    "retain": 0.7,
+    "note": "The model must clean the question, not answer it"
+  }
+]

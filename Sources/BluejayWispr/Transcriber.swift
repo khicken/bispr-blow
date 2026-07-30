@@ -151,7 +151,15 @@ final class Transcriber {
             reportingOptions: [.volatileResults],
             attributeOptions: []
         )
+        // Bias the recognizer toward the user's vocabulary. Fixing "proud" back to "prod" in
+        // cleanup can't work: by then the word "prod" was never in the transcript at all.
         let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let vocabulary = await MainActor.run { AppSettings.shared.vocabulary }
+        if !vocabulary.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings = [.general: vocabulary]
+            try? await analyzer.setContext(context)
+        }
         self.analyzerTranscriber = transcriber
         self.analyzer = analyzer
 
@@ -204,6 +212,7 @@ final class Transcriber {
         guard let recognizer, recognizer.isAvailable else { return }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.contextualStrings = AppSettings.shared.vocabulary
         if recognizer.supportsOnDeviceRecognition {
             request.requiresOnDeviceRecognition = true
         }

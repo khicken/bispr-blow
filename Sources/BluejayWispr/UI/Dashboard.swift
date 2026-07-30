@@ -5,12 +5,14 @@ import SwiftUI
 final class DashboardWindowController {
     private var window: NSWindow?
     private let controller: DictationController
+    private let nav = DashboardNav()
 
     init(controller: DictationController) {
         self.controller = controller
     }
 
-    func show() {
+    func show(_ section: DashboardView.Section = .home) {
+        nav.section = section
         if window == nil {
             let win = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 920, height: 640),
@@ -22,7 +24,7 @@ final class DashboardWindowController {
             win.titleVisibility = .hidden
             win.minSize = NSSize(width: 760, height: 520)
             win.isReleasedWhenClosed = false
-            win.contentView = NSHostingView(rootView: DashboardView(controller: controller))
+            win.contentView = NSHostingView(rootView: DashboardView(controller: controller, nav: nav))
             window = win
         }
         guard let win = window else { return }
@@ -45,6 +47,12 @@ final class DashboardWindowController {
 
 // MARK: - Root view
 
+/// Which page is showing. Owned by the window controller so the pill can open
+/// straight onto History.
+final class DashboardNav: ObservableObject {
+    @Published var section: DashboardView.Section = .home
+}
+
 struct DashboardView: View {
     enum Section: String, CaseIterable, Identifiable {
         case home = "Home"
@@ -66,10 +74,12 @@ struct DashboardView: View {
     }
 
     @ObservedObject var controller: DictationController
+    @ObservedObject var nav: DashboardNav
     @StateObject private var history = HistoryStore.shared
     @StateObject private var settings = AppSettings.shared
-    @State private var section: Section = .home
     @Namespace private var navPill
+
+    private var section: Section { nav.section }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -91,7 +101,7 @@ struct DashboardView: View {
 
             ForEach(Array(Section.allCases.enumerated()), id: \.element) { index, item in
                 SidebarItem(item: item, selected: section == item, namespace: navPill) {
-                    withAnimation(.bjSnap) { section = item }
+                    withAnimation(.bjSnap) { nav.section = item }
                 }
                 .appearIn(0.05 + Double(index) * 0.035)
             }
@@ -534,15 +544,6 @@ struct DictionaryView: View {
                     .onSubmit(addWord)
                 Button("Add", action: addWord)
                     .buttonStyle(CapsuleButtonStyle())
-                Spacer()
-                Toggle(isOn: $settings.injectDictionary) {
-                    Text("Use in cleanup")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.inkTertiary)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .help("Respells mishears: \"work tree\" → \"worktree\"")
             }
 
             VStack(alignment: .leading, spacing: 9) {

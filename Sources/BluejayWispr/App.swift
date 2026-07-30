@@ -8,6 +8,13 @@ enum Main {
             SelfCheck.run()
             return
         }
+        // bench/bench.py reads the real prompt from here so it can never drift from the app.
+        if CommandLine.arguments.contains("--print-prompt") {
+            let messages = LLMCleaner.staticPrefix(vocabulary: AppSettings.shared.vocabulary)
+            let json = try! JSONSerialization.data(withJSONObject: messages, options: [.prettyPrinted])
+            print(String(data: json, encoding: .utf8)!)
+            return
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -26,8 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = DictationController()
         dashboard = DashboardWindowController(controller: controller)
-        pill = RecordingPillController(controller: controller) { [weak self] in
-            self?.dashboard.show()
+        pill = RecordingPillController(controller: controller) { [weak self] section in
+            self?.dashboard.show(section)
         }
 
         setupMenuBar()

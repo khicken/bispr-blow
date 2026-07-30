@@ -9,7 +9,7 @@ final class RecordingPillController {
     private let panel: NSPanel
     private let model: PillModel
 
-    init(controller: DictationController, onOpenDashboard: @escaping () -> Void) {
+    init(controller: DictationController, onOpenDashboard: @escaping (DashboardView.Section) -> Void) {
         model = PillModel(controller: controller, onOpenDashboard: onOpenDashboard)
 
         panel = NSPanel(
@@ -76,9 +76,9 @@ final class RecordingPillController {
 
 final class PillModel: ObservableObject {
     let controller: DictationController
-    let onOpenDashboard: () -> Void
+    let onOpenDashboard: (DashboardView.Section) -> Void
 
-    init(controller: DictationController, onOpenDashboard: @escaping () -> Void) {
+    init(controller: DictationController, onOpenDashboard: @escaping (DashboardView.Section) -> Void) {
         self.controller = controller
         self.onOpenDashboard = onOpenDashboard
     }
@@ -105,7 +105,7 @@ struct PillView: View {
             pill
                 .onHover { hovering = $0 }
                 .contextMenu {
-                    Button("Open Bluejay Wispr") { model.onOpenDashboard() }
+                    Button("Open Bluejay Wispr") { model.onOpenDashboard(.home) }
                     Divider()
                     Button("Quit") { NSApp.terminate(nil) }
                 }
@@ -157,7 +157,7 @@ struct PillView: View {
                             .foregroundStyle(.white)
                     }
                     PillCircleButton(help: "Open Bluejay Wispr") {
-                        model.onOpenDashboard()
+                        model.onOpenDashboard(.home)
                     } label: {
                         if let logo = Theme.logo("Symbol_White") {
                             Image(nsImage: logo)
@@ -170,10 +170,10 @@ struct PillView: View {
                                 .foregroundStyle(.white)
                         }
                     }
-                    PillCircleButton(help: "Quick note, saved to history and clipboard") {
-                        controller.startQuickNote()
+                    PillCircleButton(help: "Recent dictations") {
+                        model.onOpenDashboard(.history)
                     } label: {
-                        Image(systemName: "note.text")
+                        Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white)
                     }

@@ -243,11 +243,16 @@ final class LLMCleaner {
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
-              let message = choices.first?["message"] as? [String: Any],
-              let content = message["content"] as? String else {
+              let message = choices.first?["message"] as? [String: Any] else {
             throw URLError(.cannotParseResponse)
         }
-        return content
+        let content = message["content"] as? String ?? ""
+        guard content.isEmpty else { return content }
+        // A /no_think turn can emit an empty think block, after which LM Studio files the
+        // whole answer under reasoning_content and leaves content empty. Measured on
+        // qwen3-1.7b: a perfectly cleaned transcript we were throwing away. If what comes
+        // back really is a reasoning trace, the length guard downstream rejects it.
+        return message["reasoning_content"] as? String ?? ""
     }
 
     // MARK: - Prompts
@@ -349,8 +354,12 @@ final class LLMCleaner {
         let elides = { (text: String) in text.contains("...") || text.contains("…") }
         if elides(cleaned), !elides(raw) { return true }
         let rawWords = raw.split(whereSeparator: \.isWhitespace).count
+        let cleanedWords = cleaned.split(whereSeparator: \.isWhitespace).count
+        // Far longer than the transcript means it isn't a cleanup: a leaked reasoning trace,
+        // or the model answering the dictation instead of tidying it.
+        if rawWords >= 5, cleanedWords > Int(Double(rawWords) * 2.5) { return true }
         guard rawWords >= 12 else { return false }  // a few words legitimately vary a lot
-        return cleaned.split(whereSeparator: \.isWhitespace).count < Int(Double(rawWords) * 0.55)
+        return cleanedWords < Int(Double(rawWords) * 0.55)
     }
 
     // MARK: - Rule-based fallback

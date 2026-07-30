@@ -17,6 +17,12 @@ enum SelfCheck {
             raw: "Yeah, wait, what's in this PR? Can you see the link again?"))
         // An ellipsis the speaker actually dictated is not the model's doing.
         precondition(!LLMCleaner.looksTruncated("Wait... never mind.", raw: "wait ... never mind"))
+        // A leaked reasoning trace, or the model answering instead of cleaning, runs long.
+        precondition(LLMCleaner.looksTruncated(
+            "Okay, let me tackle this. The user is dictating in Slack and wants the transcript "
+            + "cleaned. First I should check for filler words, then apply the style rules for "
+            + "chat, then make sure the question is preserved rather than answered.",
+            raw: "yeah wait what's in this PR"))
         precondition(!LLMCleaner.looksTruncated(
             "I tested the new build and the login flow is mostly working, but I found two issues. "
             + "First, the spinner never goes away. Second, when you log out it doesn't clear the "
