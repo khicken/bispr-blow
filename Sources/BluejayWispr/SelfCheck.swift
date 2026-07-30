@@ -75,18 +75,22 @@ enum SelfCheck {
         print("self-check passed")
     }
 
-    /// Dropping the pill snaps it to the nearest anchor. Snapping on x alone made a vertical drag
-    /// teleport back to the bottom of the screen, so both axes count.
+    /// Where a release lands the pill. Everything here is in screen coordinates, bottom-left
+    /// origin, against a `visibleFrame`-shaped rect.
     private static func checkAnchors() {
         let screen = CGRect(x: 0, y: 0, width: 1352, height: 878)
         let pill = CGSize(width: 122, height: 48)
         typealias Anchor = RecordingPillController.Anchor
-        // Dropped near the left edge halfway up: the left anchor, not the bottom one.
-        precondition(Anchor.nearest(to: NSPoint(x: 60, y: 500), size: pill, in: screen) == .leftCentre)
-        precondition(Anchor.nearest(to: NSPoint(x: 1300, y: 500), size: pill, in: screen) == .rightCentre)
-        precondition(Anchor.nearest(to: NSPoint(x: 676, y: 30), size: pill, in: screen) == .bottomCentre)
-        // Dropped low but hard left still belongs on the left edge.
-        precondition(Anchor.nearest(to: NSPoint(x: 40, y: 300), size: pill, in: screen) == .leftCentre)
+        precondition(Anchor.containing(NSPoint(x: 60, y: 440), in: screen) == .leftCentre)
+        precondition(Anchor.containing(NSPoint(x: 1300, y: 440), in: screen) == .rightCentre)
+        precondition(Anchor.containing(NSPoint(x: 676, y: 20), in: screen) == .bottomCentre)
+        // Released in open space: nil, so the pill stays where it was instead of being flung to
+        // whichever target happened to be closest.
+        precondition(Anchor.containing(NSPoint(x: 676, y: 440), in: screen) == nil)
+        // The lit target is the landing spot, so a point inside a zone must be near its landing.
+        precondition(Anchor.leftCentre.zone(in: screen)
+            .contains(NSPoint(x: 60, y: 440)))
+        precondition(Anchor.leftCentre.landing(in: screen).size == CGSize(width: 48, height: 122))
         precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 12, y: 415))
         precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1218, y: 415))
         precondition(Anchor.bottomCentre.origin(size: pill, in: screen) == NSPoint(x: 615, y: 0))
