@@ -130,8 +130,8 @@ final class AppSettings: ObservableObject {
 
     /// Sidebar footer during a hands-free session.
     var lockedHint: String {
-        guard let name = dictationShortcutName else { return "Locked — click the pill to finish" }
-        return "Locked — tap \(name) to finish"
+        guard let name = dictationShortcutName else { return "Locked. Click the pill to finish" }
+        return "Locked. Tap \(name) to finish"
     }
 
     /// Terms the cleanup model should correct toward: dictionary + team member names.

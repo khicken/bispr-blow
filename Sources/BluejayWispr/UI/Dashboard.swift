@@ -734,7 +734,7 @@ struct DictionaryView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                TextField("Add a word or a name — or several, separated by commas", text: $newWord)
+                TextField("Add a word or a name, or several separated by commas", text: $newWord)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .padding(10)
