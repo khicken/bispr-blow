@@ -102,12 +102,10 @@ struct ShortcutSheet: View {
                     .foregroundStyle(Theme.inkTertiary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                if bindings.isEmpty {
-                    Text("Nothing bound yet.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.inkSubtle)
-                }
+            // The list is the control. Adding lives as its last row rather than as a button below,
+            // so there is one place to click to change a binding instead of a dead box plus a
+            // button beside it.
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(bindings) { shortcut in
                     HStack(spacing: 8) {
                         KeyCap(text: shortcut.display)
@@ -119,36 +117,52 @@ struct ShortcutSheet: View {
                                 .font(.system(size: 9, weight: .bold))
                         }
                         .buttonStyle(QuietButtonStyle())
+                        .help("Remove this shortcut")
                     }
+                }
+                if !bindings.isEmpty { Divider().opacity(0.5) }
+                if armed {
+                    HStack(spacing: 10) {
+                        Text("Press any key, combination, or mouse button…")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.blue)
+                        Spacer()
+                        Button("Cancel") { disarm() }
+                            .buttonStyle(QuietButtonStyle())
+                    }
+                    .padding(.vertical, 4)
+                    .transition(.opacity)
+                } else {
+                    Button(action: arm) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(bindings.isEmpty ? "Record a shortcut" : "Add another")
+                                .font(.system(size: 12.5))
+                            Spacer()
+                        }
+                        .foregroundStyle(Theme.blue)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .handCursor()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .card(padding: 12)
 
-            if armed {
-                HStack(spacing: 10) {
-                    Text("Press any key, combination, or mouse button…")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.blue)
-                    Spacer()
-                    Button("Cancel") { disarm() }
-                        .buttonStyle(QuietButtonStyle())
-                }
-                .transition(.opacity)
-            } else {
-                HStack(spacing: 8) {
-                    Button("Add a shortcut") { arm() }
-                        .buttonStyle(CapsuleButtonStyle())
-                    if bindings != action.defaults {
-                        Button("Reset to default") {
-                            settings.resetToDefault(action)
-                        }
-                        .buttonStyle(QuietButtonStyle())
+            // One primary action, bottom right, where every macOS sheet puts it.
+            HStack(spacing: 8) {
+                if bindings != action.defaults {
+                    Button("Reset to default") {
+                        settings.resetToDefault(action)
                     }
-                    Spacer()
-                    Button("Done") { dismiss() }
-                        .buttonStyle(CapsuleButtonStyle(filled: false))
+                    .buttonStyle(QuietButtonStyle())
                 }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(CapsuleButtonStyle())
             }
         }
         .animation(.bjSnap, value: armed)

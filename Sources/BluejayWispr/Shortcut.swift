@@ -129,7 +129,10 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
     var blurb: String {
         switch self {
         case .pushToTalk: return "Hold to dictate, release to insert. Double-tap to go hands-free."
-        case .handsFree: return "Press once to start, again to finish."
+        // Says the double-tap out loud: hands-free ships with no binding of its own, and without
+        // this the editor reads as though the feature were unavailable rather than already working.
+        case .handsFree: return "Press once to start, again to finish. Double-tapping push to talk "
+            + "does this too, so a binding here is only if you want a dedicated key."
         case .pressEnter: return "Like push to talk, but presses Return after the text lands."
         case .cancel: return "Throw away whatever is being dictated."
         }

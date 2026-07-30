@@ -44,6 +44,12 @@ $OPENSSL pkcs12 -export -out "$TMP/cert.p12" -inkey "$TMP/key.pem" -in "$TMP/cer
 security import "$TMP/cert.p12" -k ~/Library/Keychains/login.keychain-db \
     -P bjwispr -A
 
+# -A sets the ACL but not the partition list, and it is the partition list that makes codesign
+# prompt on every re-sign — which hangs build.sh, since nothing is there to answer it.
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -l "$CN" \
+    ~/Library/Keychains/login.keychain-db >/dev/null 2>&1 \
+    || echo "Could not set the partition list; click \"Always Allow\" the first time codesign asks." >&2
+
 # Trust the cert for code signing (user trust domain).
 security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db "$TMP/cert.pem"
 
