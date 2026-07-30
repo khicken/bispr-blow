@@ -79,9 +79,12 @@ final class RecordingPillController {
     func reposition() {
         // Follow the screen the user is working on (keyboard focus), not the launch screen.
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        let frame = screen.visibleFrame
+        // `frame`, not `visibleFrame`: visibleFrame stops above the Dock, which parked the pill
+        // ~80pt up the screen and in the middle of whatever the user was reading. The bar belongs
+        // on the bottom edge. The panel's own `margin` supplies the small gap, so no offset here.
+        let frame = screen.frame
         let size = panel.frame.size
-        let target = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + 6)
+        let target = NSPoint(x: frame.midX - size.width / 2, y: frame.minY)
         if panel.frame.origin != target {
             panel.setFrameOrigin(target)
         }
@@ -337,9 +340,10 @@ final class ToastController {
     /// Clears the tallest pill state, so the toast never overlaps the waveform.
     func reposition() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        let frame = screen.visibleFrame
+        let frame = screen.frame
         let size = panel.frame.size
-        panel.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2, y: frame.minY + 62))
+        panel.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2,
+                                     y: frame.minY + PillView.size(for: .idle).height + 4))
         panel.orderFrontRegardless()
     }
 }
