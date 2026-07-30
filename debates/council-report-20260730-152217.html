@@ -1,0 +1,611 @@
+<title>Council — Wispr transcription quality on long technical dictation</title>
+<style>
+  :root {
+    --ink: #17181c;
+    --ink-soft: #4a4d57;
+    --ink-faint: #85899a;
+    --rule: #e4e5ea;
+    --bg: #ffffff;
+    --panel: #fafbfc;
+    --accent: #2563d6;
+    --warn: #b4531a;
+    --good: #1c7a52;
+    --clash: #8a4fbe;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e9eaee; --ink-soft: #b3b6c2; --ink-faint: #7d8192;
+      --rule: #2b2d35; --bg: #131419; --panel: #191b21;
+      --accent: #6f9dfa; --warn: #e0955c; --good: #4fc191; --clash: #b98ae0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e9eaee; --ink-soft: #b3b6c2; --ink-faint: #7d8192;
+    --rule: #2b2d35; --bg: #131419; --panel: #191b21;
+    --accent: #6f9dfa; --warn: #e0955c; --good: #4fc191; --clash: #b98ae0;
+  }
+  :root[data-theme="light"] {
+    --ink: #17181c; --ink-soft: #4a4d57; --ink-faint: #85899a;
+    --rule: #e4e5ea; --bg: #ffffff; --panel: #fafbfc;
+    --accent: #2563d6; --warn: #b4531a; --good: #1c7a52; --clash: #8a4fbe;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 0 24px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  header { padding: 56px 0 34px; border-bottom: 1px solid var(--rule); }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 14px;
+  }
+  h1 { font-size: 30px; line-height: 1.25; letter-spacing: -.02em; margin: 0 0 14px; font-weight: 620; }
+  .sub { color: var(--ink-soft); margin: 0; font-size: 16.5px; }
+  .meta { color: var(--ink-faint); font-size: 13.5px; margin: 20px 0 0; }
+  h2 {
+    font-size: 13px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 52px 0 18px; font-weight: 640;
+  }
+  h3 { font-size: 18px; margin: 30px 0 10px; letter-spacing: -.01em; font-weight: 620; }
+  p { margin: 0 0 14px; }
+  .lede { font-size: 17.5px; line-height: 1.6; color: var(--ink); }
+  code {
+    font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 4px; padding: 1px 5px;
+  }
+  blockquote {
+    margin: 16px 0; padding: 14px 18px;
+    border-left: 2px solid var(--accent); background: var(--panel);
+    font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--ink-soft); overflow-x: auto;
+  }
+  .card {
+    border: 1px solid var(--rule); border-radius: 9px;
+    padding: 22px 24px; margin: 0 0 16px; background: var(--panel);
+  }
+  .card.plain { background: none; }
+  .tag {
+    display: inline-block; font-size: 11.5px; letter-spacing: .07em;
+    text-transform: uppercase; font-weight: 660; padding: 3px 9px;
+    border-radius: 20px; border: 1px solid currentColor; margin-bottom: 12px;
+  }
+  .t-agree { color: var(--good); }
+  .t-clash { color: var(--clash); }
+  .t-blind { color: var(--warn); }
+  .t-new { color: var(--accent); }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 9px; }
+  .grid { display: grid; gap: 10px; margin: 0 0 22px; }
+  .row {
+    display: grid; grid-template-columns: 168px 1fr; gap: 16px;
+    align-items: start; padding: 13px 0; border-bottom: 1px solid var(--rule);
+  }
+  .row:last-child { border-bottom: none; }
+  .who { font-weight: 640; font-size: 14.5px; }
+  .who small { display: block; font-weight: 400; color: var(--ink-faint); font-size: 12.5px; letter-spacing: .03em; }
+  .pos { font-size: 15px; color: var(--ink-soft); }
+  @media (max-width: 620px) {
+    .row { grid-template-columns: 1fr; gap: 4px; }
+  }
+  .scroller { overflow-x: auto; margin: 0 0 22px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 460px; }
+  th, td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); font-weight: 640; }
+  td.num { font: 13.5px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+  .over { color: var(--warn); font-weight: 620; }
+  .under { color: var(--good); font-weight: 620; }
+  details {
+    border: 1px solid var(--rule); border-radius: 9px;
+    padding: 0 20px; margin: 0 0 10px; background: var(--panel);
+  }
+  details[open] { padding-bottom: 8px; }
+  summary {
+    cursor: pointer; padding: 15px 0; font-weight: 600; font-size: 15.5px;
+    list-style: none; display: flex; justify-content: space-between; gap: 14px; align-items: baseline;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--ink-faint); font-weight: 400; font-size: 19px; line-height: 1; }
+  details[open] summary::after { content: "\2212"; }
+  summary span { color: var(--ink-faint); font-weight: 400; font-size: 13px; letter-spacing: .04em; }
+  details .body { border-top: 1px solid var(--rule); padding-top: 16px; font-size: 15.5px; color: var(--ink-soft); }
+  details .body strong { color: var(--ink); }
+  .verdict {
+    border: 1px solid var(--accent); border-radius: 11px;
+    padding: 26px 28px; margin: 0 0 18px;
+  }
+  .first {
+    border-left: 3px solid var(--accent); padding: 4px 0 4px 20px; margin: 24px 0 0;
+    font-size: 17.5px; line-height: 1.58;
+  }
+  .rank { counter-reset: r; list-style: none; padding: 0; }
+  .rank > li {
+    counter-increment: r; position: relative; padding-left: 42px; margin-bottom: 18px;
+  }
+  .rank > li::before {
+    content: counter(r); position: absolute; left: 0; top: 1px;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 13px; font-weight: 680;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rank .m { display: block; font-size: 14px; color: var(--ink-faint); margin-top: 4px; }
+  .killed { color: var(--ink-faint); font-size: 15px; }
+  footer {
+    margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--rule);
+    color: var(--ink-faint); font-size: 13.5px;
+  }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">LLM Council · 5 advisors · 5 peer reviews</p>
+  <h1>Why Wispr over-rewrites long technical dictation</h1>
+  <p class="sub">The cleanup stage isn't broken. It's obeying an instruction that contradicts the project's own doctrine — and it has never been benchmarked on the input that fails.</p>
+  <p class="meta">bluejay-wispr · 30 July 2026 · unanimous peer verdict: First Principles strongest, Expansionist biggest blind spot</p>
+</header>
+
+<h2>The finding in one paragraph</h2>
+<p class="lede">CLAUDE.md says losing the user's words is the worst outcome. The system prompt says
+&ldquo;rewrite disfluent speech into complete, coherent sentences&hellip; should read like text the
+speaker would have typed.&rdquo; Those cannot both be true. The model is following rule&nbsp;3
+correctly; rule&nbsp;3 is the wrong rule for a prompt destined for a coding agent, whose reader is
+another LLM that does not care about &ldquo;um.&rdquo; Every guard in the pipeline is an attempt to
+<em>detect</em> unwanted rewriting after the fact. On the paths that don't want it, make it
+structurally impossible instead.</p>
+
+<h2>Where the council agrees</h2>
+
+<div class="card">
+  <span class="tag t-agree">High confidence</span>
+  <h3 style="margin-top:0">1. The prompt contradicts the doctrine</h3>
+  <p>Four of five advisors found this independently, without being pointed at it. There is no bug
+  to fix — the instruction is being followed. It is the instruction that's wrong, per context.</p>
+</div>
+
+<div class="card">
+  <span class="tag t-agree">High confidence</span>
+  <h3 style="margin-top:0">2. The benchmark cannot see the reported failure</h3>
+  <p>17 cases, none over ~170 words, none an AI-agent prompt, scored as a percentage by an LLM
+  judge. The complaint is about 200&ndash;300 word technical dictation, which is untested.
+  <strong>Verified worse than stated:</strong> <code>bench.py</code> defaults to &ldquo;every
+  loaded model&rdquo; and the committed results cover only <code>qwen3-0.6b</code> and
+  <code>qwen3-1.7b</code> — while <code>LLMCleaner.firstModel(at:)</code> leads its priority list
+  with <code>qwen3-4b-2507</code>. The shipped model has never appeared in a committed run.</p>
+</div>
+
+<div class="card">
+  <span class="tag t-agree">High confidence</span>
+  <h3 style="margin-top:0">3. The guards enforce length, not fidelity</h3>
+  <p><code>looksTruncated</code> catches collapse and inflation. It cannot catch the actual
+  failure: a 1:1-length output that swapped content words or silently dropped one of three
+  enumerated options. Under today's guards the doctrine is decorative.</p>
+</div>
+
+<div class="card">
+  <span class="tag t-agree">High confidence</span>
+  <h3 style="margin-top:0">4. &ldquo;Only where the fit is obvious&rdquo; is not computable</h3>
+  <p>Unanimous: constrain sound-alike substitution to a closed set
+  (<code>draftTerms &cup; vocabulary</code>) rather than leaving it to a 4B model's judgment. The
+  only disagreement is whether enforcement lives in the prompt or in Swift. Both, ideally.</p>
+</div>
+
+<h2>Advisor positions at a glance</h2>
+
+<div class="grid">
+  <div class="row">
+    <div class="who">First Principles <small>strongest — 5/5 reviewers</small></div>
+    <div class="pos">One stage is doing two jobs with different verifiability. Deletion is checkable;
+    generation is not. Delete-only mode for coding, plus a subsequence invariant that replaces three
+    heuristics. Prompt-tuning ranks last.</div>
+  </div>
+  <div class="row">
+    <div class="who">The Executor <small>best diff-level plan</small></div>
+    <div class="pos">Two static prefixes selected by category — cache survives, category lands at the
+    top. Write the long bench cases first; everything else is unmeasurable without them. Skip
+    chunking, two-pass, bigger models.</div>
+  </div>
+  <div class="row">
+    <div class="who">The Contrarian <small>sharpest on the eval</small></div>
+    <div class="pos">The complaint is unfalsifiable with the current ruler. Guards don't enforce the
+    doctrine. Don't call the LLM at all on the coding path. Parity with Flow is unwinnable on 4B
+    local — pick fidelity instead.</div>
+  </div>
+  <div class="row">
+    <div class="who">The Outsider <small>named the framing error</small></div>
+    <div class="pos">This isn't cleanup, it's ghostwriting. A coding-agent prompt doesn't need to be
+    a well-formed sentence at all. And <code>coding</code> as one bucket is the actual bug — a
+    terminal and a Claude Code chat box want opposite things.</div>
+  </div>
+  <div class="row">
+    <div class="who">The Expansionist <small>biggest blind spot — 5/5 reviewers</small></div>
+    <div class="pos">Mine HistoryStore for a personal corpus; autolearn vocabulary; LoRA fine-tune a
+    0.6b. Expand the sound-alike rule via n-best rescoring. Reviewers: answers &ldquo;how do we win a
+    category&rdquo; instead of &ldquo;why is my text mangled today.&rdquo;</div>
+  </div>
+</div>
+
+<h2>Where the council clashes</h2>
+
+<div class="card">
+  <span class="tag t-clash">Unresolved by the advisors</span>
+  <h3 style="margin-top:0">Is sound-alike substitution the best rule or the worst?</h3>
+  <p>The Contrarian calls it a licence to rewrite correct words and wants it out of the prompt,
+  reimplemented as phonetic matching in Swift. The Expansionist calls it the highest-value line and
+  wants it <em>expanded</em>. Both are right about different halves: the <em>goal</em> is the
+  highest value in the prompt — recognition is the measured bottleneck — and the
+  <em>mechanism</em> is the worst, because it's unbounded model discretion.
+  <strong>Resolution: keep the goal, close the set.</strong></p>
+</div>
+
+<div class="card">
+  <span class="tag t-clash">Unresolved by the advisors</span>
+  <h3 style="margin-top:0">LLM or no LLM on the coding path?</h3>
+  <p>The Contrarian says skip the model entirely: <code>ruleClean</code> plus symbol expansion is
+  ~40 lines and cannot mangle <code>FLAG_RETRY_V2</code>. First Principles and the Executor keep the
+  model but shrink its job. The Contrarian's version is cheaper and strictly safe, but gives up the
+  two things regex can't do: &ldquo;dash dash verbose&rdquo; &rarr; <code>--verbose</code> across
+  arbitrary phrasings, and sentence boundaries in a 250-word run-on.
+  <strong>Resolution: keep the model, constrain it structurally — and the Contrarian's version is
+  the correct fallback when the invariant fails.</strong></p>
+</div>
+
+<div class="card">
+  <span class="tag t-clash">Settled on review</span>
+  <h3 style="margin-top:0">Is the KV-cache layout costing quality?</h3>
+  <p>The Contrarian wants it deleted as premature optimization in a pipeline where &ldquo;neither
+  stage is the bottleneck.&rdquo; The Executor showed this is a false tradeoff: two static prefixes
+  selected by category keep the cache <em>and</em> put the category at the top of the prompt.
+  <strong>The Executor is right; the cache costs nothing here.</strong> And with a sub-600ms budget
+  it is now load-bearing.</p>
+</div>
+
+<h2>Blind spots the peer review caught</h2>
+
+<div class="card">
+  <span class="tag t-blind">Missed by all five advisors</span>
+  <h3 style="margin-top:0">The few-shots undercut any low-touch prompt you write</h3>
+  <p>Every advisor rewrote prose rules and left the four demonstrations alone. In a 4B model,
+  demonstrations beat instructions — a &ldquo;change nothing else&rdquo; rule paired with exemplars
+  showing heavy rewriting loses. Two reviewers caught this independently.</p>
+</div>
+
+<div class="card">
+  <span class="tag t-blind">Missed by all five advisors</span>
+  <h3 style="margin-top:0">In-context length bias is the mechanism behind a length-specific complaint</h3>
+  <p><strong>Verified:</strong> the longest demonstrated output in <code>LLMCleaner.fewShot</code>
+  is the bug-report example, roughly 55 words. The failing inputs are 200&ndash;300 words —
+  4&ndash;6&times; the longest thing the model has ever been shown. It imitates demonstrated output
+  length and condenses. This explains why the complaint is <em>length</em>-specific while every
+  proposed fix is <em>category</em>-specific, and it puts chunking — which four advisors dismissed —
+  back on the table as the mechanism-matched fix.</p>
+</div>
+
+<div class="card">
+  <span class="tag t-blind">Missed by all five advisors</span>
+  <h3 style="margin-top:0">Three more, cheap</h3>
+  <ul style="margin-bottom:0">
+    <li>The 600-char draft sitting in the final user message immediately before the transcript
+    invites imitation and continuation, whatever the label says. It may itself be causing rewriting.</li>
+    <li><code>temperature 0.2</code> should be 0 for a deterministic transform. <code>bench.py</code>
+    currently scores every rep precisely <em>because</em> output isn't deterministic.</li>
+    <li>Nobody proposed the only real parity ruler: run the same ten dictations through Wispr Flow
+    and diff. The stated goal is 1:1 parity with an unmeasured target.</li>
+  </ul>
+</div>
+
+<h2>Added after the council: the latency budget</h2>
+
+<div class="card plain">
+  <span class="tag t-new">Constraint the council never saw</span>
+  <p>A sub-500&ndash;600ms end-to-end target is not a nice-to-have here — it disqualifies most of
+  the &ldquo;bigger model&rdquo; and &ldquo;two-pass&rdquo; options outright, and it re-ranks the
+  recommendation. With the transcription tail measured at ~140ms, cleanup gets roughly
+  <strong>360&ndash;460ms</strong>.</p>
+  <div class="scroller">
+  <table>
+    <thead><tr><th>Model</th><th>Median</th><th>Worst</th><th>Fits the budget?</th></tr></thead>
+    <tbody>
+      <tr><td>qwen3-0.6b-mlx</td><td class="num">250ms</td><td class="num">1050ms</td><td class="under">At the median, yes. Tail breaks it.</td></tr>
+      <tr><td>qwen3-1.7b</td><td class="num">670ms</td><td class="num">5420ms</td><td class="over">No — over budget before the tail.</td></tr>
+      <tr><td>qwen3-4b-2507 <em>(shipped default)</em></td><td class="num">~600ms</td><td class="num">unmeasured</td><td class="over">No — and never benchmarked.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Two things follow. First, <strong>the shipped default is over budget</strong> and nobody has
+  measured it. Second, and more useful: <strong>a hard deadline beats a model choice for the
+  tail.</strong> Race the cleanup call against a timer — if it hasn't returned in ~400ms, emit
+  <code>ruleClean(raw)</code> and move on. That converts every latency outlier into a
+  fidelity-safe fallback, which is exactly what the doctrine asks for, and it makes a
+  &ldquo;fast&rdquo; setting an honest promise rather than an average.</p>
+  <p>There's a happy convergence worth naming: the low-touch job is <em>shorter output</em>, which
+  is <em>fewer decode tokens</em>, which is <em>faster</em>. Delete-and-repunctuate is a latency
+  win and a fidelity win at the same time. The over-editing fix and the speed fix are the same fix.</p>
+</div>
+
+<h2>The model-tier UI</h2>
+
+<div class="card plain">
+  <span class="tag t-new">Recommendation</span>
+  <p><strong>Two options, not three.</strong> Three forces a judgment nobody has data for yet, and
+  the middle one gets picked by default while meaning nothing. Two is also all you can currently
+  make honest: the bench distinguishes 0.6b from 1.7b/4b, and nothing in between.</p>
+  <p>Word them as outcomes, not model ids — CLAUDE.md is explicit that endpoint names, model ids,
+  and fallback states are not information a user acts on. Provider and model already live in
+  Advanced, so that's where this belongs, as the one control for the job:</p>
+  <blockquote>Cleanup
+  ( ) Fast — cleans up in about a quarter second
+  ( ) Careful — slower, better on long dictation</blockquote>
+  <p>Do <em>not</em> ship this before the long bench cases exist. Right now &ldquo;more
+  accurate&rdquo; is unsubstantiated — on the committed numbers the bigger model scores
+  <em>lower</em> (0.6b at 90%, 1.7b at 83%), so a &ldquo;slower and more accurate&rdquo; label
+  would be a claim the data contradicts. Build the ruler, find out which model actually wins on
+  200&ndash;300 word technical dictation, and let the labels say what's true. If it turns out the
+  small model wins everywhere once the job is smaller, the right UI is <em>no control at all</em> —
+  which would be the best outcome available and is entirely consistent with this project's UI
+  doctrine.</p>
+</div>
+
+<h2>The recommendation</h2>
+
+<div class="verdict">
+  <p class="lede" style="margin-bottom:20px">Adopt <strong>First Principles' diagnosis</strong> with
+  <strong>the Executor's diff</strong>, add the two mechanisms the reviewers surfaced, and let the
+  latency budget kill the expensive options.</p>
+  <ol class="rank">
+    <li><strong>Bench cases that contain the failure.</strong> 6&ndash;8 real 200&ndash;300 word
+      dictations — agent prompts, design-doc rambles, enumerated options — hand-corrected into
+      references. Run against <code>qwen3-4b-2507</code> so the eval finally covers production.
+      <span class="m">Measure: content-word recall (fraction of raw non-stopword tokens surviving) + a substitution count + p95 latency, not just median.</span></li>
+    <li><strong>Two static prefixes selected by category.</strong>
+      <code>if category == .coding</code> picks a low-touch prefix; everything else keeps today's.
+      Cache survives, category lands at the top of the prompt. Delete the self-correction rule and
+      the &ldquo;rewrite into coherent sentences&rdquo; rule from the low-touch variant entirely.
+      <span class="m">Measure: content-word recall on the new cases, before/after.</span></li>
+    <li><strong>The subsequence guard.</strong> Cleaned tokens must be a subsequence of raw tokens,
+      modulo case, punctuation, and the spoken-symbol map. Fail &rarr; emit
+      <code>ruleClean(raw)</code>. One function replacing <code>looksTruncated</code>'s ratio
+      heuristics on the low-touch path — enforcing the doctrine instead of decorating it.
+      <span class="m">Measure: how often it fires. Near-zero means the prompt is landing; a high rate means it isn't.</span></li>
+    <li><strong>A hard cleanup deadline.</strong> ~400ms, then fall back to
+      <code>ruleClean(raw)</code>. Makes the latency target a guarantee rather than an average, and
+      reuses the fallback path you already trust.
+      <span class="m">Measure: p95 end-to-end from key release to text at cursor; deadline hit rate.</span></li>
+    <li><strong>Long + coding few-shots.</strong> At least one demonstration whose output runs 200+
+      words, and one spoken AI-agent prompt with enumerated options preserved intact. No prompt
+      wording fixes in-context length bias — only a longer demonstration does.
+      <span class="m">Measure: whether recall on the long cases moves independently of change #2. Watch prefill cost — a long few-shot is cached, but it isn't free.</span></li>
+    <li><strong>Close the sound-alike set.</strong> Substitute only words present in the
+      already-typed text or the vocabulary list, enforced by the same guard, whose allowed alphabet
+      becomes <code>raw &cup; draftTerms &cup; vocab &cup; punctuation</code>.
+      <span class="m">Measure: substitution count on cases containing correct-but-unusual words.</span></li>
+    <li><strong>Cheap wins, same afternoon.</strong> Capture the draft at recording END;
+      <code>temperature 0</code>; split <code>coding</code> into <code>terminal</code> (short,
+      symbol-heavy) and <code>agent_prompt</code> (long prose, zero rewriting).
+      <span class="m">A Claude Code chat box and a shell prompt want opposite things and currently share a bucket.</span></li>
+    <li><strong>Then, and only then.</strong> Length-conditional chunking if recall still degrades
+      with length; raise the 50-term <code>contextualStrings</code> cap and measure it (nobody has);
+      vocabulary autolearning from HistoryStore edits — the Expansionist's one genuinely cheap idea.
+      <span class="m">Note: chunking serializes on one local model server, so it trades directly against the latency budget. Measure both.</span></li>
+  </ol>
+  <p class="killed" style="margin-bottom:0"><strong>Explicitly rejected:</strong> the LoRA fine-tune
+  (all five reviewers flagged it as the most expensive route to &ldquo;stop rewriting my words,&rdquo;
+  and it would train against a ruler that can't see the failure); the &ldquo;Agent Prompt&rdquo;
+  structuring mode (more rewriting, aimed at the context that wants less); deleting the KV-cache
+  layout (a false tradeoff, and now load-bearing for latency); two-pass cleanup (doubles the call in
+  a 400ms budget); and n-best rescoring as described — <code>SpeechAnalyzer</code> is the primary
+  path, and the alternatives API the Expansionist assumed belongs to
+  <code>SFSpeechRecognizer</code>. Verify before planning on it.</p>
+</div>
+
+<p class="lede">One correction to the framing that started this: <em>&ldquo;replicate Wispr Flow
+1:1&rdquo;</em> is the wrong target if Flow is running a frontier cloud model. The winnable game is
+<strong>fidelity on technical dictation</strong> — being the tool that never mangles a prompt — not
+matching Flow's prose polish with a 4B local model inside 400ms.</p>
+
+<h2>The one thing to do first</h2>
+
+<p class="first">Record 6&ndash;8 real 200&ndash;300 word dictations — the exact kind that fail,
+dictated normally into Claude Code and a terminal — hand-correct each into a reference, add them to
+<code>bench/cases.json</code>, and run the bench against <code>qwen3-4b-2507</code> scoring
+content-word recall and p95 latency. You will learn in an afternoon whether the failure is the
+rewrite rule, the length bias, or the model — and whether the fast/careful UI has anything true to
+say. Every other change on this list becomes measurable instead of plausible.</p>
+
+<h2>Full advisor responses</h2>
+
+<details>
+  <summary>The First Principles Thinker <span>strongest, 5/5</span></summary>
+  <div class="body">
+    <p>You're asking how to tune a rewriter. The prior question is: <strong>who consumes this
+    text?</strong> When he dictates a prompt for an AI coding agent, the consumer is another LLM that
+    does not care about &ldquo;um.&rdquo; Cleanup there has ~zero upside and unbounded downside. You
+    are running a lossy generative transform to serve a reader who doesn't exist.</p>
+    <p>So the root cause isn't the rewrite instruction, the self-correction rule, or model size. It's
+    that <strong>one stage is doing two categorically different jobs</strong>: <em>deletion</em>
+    (fillers, stutters, false starts, spoken-symbol mapping) and <em>generation</em> (re-wording into
+    sentences the speaker didn't say). Deletion is verifiable and provably lossless-in-meaning.
+    Generation is unverifiable, and no prompt sentence makes a 4B model reliably self-police it. All
+    your guards — looksTruncated, edit-distance ideas, ellipsis bans — are attempts to
+    <em>detect</em> generation after the fact. Stop detecting it. Make it structurally impossible.</p>
+    <p>Also note your prompt contradicts your own doctrine. Doctrine: losing words is the worst
+    outcome. Prompt: &ldquo;rewrite disfluent speech&hellip; should read like text the speaker would
+    have typed.&rdquo; Those cannot both be true. Pick, per context.</p>
+    <p>Ranked:</p>
+    <ol>
+      <li><strong>Coding/AI-prompt category &rarr; delete-only mode.</strong> Same model, different
+      prompt: remove fillers and abandoned restarts, add punctuation/capitalization, map spoken
+      symbols. <em>Change no other word.</em> Then validate: cleaned tokens must be a subsequence of
+      raw tokens (modulo punctuation/case/symbol map). Fail &rarr; emit raw. That guard is one
+      function and replaces three heuristics.</li>
+      <li><strong>Ship raw-vs-cleaned undo</strong> (hotkey restores verbatim). This dissolves the
+      aggressiveness question — you stop needing to be right.</li>
+      <li><strong>Then</strong> spend on recognition, which you measured as the bottleneck.</li>
+      <li>Prompt-tuning the current rewriter: last. You're polishing the wrong stage.</li>
+    </ol>
+  </div>
+</details>
+
+<details>
+  <summary>The Executor <span>best diff-level plan</span></summary>
+  <div class="body">
+    <p><strong>Monday morning, in order. Each item is a diff you can ship the same day.</strong></p>
+    <p><strong>1. Write the 6 long AI-prompt bench cases first (2 hours).</strong> You have 17 cases
+    and zero of the failure mode you're complaining about. Every change below is unmeasurable until
+    this exists. Score by content-word recall, not vibes: fraction of raw content words present in
+    output. That's the metric, not &ldquo;quality 90%.&rdquo;</p>
+    <p><strong>2. Two system prompts, selected by category (30 lines of Swift).</strong> Not a
+    runtime-configurable aggressiveness dial — one <code>if category == .coding</code> picking one of
+    two static strings. Both prefixes stay cache-warm; you get category at the <em>top</em> of the
+    prompt for free, fixing (e). The coding variant:</p>
+    <blockquote>Cleanup rules (low-touch mode): Remove fillers, stutters, and immediately-repeated words. Add punctuation and capitalization. Fix only clearly-wrong word forms. Do NOT reorder words, do NOT merge or split sentences, do NOT rephrase. Every content word in the transcript appears in the output unless it is a filler or a stutter. When unsure, leave it alone.</blockquote>
+    <p>Delete the self-correction rule and the &ldquo;rewrite into coherent sentences&rdquo; rule from
+    this variant entirely. &ldquo;Judge it by whether the speaker replaced it&rdquo; is not a thing a
+    4B model does — it's an instruction you'd write for yourself.</p>
+    <p><strong>3. Constrain the sound-alike rule to a closed set.</strong> &ldquo;Only substitute a
+    word that appears in the already-typed text or the user's vocabulary list.&rdquo; Enforce it in
+    Swift: reject any output token not in <code>raw &cup; draftTerms &cup; vocab &cup;
+    punctuation</code>. That's your edit-distance guard and it's cheap.</p>
+    <p><strong>4. Add two coding few-shots</strong> to the coding prefix: one spoken AI-agent prompt
+    with enumerated options preserved, one with <code>--force</code>/<code>.env</code>.</p>
+    <p><strong>5. Snapshot draft at recording END.</strong> One-line move of the ContextDetector
+    call.</p>
+    <p>Skip chunking, two-pass, constrained decoding, bigger models. Re-run the bench after 1&ndash;4
+    before touching architecture.</p>
+  </div>
+</details>
+
+<details>
+  <summary>The Contrarian <span>sharpest on the eval</span></summary>
+  <div class="body">
+    <p><strong>The complaint is unfalsifiable with your current eval, and that's the fatal flaw.</strong>
+    17 short cases, self-scored &ldquo;90% quality,&rdquo; and <em>not one</em> of them is a 300-word
+    dictated agent prompt — the exact input he's complaining about. Every prompt tweak below this line
+    is guesswork until the benchmark contains 10 real long technical dictations scored by content-word
+    edit distance vs. his own hand-corrected reference. Fix the ruler before the thing being
+    measured.</p>
+    <p>Second: your guards don't enforce your doctrine. <code>looksTruncated</code> catches
+    <em>length</em> collapse only. A model that returns 1:1 word count while swapping
+    &ldquo;quarry&rdquo;&rarr;&ldquo;query&rdquo;, &ldquo;prod&rdquo;&rarr;&ldquo;proud&rdquo;, and
+    silently deleting one of three enumerated options passes every guard you have. That's precisely
+    the reported failure. Add a content-word Jaccard/edit-distance guard — reject if &gt;15% of
+    non-stopword tokens changed — or admit the doctrine is decorative.</p>
+    <p>Third, the uncomfortable one: for <code>coding</code>, <strong>don't call the LLM.</strong>
+    <code>ruleClean</code> + punctuation + symbol expansion is a ~40-line Swift function, 0ms, and
+    cannot mangle <code>FLAG_RETRY_V2</code>. Ship that behind the category check, measure it against
+    the 4B, and I suspect it wins on the cases he cares about. You are paying 300ms and all your
+    fidelity risk for polish he explicitly doesn't want.</p>
+    <p>On (b): &ldquo;Only where the fit is obvious&rdquo; is not a computable instruction for a 4B
+    model — it's a licence. Move sound-alike correction into Swift as a phonetic match
+    <em>restricted to draftTerms + custom vocabulary</em>. Closed set, auditable, no drift.</p>
+    <p>On (e): you optimized 300ms in a pipeline where &ldquo;neither is the bottleneck.&rdquo; That
+    KV layout is premature optimization that demonstrably degrades the coding path. Delete it.</p>
+    <p>And (g): Flow uses a frontier cloud model. 4B local won't match it. Pick fidelity, not
+    parity.</p>
+  </div>
+</details>
+
+<details>
+  <summary>The Outsider <span>named the framing error</span></summary>
+  <div class="body">
+    <p><strong>The framing itself is what confuses me.</strong> You call this a &ldquo;cleanup
+    stage&rdquo; but the prompt says &ldquo;rewrite disfluent speech into complete, coherent
+    sentences&hellip; read like text the speaker would have typed.&rdquo; That is not cleanup, that's
+    ghostwriting. And your doctrine says losing the user's words is the worst outcome. The prompt and
+    the doctrine say opposite things. The model isn't misbehaving — it's obeying rule 3. Everything
+    downstream (guards, edit-distance ideas, two-pass) is compensating for an instruction you chose to
+    give.</p>
+    <p>Second confusion: <strong>why does a prompt for a coding agent need to be a well-formed
+    sentence at all?</strong> The recipient is a machine that reads disfluency better than a human
+    does. Nobody is judging your grammar. So for that context the right output is: fillers gone,
+    punctuation added, words untouched. That's the whole feature. You don't need a smarter model, you
+    need a smaller job.</p>
+    <p>Third: <strong><code>coding</code> as one bucket is the actual bug.</strong> A terminal (short,
+    symbol-heavy, wants &ldquo;dash dash force&rdquo;) and a Claude Code chat box (long prose, wants
+    zero rewriting) have opposite needs and share a category. Split them.
+    <code>agent_prompt</code> gets: &ldquo;Remove fillers and stutters. Add punctuation and
+    capitalization. Change nothing else. Do not reorder, merge, or reword. Do not resolve
+    self-corrections.&rdquo;</p>
+    <p>Fourth, and biggest: <strong>your benchmark doesn't test the complaint.</strong> 17 cases,
+    short ones, &ldquo;90% quality&rdquo; scored by whom? The owner's pain is long technical dictation
+    and you have no long technical dictation case. Record ten real 200-word agent-prompt dictations,
+    and score one number: fraction of the speaker's content words that survive. Optimize that. Right
+    now you're tuning against a test that can't see the failure.</p>
+    <p>Sound-alike rule: keep it, but only for terms present in draftTerms or vocabulary. Unbounded,
+    it's a licence.</p>
+  </div>
+</details>
+
+<details>
+  <summary>The Expansionist <span>biggest blind spot, 5/5</span></summary>
+  <div class="body">
+    <p><strong>The undervalued asset is HistoryStore, and it's sitting there doing nothing.</strong></p>
+    <p>Every dictation already stores raw + cleaned. Add &ldquo;user edited the inserted text within
+    30s&rdquo; capture and you own a paired corpus of <em>his</em> speech &rarr; <em>his</em> preferred
+    text. That is the one thing Wispr Flow cannot have: personalization. Two payoffs, escalating:</p>
+    <ol>
+      <li><strong>Autolearn vocabulary</strong> (ship this week). Any token the user typed that wasn't
+      in the transcript, and any correction pair, goes into contextualStrings permanently. This fixes
+      <code>.env</code>/<code>FLAG_RETRY_V2</code> at the recognizer, where it belongs. Raise the cap
+      to whatever SpeechAnalyzer tolerates — test 200, 500. Nobody measured 50; it's a guess.</li>
+      <li><strong>Fine-tune a 0.6b LoRA on 500 of his own pairs</strong> (this quarter). Then the
+      prompt shrinks to nothing, the KV-cache debate evaporates, latency halves, and over-editing
+      stops being a prompt-wrestling problem because the model has <em>learned his register</em>. A
+      local dictation app with a self-training cleanup model is a category nobody occupies.</li>
+    </ol>
+    <p><strong>Expand the sound-alike rule, don't retreat from it.</strong> It's the highest-value
+    line in the prompt and it's crippled by being a vibe instead of a mechanism. SFSpeechRecognizer
+    gives you n-best alternatives — score them against draftTerms/open-file symbols and pick the
+    winner deterministically. Recognition is the measured bottleneck; this is where the ceiling is.</p>
+    <p><strong>Then go bigger than parity.</strong> Dictating prompts for coding agents is a
+    fast-growing use with zero purpose-built tooling. Ship two modes on the same pipeline:
+    <strong>Verbatim</strong> (delete-and-repunctuate only, edit-distance-gated) for code, and opt-in
+    <strong>Agent Prompt</strong> that structures a ramble into goal/constraints/files. Users want
+    <em>less</em> rewriting for code and <em>more</em> for specs — one setting, two products.</p>
+    <p>Also: capture the draft at END, add coding few-shots (free), and surface the guard as a visible
+    &ldquo;revert to raw&rdquo; hotkey — that's trust, not plumbing.</p>
+  </div>
+</details>
+
+<h2>Peer review highlights</h2>
+
+<details>
+  <summary>All five reviews <span>anonymized during review</span></summary>
+  <div class="body">
+    <p><strong>Mapping:</strong> A = Expansionist, B = Contrarian, C = Executor, D = First
+    Principles, E = Outsider. Reviewers saw only the letters.</p>
+    <p><strong>Strongest — 5/5 chose D.</strong> &ldquo;The only one that names the real defect as a
+    <em>category</em> error rather than a tuning error.&rdquo; &ldquo;Its subsequence check is one
+    function that replaces <code>looksTruncated</code>, the edit-distance guard B wants, and the
+    closed-set guard C/E want.&rdquo; &ldquo;C is the better Monday checklist; D is the better
+    diagnosis. Pair them.&rdquo; &ldquo;E duplicates D with less rigor.&rdquo;</p>
+    <p><strong>Biggest blind spot — 5/5 chose A.</strong> &ldquo;The only response that fixes nothing
+    this week.&rdquo; &ldquo;Answers a product-strategy question nobody asked.&rdquo; &ldquo;A LoRA on
+    500 self-collected pairs is unvalidatable because A never notices the benchmark can't see the
+    failure — you'd be training against a broken ruler.&rdquo; Four of five independently flagged that
+    A's n-best rescoring plan cites <code>SFSpeechRecognizer</code> while the primary path is
+    <code>SpeechAnalyzer</code>.</p>
+    <p><strong>What all five missed.</strong> The four static few-shots are all short — in-context
+    length bias, not rule 3, may be the actual mechanism, and no prompt wording fixes it. Nobody
+    proposed measuring degradation <em>as a function of input length</em>, though length is the one
+    variable the owner named. Chunking was asked in (d) and engaged by nobody. The benchmark tests
+    0.6b/1.7b while production runs 4b. <code>temperature 0.2</code> should be 0. The 600-char draft
+    in the final user message may itself invite imitation. And nobody proposed running the same audio
+    through Flow and diffing — the only real parity metric.</p>
+  </div>
+</details>
+
+<footer>
+  <p>Council run 30 July 2026, 15:22. Five advisors and five peer reviewers, each an independent
+  sub-agent. Two peer-review claims were verified against source before synthesis: the
+  benchmark/production model mismatch and the few-shot length ceiling — both confirmed. The latency
+  budget and model-tier UI sections were added after the council closed, from a constraint the
+  advisors never saw.</p>
+  <p>Full transcript: <code>debates/council-transcript-20260730-152217.md</code></p>
+</footer>
+
+</div>

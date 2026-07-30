@@ -215,26 +215,50 @@ final class RecordingPillController {
         isFullScreen(screen) ? screen.frame : screen.visibleFrame
     }
 
-    /// A layer-0 window covering the whole screen is a fullscreen space: a normal window cannot
-    /// otherwise extend under the menu bar. Window *names* need Screen Recording permission,
-    /// geometry does not, so this stays a metadata read. Our own panels sit above layer 0.
+    /// Whether an ordinary window is covering a strip that `visibleFrame` is still reserving, which
+    /// is the actual question: if something is drawn over the Dock's strip then the Dock is not
+    /// there and the pill should drop past it.
+    ///
+    /// Measured against `visibleFrame`, not the full screen. Matching the full screen exactly was
+    /// the obvious test and it never fired: on a notched display a fullscreen window gets the area
+    /// *below* the camera, so it is a menu bar's height shorter than the screen. A merely zoomed
+    /// window is exactly `visibleFrame` tall, so "taller than visibleFrame" separates the two
+    /// cleanly whether or not there is a notch, and whether the Dock is pinned or on a side.
+    ///
+    /// When the Dock is hidden this can fail to fire on a notched display — and it does not matter
+    /// there, because `visibleFrame` already reaches the bottom of the screen.
+    ///
+    /// Window *names* need Screen Recording permission; geometry does not, so this stays a metadata
+    /// read. Our own panels sit above layer 0 and are never counted.
     private static func isFullScreen(_ screen: NSScreen) -> Bool {
         guard let windows = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
         else { return false }
+        let visible = screen.visibleFrame
         return windows.contains { window in
             guard window[kCGWindowLayer as String] as? Int == 0,
-                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
-                  let width = bounds["Width"], let height = bounds["Height"]
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let width = (bounds["Width"] as? NSNumber)?.doubleValue,
+                  let height = (bounds["Height"] as? NSNumber)?.doubleValue
             else { return false }
-            return width >= screen.frame.width && height >= screen.frame.height
+            return height > visible.height + 1 && width >= visible.width - 1
         }
     }
+
+    private var lastLayoutFrame: CGRect?
 
     func reposition() {
         // Follow the screen the user is working on (keyboard focus), not the launch screen.
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let frame = Self.layoutFrame(screen)
+        // Logged on change only, because getting this wrong is invisible from the code: it depends
+        // on the Dock's setting, whether the display has a notch, and what the frontmost app does
+        // in fullscreen. If the bar is at the wrong height, this line says which frame it chose.
+        if frame != lastLayoutFrame {
+            lastLayoutFrame = frame
+            logLine("layout frame=\(frame.debugDescription) screen=\(screen.frame.debugDescription) "
+                    + "visible=\(screen.visibleFrame.debugDescription)")
+        }
         let size = panel.frame.size
         let target = anchor.origin(size: size, in: frame)
         if panel.frame.origin != target {
