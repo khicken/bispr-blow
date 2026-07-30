@@ -214,13 +214,16 @@ struct BrandLockup: View {
 /// Sidebar footer: what the app is doing right now, with a breathing dot while live.
 struct LiveStatus: View {
     let state: DictationController.State
+    /// Read here rather than passed in, so the label follows an edited binding live without
+    /// the sidebar having to know about shortcuts.
+    @StateObject private var settings = AppSettings.shared
 
     private var live: Bool { state != .idle }
 
     private var label: String {
         switch state {
-        case .idle: return "Hold fn to dictate"
-        case .recording(let locked): return locked ? "Locked — tap fn to finish" : "Listening"
+        case .idle: return settings.holdHint
+        case .recording(let locked): return locked ? settings.lockedHint : "Listening"
         case .processing: return "Cleaning up"
         }
     }
@@ -299,6 +302,7 @@ struct Page<Content: View>: View {
 
 struct HomeView: View {
     @ObservedObject var history: HistoryStore
+    @StateObject private var settings = AppSettings.shared
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -327,8 +331,17 @@ struct HomeView: View {
         return streak
     }
 
+    /// Names the user's own binding: "fn" stops being the answer the moment they rebind it.
+    private var subtitle: String {
+        guard settings.dictationShortcutName != nil else {
+            return "Set a dictation shortcut in Settings to get started."
+        }
+        let lock = settings.shortcuts(for: .pushToTalk).isEmpty ? "" : " Double-tap to go hands-free."
+        return "\(settings.holdHint).\(lock)"
+    }
+
     var body: some View {
-        Page(title: greeting, subtitle: "Hold fn to dictate. Double-tap to go hands-free.") {
+        Page(title: greeting, subtitle: subtitle) {
             HStack(spacing: 12) {
                 StatCard(value: "\(history.totalWords)", label: "Words")
                 StatCard(value: averageWPM > 0 ? "\(averageWPM)" : "0", label: "Avg WPM")
@@ -338,7 +351,8 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionLabel("Recent")
                 if history.entries.isEmpty {
-                    EmptyHint(text: "Hold fn and say something.")
+                    EmptyHint(text: settings.holdPhrase.map { "\($0) and say something." }
+                        ?? "Set a dictation shortcut in Settings.")
                 } else {
                     VStack(spacing: 6) {
                         ForEach(history.entries.prefix(8)) { entry in

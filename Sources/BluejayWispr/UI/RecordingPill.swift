@@ -208,7 +208,9 @@ struct PillView: View {
         Group {
             if hovering {
                 HStack(spacing: 7) {
-                    PillCircleButton(help: "Dictate hands-free (or hold fn)") {
+                    PillCircleButton(help: AppSettings.shared.holdPhrase
+                        .map { "Dictate hands-free (or \($0.prefix(1).lowercased() + $0.dropFirst()))" }
+                        ?? "Dictate hands-free") {
                         controller.startHandsFree()
                     } label: {
                         Image(systemName: "mic.fill")
