@@ -1,7 +1,13 @@
 # Bluejay Wispr
 
-A local dictation app for macOS. Hold fn, speak, release, and cleaned-up text
-lands at your cursor. Everything runs on the machine.
+A local dictation app for macOS. Hold your shortcut, speak, release, and
+cleaned-up text lands at your cursor. Everything runs on the machine.
+
+Shortcuts are configurable per action — push to talk, hands-free, dictate and
+send, cancel — bound to a key plus modifiers or to a mouse button, and stored in
+`AppSettings.bindings`. fn is the shipped default for push to talk and Esc for
+cancel, so "hold fn" is a default rather than the mechanic. Never write user
+copy that names fn; read `AppSettings.holdPhrase` or `holdHint` instead.
 
 Build, install, and relaunch with `./build.sh`. It installs one copy to
 /Applications on purpose: two copies means two fn event taps fighting.
@@ -18,10 +24,13 @@ worktree" belongs in a tooltip on the toggle. Endpoint names, model ids, and
 fallback states are not information a user acts on, so they do not get UI. If
 you need them for debugging, log them.
 
-**Advanced always goes last and starts collapsed.** Provider and model live
-there. Anything a normal user never touches goes there too. It is the final
-section on the page, never the first, and it never gets a topic-specific header
-like "AI cleanup" wrapped around it.
+**Advanced goes last, as an ordinary section.** Provider and model live there,
+along with anything a normal user never touches. It is the final section on the
+page, never the first, and it never gets a topic-specific header like "AI
+cleanup" wrapped around it. It used to start collapsed; it does not any more.
+Three rows behind a disclosure nobody else on the page had cost a click and read
+as a different kind of control, when the point was only "you can ignore this".
+Order is what says a section is secondary. Nothing in this app collapses.
 
 **One control per job.** A field that accepts a list does not need a separate
 Bulk Add button. A row that can be clicked does not need a copy icon. Before

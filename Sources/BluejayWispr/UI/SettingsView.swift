@@ -11,7 +11,6 @@ struct SettingsView: View {
     @State private var micName = AudioRecorder.defaultInputDeviceName()
     @State private var devices = AudioRecorder.inputDevices()
     @State private var models: [String] = []
-    @State private var showAdvanced = false
 
     private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     private let cleaner = LLMCleaner()
@@ -77,54 +76,35 @@ struct SettingsView: View {
         }
     }
 
-    /// Which model does the cleaning is plumbing, so it sits last and folded away.
+    /// Which model does the cleaning is plumbing, so it sits last — but it is a section like every
+    /// other section. It was the one collapsible thing in the app, hiding three rows behind a
+    /// disclosure nothing else on the page had, which cost a click and read as a different kind of
+    /// control rather than as "the part you can ignore".
     private var advanced: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Button {
-                withAnimation(.bjSoft) { showAdvanced.toggle() }
-            } label: {
-                HStack(spacing: 5) {
-                    SectionLabel("Advanced")
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(Theme.inkSubtle)
-                        .rotationEffect(.degrees(showAdvanced ? 90 : 0))
-                    Spacer()
+        settingsGroup("Advanced") {
+            Picker("Provider", selection: $settings.provider) {
+                ForEach(AppSettings.Provider.allCases) { provider in
+                    Text(provider.rawValue).tag(provider)
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .handCursor()
+            .pickerStyle(.menu)
+            .frame(maxWidth: 320, alignment: .leading)
 
-            if showAdvanced {
-                VStack(alignment: .leading, spacing: 10) {
-                    Picker("Provider", selection: $settings.provider) {
-                        ForEach(AppSettings.Provider.allCases) { provider in
-                            Text(provider.rawValue).tag(provider)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 320, alignment: .leading)
-
-                    if settings.provider != .custom, settings.provider != .off, !models.isEmpty {
-                        Picker("Model", selection: $settings.preferredModel) {
-                            Text("Automatic").tag("")
-                            ForEach(models, id: \.self) { Text($0).tag($0) }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: 320, alignment: .leading)
-                    }
-
-                    if settings.provider == .custom {
-                        labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
-                                     placeholder: "https://api.groq.com/openai/v1")
-                        labeledField("Model", text: $settings.customModel,
-                                     placeholder: "llama-3.3-70b-versatile")
-                        labeledField("API key", text: $settings.customAPIKey, placeholder: "sk-…", secure: true)
-                    }
+            if settings.provider != .custom, settings.provider != .off, !models.isEmpty {
+                Picker("Model", selection: $settings.preferredModel) {
+                    Text("Automatic").tag("")
+                    ForEach(models, id: \.self) { Text($0).tag($0) }
                 }
-                .card()
-                .transition(.opacity.combined(with: .offset(y: -6)))
+                .pickerStyle(.menu)
+                .frame(maxWidth: 320, alignment: .leading)
+            }
+
+            if settings.provider == .custom {
+                labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
+                             placeholder: "https://api.groq.com/openai/v1")
+                labeledField("Model", text: $settings.customModel,
+                             placeholder: "llama-3.3-70b-versatile")
+                labeledField("API key", text: $settings.customAPIKey, placeholder: "sk-…", secure: true)
             }
         }
     }

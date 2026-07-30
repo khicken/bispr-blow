@@ -305,25 +305,48 @@ struct LogoView: View {
     }
 }
 
-/// Shared page scaffold: big title, optional subtitle, consistent padding.
-struct Page<Content: View>: View {
+/// Shared page scaffold: big title, optional subtitle, one optional action on the title line,
+/// consistent padding. The action sits on the title's baseline rather than above the content, so
+/// the page's primary verb is always in the same place.
+struct Page<Content: View, Action: View>: View {
     let title: String
     var subtitle: String?
-    @ViewBuilder let content: () -> Content
+    let action: () -> Action
+    let content: () -> Content
+
+    init(title: String, subtitle: String? = nil,
+         @ViewBuilder action: @escaping () -> Action,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.action = action
+        self.content = content
+    }
+
+    /// Most pages have no action. A defaulted `@ViewBuilder` stored property cannot carry one, and
+    /// the generic would be uninferrable anyway, so the no-action case gets its own init.
+    init(title: String, subtitle: String? = nil,
+         @ViewBuilder content: @escaping () -> Content) where Action == EmptyView {
+        self.init(title: title, subtitle: subtitle, action: { EmptyView() }, content: content)
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
-                        .font(.system(size: 27, weight: .semibold))
-                        .tracking(-0.4)
-                        .foregroundStyle(Theme.ink)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.inkTertiary)
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title)
+                            .font(.system(size: 27, weight: .semibold))
+                            .tracking(-0.4)
+                            .foregroundStyle(Theme.ink)
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.inkTertiary)
+                        }
                     }
+                    Spacer(minLength: 0)
+                    action()
                 }
                 .appearIn()
                 content()
@@ -581,98 +604,261 @@ enum VocabPacks {
 struct DictionaryView: View {
     @ObservedObject var settings: AppSettings
     @State private var newWord = ""
+    @State private var adding = false
+    @State private var search = ""
+    @State private var recentFirst = false
     @State private var generateTopic = ""
     @State private var generating = false
     @State private var generateNote: String?
+    @FocusState private var addFocused: Bool
+    @AppStorage("dictionaryIntroDismissed") private var introDismissed = false
     private let cleaner = LLMCleaner()
 
+    /// What the list shows: the search narrows it, the toggle orders it. `dictionary` is stored in
+    /// the order terms were added, so newest-first is simply the reverse.
+    private var shown: [String] {
+        let matched = search.isEmpty
+            ? settings.dictionary
+            : settings.dictionary.filter { $0.localizedCaseInsensitiveContains(search) }
+        return recentFirst
+            ? matched.reversed()
+            : matched.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     var body: some View {
-        Page(title: "Dictionary", subtitle: "Words and names the recognizer should spell correctly.") {
+        Page(title: "Dictionary", action: {
+            Button(adding ? "Done" : "Add new") {
+                withAnimation(.bjSnap) { adding.toggle() }
+                addFocused = adding
+            }
+            .buttonStyle(CapsuleButtonStyle(tint: Theme.ink))
+        }) {
+            if adding {
+                addField
+            }
+            if !introDismissed {
+                intro
+            }
+            terms
+            starters
+        }
+    }
+
+    // MARK: Intro
+
+    /// What the page is for, said once, and dismissible — most people will read it on their first
+    /// visit and never want to see it again. The chips are the user's own terms, not samples: the
+    /// point of the panel is "this is the list that makes Wispr spell your words right", and showing
+    /// their words makes it immediately.
+    private var intro: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 11) {
+                (Text("It spells the way ")
+                 + Text("you").italic()
+                 + Text(" do."))
+                    .font(.system(size: 29, weight: .semibold, design: .serif))
+                    .foregroundStyle(.white)
+                Text("Add the names, tools, and jargon you say out loud and Wispr will spell them right instead of guessing. Teammate names come from the Team page.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineSpacing(2.5)
+                    .frame(maxWidth: 520, alignment: .leading)
+                HStack(spacing: 8) {
+                    Button {
+                        withAnimation(.bjSnap) { adding = true }
+                        addFocused = true
+                    } label: {
+                        Text("Add new word")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Theme.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(Theme.cream))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .handCursor()
+                    ForEach(settings.dictionary.suffix(4).reversed(), id: \.self) { word in
+                        Text(word)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(.white.opacity(0.16)))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.top, 3)
+            }
+            .padding(26)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(introBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Button {
+                withAnimation(.bjSoft) { introDismissed = true }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(.white.opacity(0.14)))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .handCursor()
+            .help("Hide this")
+            .padding(14)
+        }
+        .transition(.opacity.combined(with: .offset(y: -6)))
+    }
+
+    /// The app icon's own gradient with a soft bloom over it — the same dark field the pill uses,
+    /// so the two surfaces read as one product. A photograph would be someone else's picture.
+    private var introBackground: some View {
+        LinearGradient(colors: [Theme.blueDeep, Color(hex: 0x123A5C)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay(
+                RadialGradient(colors: [Theme.blue.opacity(0.42), .clear],
+                               center: UnitPoint(x: 0.82, y: 0.18),
+                               startRadius: 4, endRadius: 340)
+            )
+    }
+
+    // MARK: Add
+
+    private var addField: some View {
+        HStack(spacing: 8) {
+            TextField("A word, a name, or several separated by commas", text: $newWord)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .focused($addFocused)
+                .padding(10)
+                .background(fieldBackground)
+                .onSubmit(addWord)
+            Button("Add", action: addWord)
+                .buttonStyle(CapsuleButtonStyle())
+                .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .transition(.opacity.combined(with: .offset(y: -6)))
+    }
+
+    // MARK: List
+
+    /// A flat divided list, not chips. A quick pack adds thirty terms at once, and thirty capsules
+    /// in a wrapping grid is a pile rather than a list: nothing to scan down, no order, nowhere to
+    /// put a search field.
+    private var terms: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                SectionLabel(settings.dictionary.count == 1 ? "1 term" : "\(settings.dictionary.count) terms")
+                Spacer()
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.inkSubtle)
+                    TextField("Search", text: $search)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12.5))
+                        .frame(width: 130)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(fieldBackground)
+                Button(recentFirst ? "Newest" : "A–Z") {
+                    withAnimation(.bjSnap) { recentFirst.toggle() }
+                }
+                .buttonStyle(QuietButtonStyle())
+                .help(recentFirst ? "Sort alphabetically" : "Sort newest first")
+                if !settings.dictionary.isEmpty {
+                    Button("Clear all") {
+                        withAnimation(.bjSnap) { settings.dictionary = [] }
+                    }
+                    .buttonStyle(QuietButtonStyle())
+                }
+            }
+
+            if settings.dictionary.isEmpty {
+                EmptyHint(text: "Nothing here yet. Add a word, or start from a pack below.")
+            } else if shown.isEmpty {
+                Text("No term matches “\(search)”.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.inkTertiary)
+                    .padding(.vertical, 6)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(shown.enumerated()), id: \.element) { index, word in
+                        TermRow(word: word, first: index == 0) {
+                            withAnimation(.bjSnap) { settings.dictionary.removeAll { $0 == word } }
+                        }
+                    }
+                }
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tableHeader))
+                .animation(.bjSnap, value: shown)
+            }
+        }
+    }
+
+    // MARK: Starters
+
+    /// Last, and quiet: bulk sources are how you fill the list on day one, not what you come back
+    /// for. Both of them do the same job, so they sit together under one header.
+    private var starters: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            SectionLabel("Add a whole topic at once")
+            WrapStack(spacing: 8) {
+                ForEach(VocabPacks.all, id: \.name) { pack in
+                    let missing = missingCount(pack.terms)
+                    Button {
+                        withAnimation(.bjSnap) { settings.addDictionaryWords(pack.terms) }
+                    } label: {
+                        Text(missing > 0 ? "\(pack.name) +\(missing)" : "\(pack.name) ✓")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(missing > 0 ? Theme.blue : Theme.inkSubtle)
+                            .contentTransition(.numericText())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Capsule().fill(missing > 0 ? Theme.blueSoft : Theme.tableHeader))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(missing == 0)
+                    .handCursor()
+                    .animation(.bjSoft, value: missing)
+                }
+            }
+
             HStack(spacing: 8) {
-                TextField("Add words, separated by commas", text: $newWord)
+                TextField("Or name a topic, like React Native or genomics", text: $generateTopic)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .padding(10)
                     .background(fieldBackground)
-                    .onSubmit(addWord)
-                Button("Add", action: addWord)
-                    .buttonStyle(CapsuleButtonStyle())
+                    .onSubmit(generate)
+                Button(action: generate) {
+                    HStack(spacing: 5) {
+                        if generating {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "sparkles").font(.system(size: 11))
+                        }
+                        Text("Generate")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(Capsule().fill(generating ? Theme.inkSubtle : Theme.blue))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .handCursor()
+                .disabled(generating)
             }
-
-            VStack(alignment: .leading, spacing: 9) {
-                SectionLabel("Quick packs")
-                WrapStack(spacing: 8) {
-                    ForEach(VocabPacks.all, id: \.name) { pack in
-                        let missing = missingCount(pack.terms)
-                        Button {
-                            withAnimation(.bjSnap) { settings.addDictionaryWords(pack.terms) }
-                        } label: {
-                            Text(missing > 0 ? "\(pack.name) +\(missing)" : "\(pack.name) ✓")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(missing > 0 ? Theme.blue : Theme.inkSubtle)
-                                .contentTransition(.numericText())
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(missing > 0 ? Theme.blueSoft : Theme.tableHeader))
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(missing == 0)
-                        .animation(.bjSoft, value: missing)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    TextField("Or generate terms for a topic, like React Native or genomics", text: $generateTopic)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .padding(10)
-                        .background(fieldBackground)
-                        .onSubmit(generate)
-                    Button(action: generate) {
-                        HStack(spacing: 5) {
-                            if generating {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "sparkles").font(.system(size: 11))
-                            }
-                            Text("Generate")
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(Capsule().fill(generating ? Theme.inkSubtle : Theme.blue))
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(generating)
-                }
-                if let generateNote {
-                    Text(generateNote)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.inkSubtle)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    SectionLabel("\(settings.dictionary.count) terms")
-                    Spacer()
-                    if settings.dictionary.count > 1 {
-                        Button("Clear all") { settings.dictionary = [] }
-                            .buttonStyle(QuietButtonStyle())
-                    }
-                }
-                WrapStack(spacing: 8) {
-                    ForEach(settings.dictionary, id: \.self) { word in
-                        TagChip(word: word) {
-                            withAnimation(.bjSnap) { settings.dictionary.removeAll { $0 == word } }
-                        }
-                        .transition(.scale(scale: 0.7).combined(with: .opacity))
-                    }
-                }
-                .animation(.bjSnap, value: settings.dictionary)
+            if let generateNote {
+                Text(generateNote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.inkSubtle)
             }
         }
     }
@@ -694,6 +880,7 @@ struct DictionaryView: View {
             newWord.split(whereSeparator: { $0 == "," || $0.isNewline }).map(String.init)
         )
         newWord = ""
+        addFocused = true
     }
 
     private func generate() {
@@ -707,7 +894,7 @@ struct DictionaryView: View {
             settings.addDictionaryWords(terms)
             let added = settings.dictionary.count - before
             generateNote = terms.isEmpty
-                ? "No model available. Start LM Studio or check Settings."
+                ? "No model available. Start LM Studio, or pick a provider in Settings."
                 : "Added \(added) terms for \(topic)."
             if !terms.isEmpty { generateTopic = "" }
             generating = false
@@ -715,32 +902,43 @@ struct DictionaryView: View {
     }
 }
 
-struct TagChip: View {
+/// One term. Removal is the only action, so it is the only control, and it appears on hover rather
+/// than sitting on every row — a list of a hundred terms should read as words, not as buttons.
+struct TermRow: View {
     let word: String
+    let first: Bool
     let onRemove: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 5) {
-            Text(word)
-                .font(.system(size: 12.5))
-                .foregroundStyle(Theme.ink)
-            Button(action: onRemove) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8.5, weight: .bold))
-                    .foregroundStyle(hovering ? Theme.red : Theme.inkSubtle)
-                    .frame(width: 17, height: 17)
-                    .contentShape(Rectangle())
+        VStack(spacing: 0) {
+            if !first {
+                Rectangle().fill(Theme.border.opacity(0.5)).frame(height: 1)
             }
-            .buttonStyle(.plain)
+            HStack(spacing: 8) {
+                Text(word)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Theme.inkSubtle)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .handCursor()
+                .help("Remove \(word)")
+                .opacity(hovering ? 1 : 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
         }
-        .padding(.leading, 11)
-        .padding(.trailing, 5)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(hovering ? Theme.surfaceActive : Theme.tableHeader))
-        .scaleEffect(hovering ? 1.04 : 1)
+        .background(hovering ? Theme.surfaceActive.opacity(0.6) : .clear)
         .onHover { hovering = $0 }
         .animation(.bjHover, value: hovering)
+        .transition(.opacity)
     }
 }
 

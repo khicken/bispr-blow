@@ -106,6 +106,9 @@ extension Animation {
 /// Standard pill button: full-capsule hit area + pressed feedback.
 struct CapsuleButtonStyle: ButtonStyle {
     var filled = true
+    /// Ink for a page's primary verb, blue for accents inside content. Blue is an accent, not a
+    /// surface (CLAUDE.md), and a page full of blue capsules leaves nothing for the accent to mean.
+    var tint: Color = Theme.blue
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -113,7 +116,7 @@ struct CapsuleButtonStyle: ButtonStyle {
             .foregroundStyle(filled ? .white : Theme.ink)
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
-            .background(Capsule().fill(filled ? Theme.blue : Theme.surfaceActive))
+            .background(Capsule().fill(filled ? tint : Theme.surfaceActive))
             .contentShape(Capsule())
             .handCursor()
             .opacity(configuration.isPressed ? 0.8 : 1)

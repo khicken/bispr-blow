@@ -382,49 +382,66 @@ struct PillView: View {
         .padding(Self.margin)
     }
 
-    /// Idle: tiny sliver; on hover, Wispr-style circular action buttons.
+    /// Idle: a tiny sliver that grows into three circular action buttons on hover.
+    ///
+    /// One view whose frame animates, not two views swapped by an `if`. The swap gave the capsule a
+    /// size to interpolate but gave the buttons none, so they appeared at full size inside a capsule
+    /// that was still growing — which is what read as clunky and unaligned. The buttons sit in an
+    /// overlay so they never drive the layout: the frame is the only thing animating, and they fade
+    /// and scale up from the middle of it.
     private var idlePill: some View {
-        Group {
-            if hovering {
-                HStack(spacing: 7) {
-                    PillCircleButton(help: AppSettings.shared.holdPhrase
-                        .map { "Dictate hands-free (or \($0.prefix(1).lowercased() + $0.dropFirst()))" }
-                        ?? "Dictate hands-free") {
-                        model.tapped { controller.startHandsFree() }
-                    } label: {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
-                    PillCircleButton(help: "Open Bluejay Wispr") {
-                        model.tapped { model.onOpenDashboard(.home) }
-                    } label: {
-                        if let logo = Theme.logo("Symbol_White") {
-                            Image(nsImage: logo)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 13, height: 13)
-                        } else {
-                            Image(systemName: "house.fill")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    PillCircleButton(help: "Recent dictations") {
-                        model.tapped { model.onOpenDashboard(.history) }
-                    } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
+        Color.clear
+            .frame(width: hovering ? 110 : 42, height: hovering ? 36 : 9)
+            .overlay {
+                hoverButtons
+                    .opacity(hovering ? 1 : 0)
+                    .scaleEffect(hovering ? 1 : 0.82)
+                    .allowsHitTesting(hovering)
+            }
+            .contentShape(Capsule())
+    }
+
+    /// The glyphs counter-rotate: the bar turns 90° on a side edge, but an icon lying on its side
+    /// is just wrong to look at — a side Dock does not rotate its icons either. The capsule and
+    /// the waveform still turn with the bar, which is what should turn.
+    private var hoverButtons: some View {
+        let upright = -model.anchor.rotation
+        return HStack(spacing: 7) {
+            PillCircleButton(help: AppSettings.shared.holdPhrase
+                .map { "Dictate hands-free (or \($0.prefix(1).lowercased() + $0.dropFirst()))" }
+                ?? "Dictate hands-free", counterRotation: upright) {
+                model.tapped { controller.startHandsFree() }
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+            PillCircleButton(help: "Open Bluejay Wispr", counterRotation: upright) {
+                model.tapped { model.onOpenDashboard(.home) }
+            } label: {
+                if let logo = Theme.logo("Symbol_White") {
+                    Image(nsImage: logo)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 13, height: 13)
+                } else {
+                    Image(systemName: "house.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
                 }
-                .padding(.horizontal, 9)
-                .frame(height: 36)
-            } else {
-                Color.clear.frame(width: 42, height: 9)
+            }
+            PillCircleButton(help: "Recent dictations", counterRotation: upright) {
+                model.tapped { model.onOpenDashboard(.history) }
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white)
             }
         }
-        .contentShape(Capsule())
+        .padding(.horizontal, 9)
+        // The `.idle` row in `size(for:)`. Explicit, so the overlay keeps its natural size instead
+        // of being squashed into the 42x9 sliver on the way in.
+        .frame(width: 110, height: 36)
     }
 
     private func recordingPill(locked: Bool) -> some View {
@@ -687,6 +704,8 @@ struct ToastView: View {
 /// Circular action button on the hover pill, with its own hover highlight.
 struct PillCircleButton<Label: View>: View {
     let help: String
+    /// Turned back upright when the bar itself is rotated onto a side edge.
+    var counterRotation: Double = 0
     let action: () -> Void
     @ViewBuilder let label: () -> Label
     @State private var hovering = false
@@ -695,7 +714,7 @@ struct PillCircleButton<Label: View>: View {
         Button(action: action) {
             ZStack {
                 Circle().fill(.white.opacity(hovering ? 0.28 : 0.14))
-                label()
+                label().rotationEffect(.degrees(counterRotation))
             }
             .frame(width: 26, height: 26)
             .contentShape(Circle())
