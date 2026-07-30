@@ -15,8 +15,14 @@ enum SystemFnKey {
         CFPreferencesCopyValue(key, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? Int
     }
 
-    /// Call at launch: remember the user's setting and switch to Do Nothing.
-    static func suppressWhileRunning() {
+    /// Suppress only while fn is actually bound to something: an app that took over the Globe
+    /// key without using it is just a bug report waiting to happen.
+    static func sync(suppress: Bool) {
+        suppress ? suppressWhileRunning() : restore()
+    }
+
+    /// Remember the user's setting and switch to Do Nothing.
+    private static func suppressWhileRunning() {
         let current = currentUsage()
         guard current != 0 else { return }  // already Do Nothing; nothing to save or restore
         UserDefaults.standard.set(current ?? -1, forKey: savedKey)

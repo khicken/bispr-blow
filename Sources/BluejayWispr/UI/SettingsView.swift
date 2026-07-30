@@ -28,9 +28,16 @@ struct SettingsView: View {
                         permissionRow("Accessibility", hint: "System Settings, Privacy & Security, Accessibility")
                     }
                     if !inputMonitoringGranted {
-                        permissionRow("Input Monitoring", hint: "Needed to capture the fn key")
+                        permissionRow("Input Monitoring",
+                                      hint: settings.fnIsBound
+                                        ? "Needed to capture the fn key"
+                                        : "Needed to capture your shortcuts")
                     }
                 }
+            }
+
+            settingsGroup("Shortcuts") {
+                ShortcutRows(settings: settings)
             }
 
             settingsGroup("Microphone") {

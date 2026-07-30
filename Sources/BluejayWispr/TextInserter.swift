@@ -6,8 +6,9 @@ import Carbon.HIToolbox
 enum TextInserter {
     /// Returns false when synthetic events can't be posted (no Accessibility trust):
     /// the text is left on the clipboard so the user can ⌘V manually.
+    /// `thenReturn` presses Return once the paste has landed — the "dictate and send" binding.
     @discardableResult
-    static func insert(_ text: String) -> Bool {
+    static func insert(_ text: String, thenReturn: Bool = false) -> Bool {
         let pasteboard = NSPasteboard.general
         guard AXIsProcessTrusted() else {
             pasteboard.clearContents()
@@ -24,6 +25,11 @@ enum TextInserter {
         // Let the pasteboard write commit before synthesizing the paste.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             postCmdV()
+            // Return goes after the paste, on its own delay: sending before the field has the
+            // text submits an empty message.
+            if thenReturn {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { postKey(CGKeyCode(kVK_Return)) }
+            }
             // Restore after the paste lands; slow Electron apps read the clipboard late.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 pasteboard.clearContents()
@@ -51,5 +57,12 @@ enum TextInserter {
             event.post(tap: .cghidEventTap)
             usleep(10_000)
         }
+    }
+
+    private static func postKey(_ key: CGKeyCode) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)?.post(tap: .cghidEventTap)
+        usleep(10_000)
+        CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)?.post(tap: .cghidEventTap)
     }
 }

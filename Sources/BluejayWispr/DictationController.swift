@@ -3,7 +3,7 @@ import AVFoundation
 import IOKit.hidsystem
 import Speech
 
-/// Central state machine: Fn gesture → record → transcribe → clean → insert → history.
+/// Central state machine: shortcut gesture → record → transcribe → clean → insert → history.
 @MainActor
 final class DictationController: ObservableObject {
     enum State: Equatable {
@@ -25,7 +25,7 @@ final class DictationController: ObservableObject {
     private var axPollTimer: Timer?
     private var keepAliveTimer: Timer?
 
-    private let monitor = FnKeyMonitor()
+    private let monitor = ShortcutMonitor.shared
     private let recorder = AudioRecorder()
     private let transcriber = Transcriber()
     private let cleaner = LLMCleaner()
@@ -34,14 +34,15 @@ final class DictationController: ObservableObject {
     private var capturedContext: AppContext?
     private var recordingStartedAt = Date()
     private var sessionGeneration = 0
-    private var noteMode = false
+    /// Set by the "dictate and send" binding: press Return once the text is in.
+    private var sendEnter = false
 
     func start() {
         transcriber.onPartial = { [weak self] text in
             self?.partialText = text
         }
-        monitor.onStart = { [weak self] in
-            Task { @MainActor in self?.beginRecording() }
+        monitor.onStart = { [weak self] sendEnter in
+            Task { @MainActor in self?.beginRecording(sendEnter: sendEnter) }
         }
         monitor.onStop = { [weak self] _ in
             Task { @MainActor in self?.finishRecording() }
@@ -54,7 +55,7 @@ final class DictationController: ObservableObject {
         }
         monitor.start()
 
-        // Until Accessibility is granted, auto-insert and fn interception are degraded —
+        // Until Accessibility is granted, auto-insert and shortcut interception are degraded —
         // keep a persistent hint on the pill and clear it the moment the grant lands.
         if !AXIsProcessTrusted() {
             notice = "Grant Accessibility for auto-insert"
@@ -64,7 +65,7 @@ final class DictationController: ObservableObject {
                     self.axPollTimer?.invalidate()
                     self.axPollTimer = nil
                     self.notice = nil
-                    self.showNotice("Ready. Hold fn to dictate")
+                    self.showNotice("Ready. \(AppSettings.shared.holdHint)")
                 }
             }
         }
@@ -109,14 +110,6 @@ final class DictationController: ObservableObject {
         monitor.beginLockedSession()
     }
 
-    /// Pill button: dictate a quick note — saved to history and the clipboard,
-    /// not pasted anywhere.
-    func startQuickNote() {
-        guard state == .idle else { return }
-        noteMode = true
-        monitor.beginLockedSession()
-    }
-
     private func showNotice(_ message: String, for seconds: TimeInterval = 4) {
         notice = message
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
@@ -124,12 +117,11 @@ final class DictationController: ObservableObject {
         }
     }
 
-    private func beginRecording() {
+    private func beginRecording(sendEnter: Bool) {
         guard state == .idle else { return }
         sessionGeneration += 1
-        capturedContext = noteMode
-            ? AppContext(bundleID: "", appName: "Quick Note", windowTitle: "")
-            : ContextDetector.current()
+        self.sendEnter = sendEnter
+        capturedContext = ContextDetector.current()
         let device = AudioRecorder.defaultInputDeviceName()
         if device != UserDefaults.standard.string(forKey: "lastMicName") {
             UserDefaults.standard.set(device, forKey: "lastMicName")
@@ -184,7 +176,6 @@ final class DictationController: ObservableObject {
             guard !raw.isEmpty else {
                 self.state = .idle
                 self.partialText = ""
-                self.noteMode = false
                 return
             }
             let llmStart = Date()
@@ -197,13 +188,7 @@ final class DictationController: ObservableObject {
                 """)
             guard self.sessionGeneration == generation else { return }
             if !cleaned.isEmpty {
-                if self.noteMode {
-                    self.noteMode = false
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(cleaned, forType: .string)
-                    self.showNotice("Note saved to history and clipboard")
-                } else if !TextInserter.insert(cleaned) {
+                if !TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
                     self.showNotice("Copied. Press ⌘V to paste")
                 }
                 self.history.add(DictationEntry(
@@ -219,6 +204,7 @@ final class DictationController: ObservableObject {
             }
             self.state = .idle
             self.partialText = ""
+            self.sendEnter = false
         }
     }
 
@@ -227,7 +213,7 @@ final class DictationController: ObservableObject {
         sessionGeneration += 1
         recorder.stop()
         level = 0
-        noteMode = false
+        sendEnter = false
         partialText = ""
         state = .idle
         Task { await transcriber.cancelSession() }

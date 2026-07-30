@@ -42,8 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         setupQuitShortcut()
         DictationController.requestPermissions()
+        // Starting the monitor is what decides whether the macOS fn action gets suppressed:
+        // it only happens while fn is one of the user's bindings.
         controller.start()
-        SystemFnKey.suppressWhileRunning()
 
         // First run: open the dashboard so permissions/setup are visible.
         if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
@@ -72,7 +73,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        statusItem.button?.toolTip = "Bluejay Wispr — hold fn to dictate, double-tap to lock.\nRight-click to quit."
+        let settings = AppSettings.shared
+        let hint = settings.holdHint
+        let lock = settings.shortcuts(for: .pushToTalk).isEmpty ? "" : ", double-tap to lock"
+        statusItem.button?.toolTip = "Bluejay Wispr — \(hint.prefix(1).lowercased())\(hint.dropFirst())"
+            + "\(lock).\nRight-click to quit."
     }
 
     @objc private func statusItemClicked() {

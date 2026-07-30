@@ -57,6 +57,77 @@ final class AppSettings: ObservableObject {
     @Published var launchSoundEnabled: Bool {
         didSet { defaults.set(launchSoundEnabled, forKey: "launchSoundEnabled") }
     }
+    /// Bindings per action, keyed by `ShortcutAction.rawValue` — a String key so the whole
+    /// thing is JSON-encodable without a CodingKey dance.
+    @Published var bindings: [String: [Shortcut]] {
+        didSet {
+            if let data = try? JSONEncoder().encode(bindings) {
+                defaults.set(data, forKey: "bindings")
+            }
+            ShortcutMonitor.shared.reload()
+        }
+    }
+
+    // MARK: - Shortcuts
+
+    func shortcuts(for action: ShortcutAction) -> [Shortcut] { bindings[action.rawValue] ?? [] }
+
+    /// Every binding the monitor has to watch for.
+    var allBindings: [(ShortcutAction, Shortcut)] {
+        ShortcutAction.allCases.flatMap { action in shortcuts(for: action).map { (action, $0) } }
+    }
+
+    /// Whether the macOS Globe-key action has to be suppressed while we run.
+    var fnIsBound: Bool { allBindings.contains { $0.1.usesFn } }
+
+    func add(_ shortcut: Shortcut, to action: ShortcutAction) {
+        bindings = Self.adding(shortcut, to: action, in: bindings)
+    }
+
+    func remove(_ shortcut: Shortcut, from action: ShortcutAction) {
+        bindings[action.rawValue] = shortcuts(for: action).filter { $0 != shortcut }
+    }
+
+    func resetToDefault(_ action: ShortcutAction) {
+        var next = bindings.mapValues { $0.filter { !action.defaults.contains($0) } }
+        next[action.rawValue] = action.defaults
+        bindings = next
+    }
+
+    /// Pure so the self-check can exercise it. Adding a binding *steals* it from every other
+    /// action: two actions on one key means only the first one ever fires, silently.
+    static func adding(_ shortcut: Shortcut, to action: ShortcutAction,
+                       in bindings: [String: [Shortcut]]) -> [String: [Shortcut]] {
+        var next = bindings.mapValues { $0.filter { $0 != shortcut } }
+        next[action.rawValue, default: []].append(shortcut)
+        return next
+    }
+
+    /// Display name of the binding that starts a dictation, for user-facing copy.
+    var dictationShortcutName: String? {
+        (shortcuts(for: .pushToTalk).first
+            ?? shortcuts(for: .handsFree).first
+            ?? shortcuts(for: .pressEnter).first)?.display
+    }
+
+    /// "Hold fn" or "Press ⌥Space" — the verb follows the kind of binding. nil when nothing is
+    /// bound to a dictation action at all.
+    var holdPhrase: String? {
+        dictationShortcutName.map { name in
+            shortcuts(for: .pushToTalk).isEmpty ? "Press \(name)" : "Hold \(name)"
+        }
+    }
+
+    /// "Hold fn to dictate", or a nudge when the user has unbound everything.
+    var holdHint: String {
+        holdPhrase.map { "\($0) to dictate" } ?? "Set a dictation shortcut in Settings"
+    }
+
+    /// Sidebar footer during a hands-free session.
+    var lockedHint: String {
+        guard let name = dictationShortcutName else { return "Locked — click the pill to finish" }
+        return "Locked — tap \(name) to finish"
+    }
 
     /// Terms the cleanup model should correct toward: dictionary + team member names.
     /// Always applied — an empty dictionary already means no biasing, so a switch to turn it off
@@ -92,5 +163,11 @@ final class AppSettings: ObservableObject {
             teamMembers = []
         }
         launchSoundEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
+        if let data = defaults.data(forKey: "bindings"),
+           let saved = try? JSONDecoder().decode([String: [Shortcut]].self, from: data) {
+            bindings = saved
+        } else {
+            bindings = ShortcutAction.allCases.reduce(into: [:]) { $0[$1.rawValue] = $1.defaults }
+        }
     }
 }
