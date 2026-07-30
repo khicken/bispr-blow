@@ -11,9 +11,12 @@ final class RecordingPillController {
 
     init(controller: DictationController, onOpenDashboard: @escaping (DashboardView.Section) -> Void) {
         model = PillModel(controller: controller, onOpenDashboard: onOpenDashboard)
+        let saved = Anchor(rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? "")
+            ?? .bottomCentre
+        model.anchor = saved
 
         panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: PillView.size(for: .idle)),
+            contentRect: NSRect(origin: .zero, size: PillView.size(for: .idle, anchor: saved)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -87,6 +90,19 @@ final class RecordingPillController {
     enum Anchor: String, CaseIterable {
         case bottomCentre, leftCentre, rightCentre
 
+        /// On a side edge the pill turns 90°, so its panel's width and height swap.
+        var isVertical: Bool { self != .bottomCentre }
+
+        /// How far to turn the pill's contents. The two edges turn opposite ways so the bar always
+        /// leans away from the screen edge it is parked on.
+        var rotation: Double {
+            switch self {
+            case .bottomCentre: 0
+            case .leftCentre: -90
+            case .rightCentre: 90
+            }
+        }
+
         /// Bottom-left origin for a panel of `size`. The side anchors sit vertically centred, so
         /// the pill clears the Dock and the menu bar entirely; the inset keeps it off the bezel.
         func origin(size: CGSize, in frame: CGRect, inset: CGFloat = 12) -> NSPoint {
@@ -114,7 +130,10 @@ final class RecordingPillController {
 
     private var anchor: Anchor {
         get { Anchor(rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? "") ?? .bottomCentre }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "pillAnchor") }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "pillAnchor")
+            model.anchor = newValue  // the view rotates and transposes off this
+        }
     }
 
     /// Called on every frame of a user drag. Snap to the nearest anchor once they stop.
@@ -129,10 +148,13 @@ final class RecordingPillController {
                                         size: dropped.size, in: screen.frame)
             self.dragging = false
             // Glide to the anchor rather than cutting to it — an instant jump from wherever the
-            // pointer let go reads as the pill teleporting.
-            let target = self.anchor.origin(size: dropped.size, in: screen.frame)
+            // pointer let go reads as the pill teleporting. Size as well as origin, because a side
+            // anchor turns the pill 90° and transposes its panel.
+            let settled = PillView.size(for: .idle, anchor: self.anchor)
+            let target = self.anchor.origin(size: settled, in: screen.frame)
             self.movingProgrammatically = true
-            self.panel.setFrame(NSRect(origin: target, size: dropped.size), display: true, animate: true)
+            self.panel.setFrame(NSRect(origin: target, size: settled), display: true, animate: true)
+            self.panel.contentView?.frame = NSRect(origin: .zero, size: settled)
             self.movingProgrammatically = false
         }
     }
@@ -177,6 +199,8 @@ final class PillModel: ObservableObject {
     let onOpenDashboard: (DashboardView.Section) -> Void
     /// Reports the pill's drawn size so the panel can shrink to it.
     var onSize: ((CGSize) -> Void)?
+    /// Which edge the pill is parked on. Drives the 90° turn on the side anchors.
+    @Published var anchor: RecordingPillController.Anchor = .bottomCentre
 
     init(controller: DictationController, onOpenDashboard: @escaping (DashboardView.Section) -> Void) {
         self.controller = controller
@@ -227,11 +251,19 @@ struct PillView: View {
                       height: (content.height + margin * 2).rounded(.up))
     }
 
+    /// The panel size for a state on a given edge. A side-anchored pill is the same bar turned 90°,
+    /// so the panel is the transpose — the layout below never changes, only its orientation.
+    static func size(for state: DictationController.State,
+                     anchor: RecordingPillController.Anchor) -> CGSize {
+        let flat = size(for: state)
+        return anchor.isVertical ? CGSize(width: flat.height, height: flat.width) : flat
+    }
+
     /// Room for the capsule's shadow to fade out. Every point of it is also panel, and therefore
     /// dead to the app underneath, so it stays as small as the shadow allows.
     private static let margin: CGFloat = 6
 
-    private var targetSize: CGSize { Self.size(for: controller.state) }
+    private var targetSize: CGSize { Self.size(for: controller.state, anchor: model.anchor) }
 
     var body: some View {
         pill
@@ -243,6 +275,9 @@ struct PillView: View {
             // the collapsed rect is always inside the expanded one.
             .animation(.spring(response: 0.32, dampingFraction: 0.82), value: controller.state)
             .animation(.spring(response: 0.32, dampingFraction: 0.82), value: hovering)
+            // Rotation keeps the unrotated layout size, so the transposed frame below is exactly
+            // what the turned bar occupies, and the panel matches it.
+            .rotationEffect(.degrees(model.anchor.rotation))
             .frame(width: targetSize.width, height: targetSize.height)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -426,10 +461,10 @@ final class ToastController {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let frame = screen.frame
         let size = panel.frame.size
-        let pillSize = PillView.size(for: .idle)
         let anchor = RecordingPillController.Anchor(
             rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? ""
         ) ?? .bottomCentre
+        let pillSize = PillView.size(for: .idle, anchor: anchor)
         let pill = NSRect(origin: anchor.origin(size: pillSize, in: frame), size: pillSize)
         let x = min(max(pill.midX - size.width / 2, frame.minX), frame.maxX - size.width)
         let y = min(pill.maxY + 4, frame.maxY - size.height)

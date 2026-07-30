@@ -68,6 +68,12 @@ enum SelfCheck {
         precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 12, y: 415))
         precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1218, y: 415))
         precondition(Anchor.bottomCentre.origin(size: pill, in: screen) == NSPoint(x: 615, y: 0))
+        // A side-anchored pill is the same bar turned 90°, so its panel is the transpose. If these
+        // ever disagree the panel clips the pill or claims mouse events beside it.
+        let flat = PillView.size(for: .idle, anchor: .bottomCentre)
+        precondition(PillView.size(for: .idle, anchor: .leftCentre)
+            == CGSize(width: flat.height, height: flat.width))
+        precondition(Anchor.leftCentre.isVertical && !Anchor.bottomCentre.isVertical)
     }
 
     /// Bindings are serialized into UserDefaults and rendered as key caps in Settings, so a
