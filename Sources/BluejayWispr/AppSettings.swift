@@ -32,6 +32,10 @@ final class AppSettings: ObservableObject {
     @Published var customAPIKey: String {
         didSet { defaults.set(customAPIKey, forKey: "customAPIKey") }
     }
+    /// Cleanup model id; empty auto-picks from what the provider has loaded.
+    @Published var preferredModel: String {
+        didSet { defaults.set(preferredModel, forKey: "preferredModel") }
+    }
     /// Core Audio UID of the chosen mic; empty follows the system default input.
     @Published var inputDeviceUID: String {
         didSet { defaults.set(inputDeviceUID, forKey: "inputDeviceUID") }
@@ -78,6 +82,7 @@ final class AppSettings: ObservableObject {
         customEndpoint = defaults.string(forKey: "customEndpoint") ?? ""
         customModel = defaults.string(forKey: "customModel") ?? ""
         customAPIKey = defaults.string(forKey: "customAPIKey") ?? ""
+        preferredModel = defaults.string(forKey: "preferredModel") ?? ""
         inputDeviceUID = defaults.string(forKey: "inputDeviceUID") ?? ""
         dictionary = defaults.stringArray(forKey: "dictionary") ?? ["Bluejay"]
         injectDictionary = defaults.object(forKey: "injectDictionary") as? Bool ?? true

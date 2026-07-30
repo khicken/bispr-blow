@@ -10,8 +10,10 @@ struct SettingsView: View {
     @State private var inputMonitoringGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
     @State private var micName = AudioRecorder.defaultInputDeviceName()
     @State private var devices = AudioRecorder.inputDevices()
+    @State private var models: [String] = []
 
     private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+    private let cleaner = LLMCleaner()
 
     var body: some View {
         Page(title: "Settings") {
@@ -39,6 +41,15 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 320, alignment: .leading)
 
+                if settings.provider != .custom, settings.provider != .off, !models.isEmpty {
+                    Picker("Model", selection: $settings.preferredModel) {
+                        Text("Automatic").tag("")
+                        ForEach(models, id: \.self) { Text($0).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 320, alignment: .leading)
+                }
+
                 if settings.provider == .custom {
                     labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
                                  placeholder: "https://api.groq.com/openai/v1")
@@ -65,6 +76,15 @@ struct SettingsView: View {
                     .frame(maxWidth: 320, alignment: .leading)
                 }
             }
+        }
+        .task { models = await cleaner.availableModels() }
+        .onChange(of: settings.provider) { _, _ in
+            Task { models = await cleaner.availableModels() }
+        }
+        .onChange(of: settings.preferredModel) { _, _ in
+            // Load the new model and prime the prompt-prefix cache now, server-side, so the
+            // next dictation isn't the one that waits for it.
+            Task { await cleaner.warmUp() }
         }
         .onReceive(refresh) { _ in
             micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized

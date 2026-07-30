@@ -21,7 +21,21 @@ final class LLMCleaner {
         self.settings = settings
     }
 
-    func invalidate() { resolved = nil }
+    /// Model ids the current provider has, for the Settings picker.
+    func availableModels() async -> [String] {
+        for endpoint in candidates() {
+            if let ids = await models(at: endpoint), !ids.isEmpty { return ids }
+        }
+        return []
+    }
+
+    /// A provider or model switch in Settings has to take effect on the next dictation,
+    /// not whenever the old resolution happens to fail.
+    private var resolutionIsStale: Bool {
+        guard let resolved else { return false }
+        if !settings.preferredModel.isEmpty, resolved.model != settings.preferredModel { return true }
+        return !candidates().contains { $0.baseURL == resolved.endpoint.baseURL }
+    }
 
     /// What cleanup will actually use — shown in Settings so a silently-swapped model
     /// (or a fall back to rules) is visible instead of just feeling slow or lossy.
@@ -37,6 +51,7 @@ final class LLMCleaner {
         guard !trimmed.isEmpty else { return ("", "none") }
         guard settings.provider != .off else { return (Self.ruleClean(trimmed), "rules") }
 
+        if resolutionIsStale { resolved = nil }
         if resolved == nil {
             resolved = await resolveEndpoint()
         }
@@ -48,7 +63,9 @@ final class LLMCleaner {
             var messages = Self.staticPrefix(vocabulary: settings.vocabulary)
             messages.append(["role": "user", "content": Self.userMessage(context: context, transcript: trimmed)])
             let cleaned = try await complete(endpoint: endpoint, model: model, messages: messages)
-            let result = Self.sanitize(cleaned, fallback: trimmed)
+            // Empty output falls back to rule-cleaned text, not the bare transcript — a model
+            // that returns nothing shouldn't leave the fillers in too.
+            let result = Self.sanitize(cleaned, fallback: Self.ruleClean(trimmed))
             // Small models summarize long dictations or stop mid-sentence with an ellipsis.
             // Losing the speaker's words is worse than leaving fillers in, so keep everything.
             if Self.looksTruncated(result, raw: trimmed) {
@@ -118,14 +135,19 @@ final class LLMCleaner {
 
     private func resolveEndpoint() async -> (Endpoint, String)? {
         for endpoint in candidates() {
+            // An explicit pick beats the heuristic, as long as the server still has it.
+            if !settings.preferredModel.isEmpty,
+               let ids = await models(at: endpoint),
+               ids.contains(settings.preferredModel) {
+                return (endpoint, settings.preferredModel)
+            }
             if let model = endpoint.model { return (endpoint, model) }
             if let model = await firstModel(at: endpoint) { return (endpoint, model) }
         }
         return nil
     }
 
-    /// GET /models, preferring a small instruct chat model over embedding models.
-    private func firstModel(at endpoint: Endpoint) async -> String? {
+    private func models(at endpoint: Endpoint) async -> [String]? {
         guard let url = URL(string: endpoint.baseURL + "/models") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 2)
         if let key = endpoint.apiKey { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
@@ -133,7 +155,12 @@ final class LLMCleaner {
               (response as? HTTPURLResponse)?.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let models = json["data"] as? [[String: Any]] else { return nil }
-        let ids = models.compactMap { $0["id"] as? String }
+        return models.compactMap { $0["id"] as? String }
+    }
+
+    /// Auto-pick: a small instruct chat model, skipping embeddings and reasoning variants.
+    private func firstModel(at endpoint: Endpoint) async -> String? {
+        guard let ids = await models(at: endpoint) else { return nil }
         let chatIDs = ids.filter {
             let id = $0.lowercased()
             // Reasoning variants burn seconds thinking before every dictation. Small models
