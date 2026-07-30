@@ -31,6 +31,28 @@ enum SelfCheck {
         precondition(!LLMCleaner.looksTruncated("Does it work?", raw: "um does it uh does it work"))
 
         precondition(LLMCleaner.ruleClean("um the the tests uh pass") == "The tests pass")
+        // Stacked fillers: the per-filler pass eats the space it matched on, so "uh uh" kept its
+        // second "uh" until the repeated-word collapse moved ahead of it.
+        precondition(LLMCleaner.ruleClean("um um so uh uh we should just ship it")
+                     == "So we should just ship it")
+
+        // Fillers the model left in its own output. Reported live: "like" and "uh" reaching the
+        // cursor, from a reply the truncation guard accepted, so cleanup ran and simply missed them.
+        precondition(LLMCleaner.stripFillers("It was, like, really slow.") == "It was really slow.")
+        precondition(LLMCleaner.stripFillers("Too high. Like, way too high.") == "Too high. Way too high.")
+        precondition(LLMCleaner.stripFillers("It ships Friday, you know.") == "It ships Friday.")
+        // ...and the same words in their real senses are never touched. Losing one of these is
+        // worse than leaving every filler in.
+        precondition(LLMCleaner.stripFillers("I like it, and it looks like a bug, something like that.")
+                     == "I like it, and it looks like a bug, something like that.")
+        precondition(LLMCleaner.stripFillers("Do you know the answer?") == "Do you know the answer?")
+        precondition(LLMCleaner.stripFillers("Ship it and like the post.") == "Ship it and like the post.")
+        // Bare "like" mid-sentence is deliberately left in. "or like the task bar" is filler and
+        // "and like the post" is a verb, and only what sits before the conjunction tells them
+        // apart, so this one goes to the prompt rather than to a regex.
+        precondition(LLMCleaner.stripFillers("the system tray or like the task bar")
+                     == "the system tray or like the task bar")
+
         precondition(LLMCleaner.sanitize("```\nhello\n```", fallback: "x") == "hello")
         precondition(LLMCleaner.sanitize("", fallback: "fallback") == "fallback")
 

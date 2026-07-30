@@ -72,7 +72,8 @@ final class LLMCleaner {
                 logLine("cleanup dropped content (\(result.count) of \(trimmed.count) chars); using rules")
                 return (Self.ruleClean(trimmed), "rules")
             }
-            return (result, endpoint.name)
+            // Whatever fillers the model left in, take out deterministically.
+            return (Self.stripFillers(result), endpoint.name)
         } catch {
             logLine("LLM cleanup failed (\(error)); using rule-based fallback")
             resolved = nil
@@ -269,7 +270,7 @@ final class LLMCleaner {
 
         Cleanup rules:
         - Remove fillers (um, uh, er, "like" and "you know" when used as filler), stutters, immediately-repeated words, and abandoned false starts.
-        - Apply self-corrections, keeping only the speaker's final phrasing ("at 2 actually 3" → "at 3").
+        - Apply self-corrections, keeping only the speaker's final phrasing ("at 2 actually 3" → "at 3"). When the speaker abandons a phrase and restarts, or says something and then contradicts it, keep only what they settled on and delete the abandoned attempt along with the word that marked the change ("actually", "sorry", "no", "I mean"). An abandoned phrase can look like a list item, so judge it by whether the speaker replaced it: "put it near the top, the top right corner" → "put it in the top right corner".
         - Rewrite disfluent speech into complete, coherent sentences: fix grammar, smooth awkward word order, break run-ons into sentences, and add natural punctuation and capitalization. The result should read like text the speaker would have typed, not a verbatim transcript.
         - Preserve the speaker's meaning, tone, and level of detail. Never condense, drop, or add points.
         - Clean the transcript from its first word to its last. Never summarize, never stop early, and never write anything like "and so on" — a long transcript produces a long result.
@@ -293,6 +294,10 @@ final class LLMCleaner {
     static let fewShot: [(String, String)] = [
         ("App: Notes (general)\nTranscript: um does it uh does it work", "Does it work?"),
         ("App: Terminal (coding)\nTranscript: run the the tests with um dash dash verbose and then uh commit", "Run the tests with --verbose and then commit."),
+        // Self-corrections need a worked example, not just the rule: with the rule alone both
+        // qwen3-0.6b and 1.7b left "friday, we should ship it on thursday actually" intact.
+        ("App: Notes (general)\nTranscript: the tooltip should the tooltip needs to sit above the row and let's do it in the sprint after this one no this sprint",
+         "The tooltip needs to sit above the row, and let's do it this sprint."),
         ("App: Notes (general)\nTranscript: okay so um i tested the new build and uh the login flow it's it's mostly working but i found like two issues one is the the spinner never goes away on slow connections and two um when you when you log out it doesn't actually clear the session so so yeah we should probably fix those before before friday",
          "I tested the new build and the login flow is mostly working, but I found two issues. First, the spinner never goes away on slow connections. Second, when you log out it doesn't actually clear the session. We should fix those before Friday."),
     ]
@@ -367,30 +372,69 @@ final class LLMCleaner {
         return cleanedWords < Int(Double(rawWords) * 0.55)
     }
 
-    // MARK: - Rule-based fallback
+    // MARK: - Deterministic filler removal
 
-    static func ruleClean(_ raw: String) -> String {
-        var text = raw
-        // Filler words; \b keeps "umbrella" etc. intact.
-        let fillers = ["um", "umm", "ummm", "uh", "uhh", "uhhh", "er", "erm", "ah", "you know"]
-        for filler in fillers {
+    /// Removes the fillers a regex gets right every time. Runs on the model's output as well as
+    /// the rule-based path: measured on qwen3-0.6b, the model leaves "uh" and discourse "like"
+    /// in about as often as it strips them, and this stage does not have to be trusted twice.
+    ///
+    /// Two tiers, because the cost of a mistake is asymmetric (CLAUDE.md: losing the user's
+    /// words is worse than leaving a filler in). "um" and friends are never words. "like" and
+    /// "you know" are — "I like it", "looks like a bug", "do you know the answer" — so those are
+    /// only touched in the shapes a real use never takes.
+    static func stripFillers(_ text: String) -> String {
+        var text = text
+        // Not a word in any reading. `(^|[\s,])` keeps "umbrella" and "uh-huh" intact.
+        for filler in ["um", "umm", "ummm", "uh", "uhh", "uhhh", "er", "erm", "ah"] {
             text = text.replacingOccurrences(
                 of: "(?i)(^|[\\s,])\(filler)([\\s,.!?]|$)",
                 with: "$1$2",
                 options: .regularExpression
             )
         }
-        // Immediately repeated words ("the the" → "the").
+        for hedge in ["like", "you know"] {
+            // Bracketed by commas: "it was, like, really slow". A real "like" is never bracketed.
+            // Replaced by a space, not a comma — the commas were only there for the hedge.
+            text = text.replacingOccurrences(
+                of: "(?i),\\s*\(hedge)\\s*,\\s*", with: " ", options: .regularExpression)
+            // Trailing: "it's too slow, you know."
+            text = text.replacingOccurrences(
+                of: "(?i),\\s*\(hedge)\\s*([.!?]|$)", with: "$1", options: .regularExpression)
+        }
+        // Opening a sentence: "Too high. Like, way too high." The next word takes the capital the
+        // hedge was holding. \u{1} marks the spot; a transcript never contains one.
         text = text.replacingOccurrences(
+            of: "(?i)(^|[.!?]\\s+)(?:like|you know),\\s*", with: "$1\u{1}", options: .regularExpression)
+        while let mark = text.range(of: "\u{1}") {
+            let rest = text[mark.upperBound...]
+            text = String(text[..<mark.lowerBound]) + rest.prefix(1).uppercased() + String(rest.dropFirst())
+        }
+        // ponytail: bare "like" mid-sentence ("it could be like closer to") is left to the
+        // prompt. Telling filler from comparison there needs both sides of the word, and a
+        // wrong guess eats "sounds like really bad news".
+        return tidy(text)
+    }
+
+    /// Collapse leftover whitespace and dangling commas.
+    private static func tidy(_ text: String) -> String {
+        var text = text.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "\\s+([,.!?])", with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: "^[,\\s]+", with: "", options: .regularExpression)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Rule-based fallback
+
+    static func ruleClean(_ raw: String) -> String {
+        // Immediately repeated words ("the the" → "the"). Before the fillers, not after: the
+        // filler pass consumes the space it matched on, so "uh uh" keeps its second "uh" unless
+        // the pair has already collapsed into one.
+        var text = raw.replacingOccurrences(
             of: "(?i)\\b(\\w+)(\\s+\\1)+\\b",
             with: "$1",
             options: .regularExpression
         )
-        // Collapse leftover whitespace and dangling commas.
-        text = text.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
-        text = text.replacingOccurrences(of: "\\s+([,.!?])", with: "$1", options: .regularExpression)
-        text = text.replacingOccurrences(of: "^[,\\s]+", with: "", options: .regularExpression)
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        text = stripFillers(text)
         if let first = text.first, first.isLowercase {
             text = first.uppercased() + text.dropFirst()
         }
