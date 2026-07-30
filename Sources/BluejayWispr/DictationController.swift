@@ -76,7 +76,7 @@ final class DictationController: ObservableObject {
             await LLMCleaner.bootLMStudioIfNeeded()
             try? await Task.sleep(nanoseconds: 2_000_000_000)  // give the server a moment
             await cleaner.warmUp()
-            NSLog("BluejayWispr: cleanup using %@", cleaner.activeDescription)
+            logLine("cleanup using \(cleaner.activeDescription)")
         }
         // Keepalive: LM Studio idle-unloads models after ~60 min; a periodic warm call
         // keeps the model and the prompt-prefix cache hot so dictations never hit a
@@ -134,6 +134,11 @@ final class DictationController: ObservableObject {
         if device != UserDefaults.standard.string(forKey: "lastMicName") {
             UserDefaults.standard.set(device, forKey: "lastMicName")
             micFlash = device
+            // Fades on its own rather than living for the whole dictation: it is a passing
+            // heads-up, and the current device is always in Settings.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                if self?.micFlash == device { self?.micFlash = nil }
+            }
         }
         recordingStartedAt = Date()
         partialText = ""
@@ -179,15 +184,17 @@ final class DictationController: ObservableObject {
             guard !raw.isEmpty else {
                 self.state = .idle
                 self.partialText = ""
-                self.micFlash = nil
                 self.noteMode = false
                 return
             }
             let llmStart = Date()
             let (cleaned, provider) = await self.cleaner.clean(raw, context: context)
             let llmMs = Date().timeIntervalSince(llmStart) * 1000
-            NSLog("BluejayWispr: timings transcribe=%.0fms llm=%.0fms provider=%@ words=%d",
-                  transcribeMs, llmMs, provider, cleaned.split(separator: " ").count)
+            logLine("""
+                timings transcribe=\(Int(transcribeMs))ms llm=\(Int(llmMs))ms \
+                spoke=\(Int(duration * 1000))ms provider=\(provider) \
+                words=\(cleaned.split(separator: " ").count)
+                """)
             guard self.sessionGeneration == generation else { return }
             if !cleaned.isEmpty {
                 if self.noteMode {
@@ -212,7 +219,6 @@ final class DictationController: ObservableObject {
             }
             self.state = .idle
             self.partialText = ""
-            self.micFlash = nil
         }
     }
 
@@ -221,7 +227,6 @@ final class DictationController: ObservableObject {
         sessionGeneration += 1
         recorder.stop()
         level = 0
-        micFlash = nil
         noteMode = false
         partialText = ""
         state = .idle

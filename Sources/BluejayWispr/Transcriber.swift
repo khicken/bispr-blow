@@ -46,7 +46,7 @@ final class Transcriber {
                 try await request.downloadAndInstall()
             }
         } catch {
-            NSLog("BluejayWispr: speech asset install failed: \(error)")
+            logLine("speech asset install failed: \(error)")
         }
     }
 
@@ -73,7 +73,7 @@ final class Transcriber {
         do {
             try await startAnalyzerSession(inputFormat: inputFormat, contextTerms: contextTerms)
         } catch {
-            NSLog("BluejayWispr: SpeechAnalyzer unavailable (\(error)); falling back to SFSpeechRecognizer")
+            logLine("SpeechAnalyzer unavailable (\(error)); falling back to SFSpeechRecognizer")
             usingFallback = true
             startSFSession(inputFormat: inputFormat, contextTerms: contextTerms)
         }
@@ -119,7 +119,7 @@ final class Transcriber {
         do {
             try await analyzer?.finalizeAndFinishThroughEndOfInput()
         } catch {
-            NSLog("BluejayWispr: analyzer finalize error: \(error)")
+            logLine("analyzer finalize error: \(error)")
         }
         await resultsTask?.value
         cleanupAnalyzer()
@@ -189,7 +189,7 @@ final class Transcriber {
                     DispatchQueue.main.async { self.onPartial?(snapshot) }
                 }
             } catch {
-                NSLog("BluejayWispr: transcriber results error: \(error)")
+                logLine("transcriber results error: \(error)")
             }
         }
 

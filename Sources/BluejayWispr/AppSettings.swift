@@ -47,10 +47,6 @@ final class AppSettings: ObservableObject {
     @Published var dictionary: [String] {
         didSet { defaults.set(dictionary, forKey: "dictionary") }
     }
-    /// Whether dictionary + team names are injected into the LLM cleanup prompt.
-    @Published var injectDictionary: Bool {
-        didSet { defaults.set(injectDictionary, forKey: "injectDictionary") }
-    }
     @Published var teamMembers: [TeamMember] {
         didSet {
             if let data = try? JSONEncoder().encode(teamMembers) {
@@ -63,8 +59,9 @@ final class AppSettings: ObservableObject {
     }
 
     /// Terms the cleanup model should correct toward: dictionary + team member names.
+    /// Always applied — an empty dictionary already means no biasing, so a switch to turn it off
+    /// only ever disables words the user deliberately added.
     var vocabulary: [String] {
-        guard injectDictionary else { return [] }
         var seen = Set<String>()
         return (dictionary + teamMembers.map(\.name))
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -88,7 +85,6 @@ final class AppSettings: ObservableObject {
         preferredModel = defaults.string(forKey: "preferredModel") ?? ""
         inputDeviceUID = defaults.string(forKey: "inputDeviceUID") ?? ""
         dictionary = defaults.stringArray(forKey: "dictionary") ?? ["Bluejay"]
-        injectDictionary = defaults.object(forKey: "injectDictionary") as? Bool ?? true
         if let data = defaults.data(forKey: "teamMembers"),
            let saved = try? JSONDecoder().decode([TeamMember].self, from: data) {
             teamMembers = saved

@@ -69,12 +69,12 @@ final class LLMCleaner {
             // Small models summarize long dictations or stop mid-sentence with an ellipsis.
             // Losing the speaker's words is worse than leaving fillers in, so keep everything.
             if Self.looksTruncated(result, raw: trimmed) {
-                NSLog("BluejayWispr: cleanup dropped content (\(result.count) of \(trimmed.count) chars); using rules")
+                logLine("cleanup dropped content (\(result.count) of \(trimmed.count) chars); using rules")
                 return (Self.ruleClean(trimmed), "rules")
             }
             return (result, endpoint.name)
         } catch {
-            NSLog("BluejayWispr: LLM cleanup failed (\(error)); using rule-based fallback")
+            logLine("LLM cleanup failed (\(error)); using rule-based fallback")
             resolved = nil
             return (Self.ruleClean(trimmed), "rules")
         }
@@ -98,9 +98,9 @@ final class LLMCleaner {
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
-            NSLog("BluejayWispr: started LM Studio server")
+            logLine("started LM Studio server")
         } catch {
-            NSLog("BluejayWispr: failed to start LM Studio server: \(error)")
+            logLine("failed to start LM Studio server: \(error)")
         }
     }
 
@@ -113,7 +113,7 @@ final class LLMCleaner {
         var messages = Self.staticPrefix(vocabulary: settings.vocabulary)
         messages.append(["role": "user", "content": "App: Notes (general)\nTranscript: ok"])
         _ = try? await complete(endpoint: endpoint, model: model, messages: messages)
-        NSLog("BluejayWispr: warmed up \(endpoint.name) / \(model)")
+        logLine("warmed up \(endpoint.name) / \(model)")
     }
 
     // MARK: - Endpoint resolution

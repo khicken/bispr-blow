@@ -40,7 +40,7 @@ final class FnKeyMonitor {
 
     func start() {
         if !startEventTap() {
-            NSLog("BluejayWispr: CGEventTap unavailable (missing Accessibility?); using passive NSEvent fallback")
+            logLine("CGEventTap unavailable (missing Accessibility?); using passive NSEvent fallback")
             startNSEventFallback()
             // Upgrade to the tap as soon as Accessibility is granted — no relaunch needed.
             retryTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -50,7 +50,7 @@ final class FnKeyMonitor {
                     self.retryTimer = nil
                     self.nsMonitors.forEach { NSEvent.removeMonitor($0) }
                     self.nsMonitors = []
-                    NSLog("BluejayWispr: Accessibility granted — upgraded to CGEventTap")
+                    logLine("Accessibility granted — upgraded to CGEventTap")
                 }
             }
         }

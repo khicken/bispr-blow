@@ -91,23 +91,6 @@ struct SettingsView: View {
 
             if showAdvanced {
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle(isOn: $settings.injectDictionary) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Use my dictionary")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.ink)
-                            Text("Steers both the recognizer and the cleanup toward the words "
-                                 + "you added, so \"work tree\" comes out as \"worktree\".")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(Theme.inkSubtle)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-
-                    Divider().opacity(0.5)
-
                     Picker("Provider", selection: $settings.provider) {
                         ForEach(AppSettings.Provider.allCases) { provider in
                             Text(provider.rawValue).tag(provider)

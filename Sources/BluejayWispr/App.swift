@@ -26,6 +26,7 @@ enum Main {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: DictationController!
     private var pill: RecordingPillController!
+    private var toast: ToastController!
     private var dashboard: DashboardWindowController!
     private var statusItem: NSStatusItem!
     private var quitMenu: NSMenu!
@@ -36,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pill = RecordingPillController(controller: controller) { [weak self] section in
             self?.dashboard.show(section)
         }
+        toast = ToastController(controller: controller)
 
         setupMenuBar()
         setupQuitShortcut()
