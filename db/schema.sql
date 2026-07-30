@@ -4,6 +4,14 @@
 
 create extension if not exists pgcrypto;   -- gen_random_uuid()
 
+-- Who is asking. PostgREST puts the verified JWT in request.jwt.claims, and
+-- Supabase's auth.uid() is exactly this expression — spelling it out keeps the
+-- schema applyable (and testable) on a plain Postgres.
+create function current_user_id() returns uuid
+language sql stable as $$
+    select nullif(nullif(current_setting('request.jwt.claims', true), '')::json ->> 'sub', '')::uuid
+$$;
+
 create table users (
     id           uuid primary key default gen_random_uuid(),
     email        text not null unique,
@@ -26,6 +34,20 @@ create table org_members (
     joined_at    timestamptz not null default now(),
     primary key (org_id, user_id)
 );
+
+-- security definer so a policy on org_members can ask about org_members
+-- without recursing into itself.
+create function is_org_member(org uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+    select exists (select 1 from org_members
+                   where org_id = org and user_id = current_user_id())
+$$;
+
+create function is_org_owner(org uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+    select exists (select 1 from org_members
+                   where org_id = org and user_id = current_user_id() and role = 'owner')
+$$;
 
 create table invites (
     id          uuid primary key default gen_random_uuid(),
@@ -102,6 +124,14 @@ group by user_id;
 
 -- One row per (org, member, period). Clients filter and sort server-side:
 --   ?org_id=eq.<id>&period=eq.week&order=words.desc
+--
+-- Deliberately NOT security_invoker. A member can only select their own rows in
+-- `dictations` (policies.sql), so an invoker-rights view would show everyone a
+-- leaderboard of one: themselves. Reading as owner is what lets this aggregate
+-- across the team, and the is_org_member predicate below is the entire access
+-- control for it — it is not redundant with RLS, it replaces it here. Only
+-- aggregates cross that line; nobody sees another member's rows, timestamps or
+-- app names, and no view here can reach transcript text.
 create view leaderboard as
 select m.org_id,
        m.user_id,
@@ -118,4 +148,5 @@ left join member_streaks s on s.user_id = m.user_id
 cross join (values ('day', 1), ('week', 7), ('month', 30), ('all', 100000))
         as p (period, days)
 where m.day > current_date - p.days
+  and is_org_member(m.org_id)
 group by m.org_id, m.user_id, om.display_name, p.period, s.day_streak;
