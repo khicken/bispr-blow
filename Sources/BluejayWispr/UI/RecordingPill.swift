@@ -85,24 +85,30 @@ final class RecordingPillController {
     /// whatever app is open all compete for the same edges, so this is a preference, not a
     /// constant — a bottom-centre bar sits on top of the middle of the Dock.
     enum Anchor: String, CaseIterable {
-        case bottomLeft, bottomCentre, bottomRight
+        case bottomCentre, leftCentre, rightCentre
 
-        /// Nearest anchor to a dropped position, by the pill's own centre.
-        static func nearest(centreX: CGFloat, in frame: CGRect) -> Anchor {
-            let third = frame.width / 3
-            if centreX < frame.minX + third { return .bottomLeft }
-            if centreX > frame.maxX - third { return .bottomRight }
-            return .bottomCentre
+        /// Bottom-left origin for a panel of `size`. The side anchors sit vertically centred, so
+        /// the pill clears the Dock and the menu bar entirely; the inset keeps it off the bezel.
+        func origin(size: CGSize, in frame: CGRect, inset: CGFloat = 12) -> NSPoint {
+            switch self {
+            case .bottomCentre: NSPoint(x: frame.midX - size.width / 2, y: frame.minY)
+            case .leftCentre: NSPoint(x: frame.minX + inset, y: frame.midY - size.height / 2)
+            case .rightCentre: NSPoint(x: frame.maxX - size.width - inset, y: frame.midY - size.height / 2)
+            }
         }
 
-        /// Left edge for a panel of `width` on `frame`. Corners keep a small inset so the pill
-        /// does not touch the bezel.
-        func originX(width: CGFloat, in frame: CGRect, inset: CGFloat = 12) -> CGFloat {
-            switch self {
-            case .bottomLeft: frame.minX + inset
-            case .bottomCentre: frame.midX - width / 2
-            case .bottomRight: frame.maxX - width - inset
-            }
+        /// Anchor whose resting place is closest to where the pill was dropped. Distance between
+        /// centres, in both axes — snapping on x alone is what made a vertical drag teleport back
+        /// to the bottom of the screen.
+        static func nearest(to centre: NSPoint, size: CGSize, in frame: CGRect) -> Anchor {
+            allCases.min { a, b in
+                func distance(_ anchor: Anchor) -> CGFloat {
+                    let o = anchor.origin(size: size, in: frame)
+                    let c = NSPoint(x: o.x + size.width / 2, y: o.y + size.height / 2)
+                    return hypot(c.x - centre.x, c.y - centre.y)
+                }
+                return distance(a) < distance(b)
+            } ?? .bottomCentre
         }
     }
 
@@ -116,12 +122,18 @@ final class RecordingPillController {
         guard !movingProgrammatically else { return }
         dragging = true
         settleTimer?.invalidate()
-        settleTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+        settleTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in
             guard let self, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
             let dropped = self.panel.frame
-            self.anchor = Anchor.nearest(centreX: dropped.midX, in: screen.frame)
+            self.anchor = Anchor.nearest(to: NSPoint(x: dropped.midX, y: dropped.midY),
+                                        size: dropped.size, in: screen.frame)
             self.dragging = false
-            self.reposition()
+            // Glide to the anchor rather than cutting to it — an instant jump from wherever the
+            // pointer let go reads as the pill teleporting.
+            let target = self.anchor.origin(size: dropped.size, in: screen.frame)
+            self.movingProgrammatically = true
+            self.panel.setFrame(NSRect(origin: target, size: dropped.size), display: true, animate: true)
+            self.movingProgrammatically = false
         }
     }
 
@@ -144,7 +156,7 @@ final class RecordingPillController {
         // on the bottom edge. The panel's own `margin` supplies the small gap, so no offset here.
         let frame = screen.frame
         let size = panel.frame.size
-        let target = NSPoint(x: anchor.originX(width: size.width, in: frame), y: frame.minY)
+        let target = anchor.origin(size: size, in: frame)
         if panel.frame.origin != target {
             movingProgrammatically = true
             panel.setFrameOrigin(target)
@@ -405,19 +417,21 @@ final class ToastController {
 
     private var timer: Timer?
 
-    /// Sits above the tallest pill state so it never overlaps the waveform, and over whichever
-    /// anchor the user parked the pill on so the two stay visually attached.
+    /// Sits directly above the pill wherever the user parked it, so the two read as one thing.
+    /// Clamped to the screen, because a 420pt toast centred on an edge-anchored pill would
+    /// otherwise hang off the side.
     func reposition() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let frame = screen.frame
         let size = panel.frame.size
-        // Centred on the pill, but never hanging off the screen when the pill is in a corner.
-        let pillWidth = PillView.size(for: .idle).width
-        let pillCentre = RecordingPillController.Anchor(
+        let pillSize = PillView.size(for: .idle)
+        let anchor = RecordingPillController.Anchor(
             rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? ""
-        ).map { $0.originX(width: pillWidth, in: frame) + pillWidth / 2 } ?? frame.midX
-        let x = min(max(pillCentre - size.width / 2, frame.minX), frame.maxX - size.width)
-        panel.setFrameOrigin(NSPoint(x: x, y: frame.minY + PillView.size(for: .idle).height + 4))
+        ) ?? .bottomCentre
+        let pill = NSRect(origin: anchor.origin(size: pillSize, in: frame), size: pillSize)
+        let x = min(max(pill.midX - size.width / 2, frame.minX), frame.maxX - size.width)
+        let y = min(pill.maxY + 4, frame.maxY - size.height)
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
         panel.orderFrontRegardless()
     }
 }

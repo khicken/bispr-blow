@@ -44,16 +44,20 @@ enum SelfCheck {
         // A section left out of a sidebar group just disappears from the nav, silently.
         precondition(DashboardView.Section.groups.flatMap(\.items) == DashboardView.Section.allCases)
 
-        // Dropping the pill snaps it to the nearest bottom anchor; getting the thirds wrong
-        // parks it somewhere the user did not choose, or off screen.
+        // Dropping the pill snaps it to the nearest anchor. Snapping on x alone made a vertical
+        // drag teleport back to the bottom, so both axes count.
         let screen = CGRect(x: 0, y: 0, width: 1352, height: 878)
+        let pill = CGSize(width: 122, height: 48)
         typealias Anchor = RecordingPillController.Anchor
-        precondition(Anchor.nearest(centreX: 10, in: screen) == .bottomLeft)
-        precondition(Anchor.nearest(centreX: 676, in: screen) == .bottomCentre)
-        precondition(Anchor.nearest(centreX: 1340, in: screen) == .bottomRight)
-        precondition(Anchor.bottomLeft.originX(width: 122, in: screen) == 12)
-        precondition(Anchor.bottomRight.originX(width: 122, in: screen) == 1218)
-        precondition(Anchor.bottomCentre.originX(width: 122, in: screen) == 615)
+        // Dropped near the left edge halfway up: the left anchor, not the bottom one.
+        precondition(Anchor.nearest(to: NSPoint(x: 60, y: 500), size: pill, in: screen) == .leftCentre)
+        precondition(Anchor.nearest(to: NSPoint(x: 1300, y: 500), size: pill, in: screen) == .rightCentre)
+        precondition(Anchor.nearest(to: NSPoint(x: 676, y: 30), size: pill, in: screen) == .bottomCentre)
+        // Dropped low but hard left still belongs on the left edge.
+        precondition(Anchor.nearest(to: NSPoint(x: 40, y: 300), size: pill, in: screen) == .leftCentre)
+        precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 12, y: 415))
+        precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1218, y: 415))
+        precondition(Anchor.bottomCentre.origin(size: pill, in: screen) == NSPoint(x: 615, y: 0))
 
         print("self-check passed")
     }
