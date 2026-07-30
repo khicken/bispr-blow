@@ -39,6 +39,19 @@ struct SettingsView: View {
                 ShortcutRows(settings: settings)
             }
 
+            settingsGroup("Appearance") {
+                // Swatches rather than a menu: a theme is the one setting whose value you can only
+                // judge by looking at it, so the control shows it instead of naming it.
+                HStack(spacing: 10) {
+                    ForEach(Appearance.allCases) { appearance in
+                        ThemeSwatch(appearance: appearance,
+                                    selected: settings.appearance == appearance) {
+                            withAnimation(.bjSoft) { settings.appearance = appearance }
+                        }
+                    }
+                }
+            }
+
             settingsGroup("Microphone") {
                 HStack(spacing: 8) {
                     Image(systemName: "mic")
@@ -157,5 +170,74 @@ struct SettingsView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.inkSubtle)
         }
+    }
+}
+
+/// A theme, shown rather than described: its own surface colour, its own accent, its own bar, and
+/// its brand image where it has one. Picking it is picking the picture.
+struct ThemeSwatch: View {
+    let appearance: Appearance
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var palette: Palette { appearance.palette }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 9) {
+                ZStack(alignment: .bottom) {
+                    palette.cream
+                    if let name = palette.previewImage, let image = Theme.image(name) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        // No image: show the palette itself, so both swatches carry the same weight.
+                        LinearGradient(colors: [palette.surface, palette.surfaceActive],
+                                       startPoint: .top, endPoint: .bottom)
+                    }
+                    // The bar, at the size it draws, on the edge it sits on.
+                    Capsule()
+                        .fill(palette.pillBackground)
+                        .frame(width: 46, height: 11)
+                        .padding(.bottom, 9)
+                }
+                .frame(height: 86)
+                .clipped()
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Circle().fill(palette.blue).frame(width: 7, height: 7)
+                        Text(appearance.rawValue)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Theme.ink)
+                    }
+                    Text(appearance.blurb)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.inkSubtle)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
+            .frame(width: 188)
+            .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? Theme.blue : Theme.border,
+                            lineWidth: selected ? 2 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+        .scaleEffect(hovering && !selected ? 1.015 : 1)
+        .shadow(color: Theme.ink.opacity(hovering ? 0.08 : 0), radius: 8, y: 3)
+        .onHover { hovering = $0 }
+        .animation(.bjHover, value: hovering)
+        .accessibilityLabel("\(appearance.rawValue) theme")
     }
 }

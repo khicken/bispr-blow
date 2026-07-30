@@ -57,6 +57,11 @@ final class AppSettings: ObservableObject {
     @Published var launchSoundEnabled: Bool {
         didSet { defaults.set(launchSoundEnabled, forKey: "launchSoundEnabled") }
     }
+    /// Which look the app draws in. Every colour and every piece of brand imagery comes from the
+    /// matching `Palette`, so this is the only stored piece of a theme.
+    @Published var appearance: Appearance {
+        didSet { defaults.set(appearance.rawValue, forKey: "appearance") }
+    }
     /// Bindings per action, keyed by `ShortcutAction.rawValue` — a String key so the whole
     /// thing is JSON-encodable without a CodingKey dance.
     @Published var bindings: [String: [Shortcut]] {
@@ -163,6 +168,7 @@ final class AppSettings: ObservableObject {
             teamMembers = []
         }
         launchSoundEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
+        appearance = Appearance(rawValue: defaults.string(forKey: "appearance") ?? "") ?? .bluejay
         if let data = defaults.data(forKey: "bindings"),
            let saved = try? JSONDecoder().decode([String: [Shortcut]].self, from: data) {
             bindings = saved

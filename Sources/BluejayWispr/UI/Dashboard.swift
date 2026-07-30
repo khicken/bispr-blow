@@ -145,7 +145,24 @@ struct DashboardView: View {
             .padding(.bottom, 16)
         }
         .frame(width: 250)
-        .background(Theme.surface)
+        .background(alignment: .bottom) {
+            // A theme with brand imagery puts it here: always in view, behind nothing that has to
+            // stay legible, and faded into the rail's own colour at the top so the nav never sits
+            // on a picture. Themes without imagery get the flat surface and this costs nothing.
+            ZStack(alignment: .bottom) {
+                Theme.surface
+                if let name = Theme.palette.sidebarImage, let image = Theme.image(name) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 300)
+                        .frame(maxWidth: 250)
+                        .clipped()
+                        .mask(LinearGradient(colors: [.clear, .black.opacity(0.55)],
+                                             startPoint: .top, endPoint: .bottom))
+                }
+            }
+        }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Theme.border.opacity(0.55)).frame(width: 1)
         }
@@ -681,16 +698,28 @@ struct DictionaryView: View {
         .transition(.opacity.combined(with: .offset(y: -6)))
     }
 
-    /// The app icon's own gradient with a soft bloom over it — the same dark field the pill uses,
-    /// so the two surfaces read as one product. A photograph would be someone else's picture.
+    /// A brand render where the theme has one, and the app icon's own gradient where it does not —
+    /// the same dark field the pill uses, so the two surfaces read as one product either way. The
+    /// scrim is what keeps white text on a photograph readable, and it is darkest where the text is.
+    @ViewBuilder
     private var introBackground: some View {
-        LinearGradient(colors: [Theme.blueDeep, Color(hex: 0x123A5C)],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
-            .overlay(
-                RadialGradient(colors: [Theme.blue.opacity(0.42), .clear],
-                               center: UnitPoint(x: 0.82, y: 0.18),
-                               startRadius: 4, endRadius: 340)
-            )
+        if let name = Theme.palette.panelImage, let image = Theme.image(name) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .overlay(
+                    LinearGradient(colors: [.black.opacity(0.62), .black.opacity(0.22)],
+                                   startPoint: .leading, endPoint: .trailing)
+                )
+        } else {
+            LinearGradient(colors: [Theme.blueDeep, Color(hex: 0x123A5C)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(
+                    RadialGradient(colors: [Theme.blue.opacity(0.42), .clear],
+                                   center: UnitPoint(x: 0.82, y: 0.18),
+                                   startRadius: 4, endRadius: 340)
+                )
+        }
     }
 
     // MARK: Composer
@@ -793,18 +822,33 @@ struct DictionaryView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.inkTertiary)
                     .padding(.vertical, 6)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(shown.enumerated()), id: \.element) { index, word in
-                        TermRow(word: word, first: index == 0) {
-                            withAnimation(.bjSnap) { settings.dictionary.removeAll { $0 == word } }
-                        }
-                    }
+            } else if listIsLong {
+                // The list scrolls inside itself rather than making the page grow. Thirty terms in
+                // a page-height list pushed the search field and the starter packs off the top and
+                // bottom of the window, so the tools for the list you were reading were the first
+                // things to leave. Fixed height, because past the threshold there is always more
+                // content than fits — no measuring, and no dead space on a short list.
+                ScrollView {
+                    rows
                 }
+                .frame(height: 340)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tableHeader))
-                .animation(.bjSnap, value: shown)
+            } else {
+                rows
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tableHeader))
             }
         }
+    }
+
+    private var rows: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(shown.enumerated()), id: \.element) { index, word in
+                TermRow(word: word, first: index == 0) {
+                    withAnimation(.bjSnap) { settings.dictionary.removeAll { $0 == word } }
+                }
+            }
+        }
+        .animation(.bjSnap, value: shown)
     }
 
     // MARK: Packs

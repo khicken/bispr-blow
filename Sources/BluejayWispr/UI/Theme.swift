@@ -1,29 +1,123 @@
 import SwiftUI
 
-/// Bluejay brand palette (matches bluejay_frontend_v2 globals.css).
+/// A whole look, in one value. Every colour the app draws comes from here, so a theme is a table
+/// rather than a set of conditionals sprinkled through the views.
+struct Palette {
+    let cream, surface, surfaceActive, tableHeader, border: Color
+    let ink, inkSecondary, inkTertiary, inkSubtle: Color
+    let blue, blueDeep, red, green: Color
+    let pillBackground, pillWave: Color
+    /// Brand imagery, by resource name, or nil where a theme wants none. Optional rather than
+    /// checked against the theme in each view: a surface asks for the picture it would draw and
+    /// gets nothing back, so adding a theme never means finding every `if`.
+    var sidebarImage: String?
+    var panelImage: String?
+    var previewImage: String?
+}
+
+/// Which look is in use. Add a case, add a palette, and it appears in Settings.
+enum Appearance: String, CaseIterable, Identifiable {
+    case bluejay = "Bluejay"
+    case bluejayWorld = "Bluejay World"
+
+    var id: String { rawValue }
+
+    /// One line under the name in Settings. What it looks like, not how it works.
+    var blurb: String {
+        switch self {
+        case .bluejay: "Paper and ink, with a blue accent."
+        case .bluejayWorld: "The brand world: soft colour, dark violet bar."
+        }
+    }
+
+    var palette: Palette {
+        switch self {
+        case .bluejay:
+            // Matches bluejay_frontend_v2 globals.css.
+            Palette(
+                cream: Color(hex: 0xFDFDFB),          // bg-cream
+                surface: Color(hex: 0xF9FAF8),        // bg-sidebar / bg-content
+                surfaceActive: Color(hex: 0xECEEE9),  // nav-bg-active
+                tableHeader: Color(hex: 0xF4F5F1),
+                border: Color(hex: 0xD7DCDA),
+                ink: Color(hex: 0x2D2D2D),            // text-primary
+                inkSecondary: Color(hex: 0x404040),
+                inkTertiary: Color(hex: 0x5C5C5C),
+                inkSubtle: Color(hex: 0x8C8C8C),
+                blue: Color(hex: 0x1FA2FF),           // accent
+                blueDeep: Color(hex: 0x0B2A45),       // app-icon gradient end
+                red: Color(hex: 0xEF4444),
+                green: Color(hex: 0x15803D),
+                // Dark over any wallpaper, like Wispr's.
+                pillBackground: Color(hex: 0x1C1D1F).opacity(0.92),
+                pillWave: .white
+            )
+        case .bluejayWorld:
+            // Sampled from the brand world renders in assets/world: cyan skies, lavender clouds,
+            // magenta light. Ink goes deep violet rather than grey so text belongs to the same
+            // world, and the bar goes violet-black so it reads as night in it.
+            Palette(
+                cream: Color(hex: 0xFBF8FF),
+                surface: Color(hex: 0xF5F0FF),
+                surfaceActive: Color(hex: 0xE7DDFB),
+                tableHeader: Color(hex: 0xF0EAFD),
+                border: Color(hex: 0xDDD1F4),
+                ink: Color(hex: 0x241A47),
+                inkSecondary: Color(hex: 0x3A2C68),
+                inkTertiary: Color(hex: 0x5B4C8A),
+                inkSubtle: Color(hex: 0x9086B0),
+                blue: Color(hex: 0x2BC4DE),            // the bird
+                blueDeep: Color(hex: 0x2A1B4A),
+                red: Color(hex: 0xF0479B),             // the sky
+                green: Color(hex: 0x1FAE9C),
+                pillBackground: Color(hex: 0x241638).opacity(0.94),
+                pillWave: Color(hex: 0xB8F0FA),
+                sidebarImage: "World_Secondary",
+                panelImage: "World_Abstract",
+                previewImage: "World_Scene"
+            )
+        }
+    }
+}
+
+/// The colours in play right now. Static so every call site stays a plain `Theme.ink`, computed so
+/// switching appearance repaints instead of needing a relaunch. Views that draw these must observe
+/// `AppSettings`, or they keep the palette they were built with.
 enum Theme {
-    static let cream = Color(hex: 0xFDFDFB)        // bg-cream
-    static let surface = Color(hex: 0xF9FAF8)      // bg-sidebar / bg-content
-    static let surfaceActive = Color(hex: 0xECEEE9) // nav-bg-active
-    static let tableHeader = Color(hex: 0xF4F5F1)
-    static let border = Color(hex: 0xD7DCDA)
-    static let ink = Color(hex: 0x2D2D2D)          // text-primary
-    static let inkSecondary = Color(hex: 0x404040)
-    static let inkTertiary = Color(hex: 0x5C5C5C)
-    static let inkSubtle = Color(hex: 0x8C8C8C)
-    static let blue = Color(hex: 0x1FA2FF)         // accent
-    static let blueDeep = Color(hex: 0x0B2A45)     // app-icon gradient end
-    static let blueSoft = Color(hex: 0x1FA2FF).opacity(0.12)
-    static let red = Color(hex: 0xEF4444)
-    static let green = Color(hex: 0x15803D)
+    static var palette: Palette { AppSettings.shared.appearance.palette }
 
-    // Flow-bar pill (dark over any wallpaper, like Wispr's)
-    static let pillBackground = Color(hex: 0x1C1D1F).opacity(0.92)
-    static let pillWave = Color.white
+    static var cream: Color { palette.cream }
+    static var surface: Color { palette.surface }
+    static var surfaceActive: Color { palette.surfaceActive }
+    static var tableHeader: Color { palette.tableHeader }
+    static var border: Color { palette.border }
+    static var ink: Color { palette.ink }
+    static var inkSecondary: Color { palette.inkSecondary }
+    static var inkTertiary: Color { palette.inkTertiary }
+    static var inkSubtle: Color { palette.inkSubtle }
+    static var blue: Color { palette.blue }
+    static var blueDeep: Color { palette.blueDeep }
+    static var blueSoft: Color { palette.blue.opacity(0.12) }
+    static var red: Color { palette.red }
+    static var green: Color { palette.green }
+    static var pillBackground: Color { palette.pillBackground }
+    static var pillWave: Color { palette.pillWave }
 
-    static func logo(_ name: String) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: "Resources/\(name)", withExtension: "svg")
-            ?? Bundle.module.url(forResource: name, withExtension: "svg", subdirectory: "Resources")
+    static func logo(_ name: String) -> NSImage? { asset(name, extension: "svg") }
+
+    /// Brand imagery. Cached: these are photographs, and a SwiftUI body can run many times a second.
+    static func image(_ name: String) -> NSImage? {
+        if let hit = imageCache[name] { return hit }
+        let loaded = asset(name, extension: "jpg")
+        imageCache[name] = loaded
+        return loaded
+    }
+
+    private nonisolated(unsafe) static var imageCache: [String: NSImage?] = [:]
+
+    private static func asset(_ name: String, extension ext: String) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: "Resources/\(name)", withExtension: ext)
+            ?? Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Resources")
         else { return nil }
         return NSImage(contentsOf: url)
     }

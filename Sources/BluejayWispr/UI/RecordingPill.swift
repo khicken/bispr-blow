@@ -310,6 +310,9 @@ final class PillModel: ObservableObject {
 struct PillView: View {
     @ObservedObject var model: PillModel
     @ObservedObject var controller: DictationController
+    /// Observed, not just read: the pill draws `Theme` colours and shows the user's own shortcut
+    /// name, and without this it keeps whichever theme and binding it was built with until relaunch.
+    @StateObject private var settings = AppSettings.shared
     @State private var hovering = false
     @State private var waveSamples: [Float] = Array(repeating: 0, count: PillView.barCount)
 
@@ -716,6 +719,8 @@ final class ToastController {
 
 struct ToastView: View {
     @ObservedObject var controller: DictationController
+    /// Same reason as the pill: it draws the pill's background colour.
+    @StateObject private var settings = AppSettings.shared
 
     /// A notice is something the user needs; a mic change is something they might like to know.
     private var message: String? {
