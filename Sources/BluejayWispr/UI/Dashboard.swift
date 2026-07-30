@@ -71,6 +71,16 @@ struct DashboardView: View {
             case .settings: return "gearshape"
             }
         }
+
+        /// Sidebar grouping. Dictionary and Team share a header because both exist for one
+        /// reason — feeding names to the recognizer — and Settings keeps a header of its own
+        /// so the last row reads as the end of a list rather than something left over.
+        /// Must cover `allCases` in order; SelfCheck asserts it.
+        static let groups: [(title: String, items: [Section])] = [
+            ("Activity", [.home, .history]),
+            ("Vocabulary", [.dictionary, .team]),
+            ("App", [.settings]),
+        ]
     }
 
     @ObservedObject var controller: DictationController
@@ -92,32 +102,58 @@ struct DashboardView: View {
         .preferredColorScheme(.light)
     }
 
+    /// Stagger delay by position in the flat nav order, so groups do not restart the cascade.
+    private func navDelay(_ item: Section) -> Double {
+        0.05 + Double(Section.allCases.firstIndex(of: item) ?? 0) * 0.035
+    }
+
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             BrandLockup(state: controller.state)
                 .padding(.horizontal, 18)
                 .padding(.top, 42)
-                .padding(.bottom, 22)
+                .padding(.bottom, 26)
 
-            ForEach(Array(Section.allCases.enumerated()), id: \.element) { index, item in
-                SidebarItem(item: item, selected: section == item, namespace: navPill) {
-                    withAnimation(.bjSnap) { nav.section = item }
+            ForEach(Array(Section.groups.enumerated()), id: \.element.title) { groupIndex, group in
+                // Headers sit on the 18pt column with the nav icons and the wordmark symbol,
+                // so the rail has one left edge rather than two.
+                SectionLabel(group.title)
+                    .padding(.horizontal, 18)
+                    .padding(.top, groupIndex == 0 ? 0 : 22)
+                    .padding(.bottom, 7)
+                    .appearIn(navDelay(group.items[0]))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(group.items) { item in
+                        SidebarItem(item: item, selected: section == item, namespace: navPill) {
+                            withAnimation(.bjSnap) { nav.section = item }
+                        }
+                        .appearIn(navDelay(item))
+                    }
                 }
-                .appearIn(0.05 + Double(index) * 0.035)
             }
 
             Spacer()
 
-            LiveStatus(state: controller.state)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 16)
+            VStack(alignment: .leading, spacing: 9) {
+                LiveStatus(state: controller.state)
+                Text(Self.versionLabel)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.inkSubtle.opacity(0.75))
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 16)
         }
-        .frame(width: 192)
+        .frame(width: 250)
         .background(Theme.surface)
         .overlay(alignment: .trailing) {
             Rectangle().fill(Theme.border.opacity(0.55)).frame(width: 1)
         }
     }
+
+    /// The bare `swift build` binary has no bundle, so it reads "dev" rather than a stale literal.
+    private static let versionLabel =
+        "Version " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
 
     @ViewBuilder
     private var content: some View {
@@ -151,6 +187,8 @@ struct SidebarItem: View {
 
     var body: some View {
         Button(action: action) {
+            // Icon at 18pt from the sidebar edge (8 outer + 10 inner), label at 45 (18 + 18 + 9).
+            // BrandLockup repeats both numbers; change one, change all four.
             HStack(spacing: 9) {
                 Image(systemName: item.icon)
                     .font(.system(size: 12.5, weight: .medium))
@@ -162,20 +200,20 @@ struct SidebarItem: View {
             }
             .foregroundStyle(selected ? Theme.blue : Theme.inkTertiary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10.5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 // One pill that slides between rows, rather than a fill per row.
                 if selected {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Theme.blueSoft)
                         .matchedGeometryEffect(id: "navPill", in: namespace)
                 } else if hovering {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Theme.surfaceActive.opacity(0.6))
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
             .offset(x: hovering && !selected ? 2 : 0)
         }
         .buttonStyle(.plain)
@@ -189,7 +227,8 @@ struct SidebarItem: View {
     }
 }
 
-/// Sidebar wordmark. Symbol sits on the nav icons' 18pt column so the two align;
+/// Sidebar wordmark. The 18pt symbol sits on the nav icons' 18pt column and the 9pt
+/// spacing puts the text on their 45pt label column, so the whole rail shares two edges;
 /// it spins while dictating, driven by the clock so it never snaps back on stop.
 struct BrandLockup: View {
     let state: DictationController.State

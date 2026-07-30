@@ -41,6 +41,9 @@ enum SelfCheck {
         precondition(settings.dictionary.contains("Kubernetes"))
         settings.dictionary = before
 
+        // A section left out of a sidebar group just disappears from the nav, silently.
+        precondition(DashboardView.Section.groups.flatMap(\.items) == DashboardView.Section.allCases)
+
         print("self-check passed")
     }
 }
