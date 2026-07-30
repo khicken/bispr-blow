@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var micName = AudioRecorder.defaultInputDeviceName()
     @State private var devices = AudioRecorder.inputDevices()
     @State private var models: [String] = []
+    @State private var showAdvanced = false
 
     private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     private let cleaner = LLMCleaner()
@@ -32,31 +33,43 @@ struct SettingsView: View {
                 }
             }
 
+            // Which model does the cleaning is plumbing; it stays folded away by default.
             settingsGroup("AI cleanup") {
-                Picker("Provider", selection: $settings.provider) {
-                    ForEach(AppSettings.Provider.allCases) { provider in
-                        Text(provider.rawValue).tag(provider)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: 320, alignment: .leading)
+                DisclosureGroup(isExpanded: $showAdvanced) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Picker("Provider", selection: $settings.provider) {
+                            ForEach(AppSettings.Provider.allCases) { provider in
+                                Text(provider.rawValue).tag(provider)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 320, alignment: .leading)
 
-                if settings.provider != .custom, settings.provider != .off, !models.isEmpty {
-                    Picker("Model", selection: $settings.preferredModel) {
-                        Text("Automatic").tag("")
-                        ForEach(models, id: \.self) { Text($0).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 320, alignment: .leading)
-                }
+                        if settings.provider != .custom, settings.provider != .off, !models.isEmpty {
+                            Picker("Model", selection: $settings.preferredModel) {
+                                Text("Automatic").tag("")
+                                ForEach(models, id: \.self) { Text($0).tag($0) }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 320, alignment: .leading)
+                        }
 
-                if settings.provider == .custom {
-                    labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
-                                 placeholder: "https://api.groq.com/openai/v1")
-                    labeledField("Model", text: $settings.customModel,
-                                 placeholder: "llama-3.3-70b-versatile")
-                    labeledField("API key", text: $settings.customAPIKey, placeholder: "sk-…", secure: true)
+                        if settings.provider == .custom {
+                            labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
+                                         placeholder: "https://api.groq.com/openai/v1")
+                            labeledField("Model", text: $settings.customModel,
+                                         placeholder: "llama-3.3-70b-versatile")
+                            labeledField("API key", text: $settings.customAPIKey, placeholder: "sk-…", secure: true)
+                        }
+                    }
+                    .padding(.top, 8)
+                } label: {
+                    Text("Advanced")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.inkTertiary)
+                        .handCursor()
                 }
+                .animation(.bjSoft, value: showAdvanced)
             }
 
             settingsGroup("Microphone") {

@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pill: RecordingPillController!
     private var dashboard: DashboardWindowController!
     private var statusItem: NSStatusItem!
+    private var quitMenu: NSMenu!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = DictationController()
@@ -54,10 +55,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // No menu at all: clicking the icon opens the app.
+        // Left-click opens the app; right-click is the one place Quit lives.
+        quitMenu = NSMenu()
+        quitMenu.addItem(withTitle: "Quit Bluejay Wispr",
+                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+
         statusItem.button?.target = self
-        statusItem.button?.action = #selector(openDashboard)
-        statusItem.button?.toolTip = "Bluejay Wispr — hold fn to dictate, double-tap to lock"
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem.button?.toolTip = "Bluejay Wispr — hold fn to dictate, double-tap to lock.\nRight-click to quit."
+    }
+
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            statusItem.menu = quitMenu          // attached for this click only…
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil               // …so a left-click never opens a menu
+        } else {
+            dashboard.show()
+        }
     }
 
     /// Nothing in the UI offers Quit, but ⌘Q should still work while a window is focused —
