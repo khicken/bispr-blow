@@ -35,7 +35,24 @@ struct SettingsView: View {
 
             // Which model does the cleaning is plumbing; it stays folded away by default.
             settingsGroup("AI cleanup") {
-                DisclosureGroup(isExpanded: $showAdvanced) {
+                Button {
+                    withAnimation(.bjSoft) { showAdvanced.toggle() }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .rotationEffect(.degrees(showAdvanced ? 90 : 0))
+                        Text("Advanced")
+                            .font(.system(size: 12))
+                        Spacer()
+                    }
+                    .foregroundStyle(Theme.inkTertiary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .handCursor()
+
+                if showAdvanced {
                     VStack(alignment: .leading, spacing: 10) {
                         Picker("Provider", selection: $settings.provider) {
                             ForEach(AppSettings.Provider.allCases) { provider in
@@ -62,14 +79,9 @@ struct SettingsView: View {
                             labeledField("API key", text: $settings.customAPIKey, placeholder: "sk-…", secure: true)
                         }
                     }
-                    .padding(.top, 8)
-                } label: {
-                    Text("Advanced")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.inkTertiary)
-                        .handCursor()
+                    .padding(.top, 4)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
                 }
-                .animation(.bjSoft, value: showAdvanced)
             }
 
             settingsGroup("Microphone") {
