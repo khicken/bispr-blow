@@ -145,6 +145,17 @@ final class DictationController: ObservableObject {
             self?.transcriber.feed(buffer)
         }
 
+        // Whether the focused field's text actually reaches us is per-app and unmeasured — some
+        // apps expose nothing over Accessibility, and recognizer biasing is only as good as this.
+        // Counts, never the text itself: the unified log is readable by anything on the machine.
+        if let context = capturedContext {
+            logLine("""
+                context app=\(context.appName.isEmpty ? "unknown" : context.appName) \
+                category=\(context.category.rawValue) title=\(context.windowTitle.count)chars \
+                draft=\(context.draft.count)chars terms=\(context.draftTerms.count)
+                """)
+        }
+
         let generation = sessionGeneration
         Task {
             await transcriber.startSession(inputFormat: format,

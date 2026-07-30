@@ -138,18 +138,26 @@ final class RecordingPillController {
         }
     }
 
-    /// Dragging the pill picks a place for it; it does not carry the pill around. The screen dims,
-    /// the three targets appear, and the pill stays exactly where it is until the user releases
-    /// inside one. A window that follows the pointer also has to be resized and repositioned
-    /// mid-gesture, and every one of those moves rebuilds its tracking areas — which is what made
-    /// the pill stutter and slip out from under the cursor when it did follow.
+    /// Dragging the pill picks a place for it. The screen dims, the three targets appear, and the
+    /// pill itself is replaced by the Bluejay icon riding the cursor. The panel does not move: a
+    /// window that follows the pointer has to be resized and repositioned mid-gesture, and every
+    /// one of those moves rebuilds its tracking areas — which is what made the pill stutter and
+    /// slip out from under the cursor when it did follow. The icon is drawn inside the overlay,
+    /// which is already full-screen and click-through, so it costs no window of its own.
     private func dragChanged(to point: NSPoint) {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        placement.screen = screen.visibleFrame
-        placement.highlighted = Anchor.containing(point, in: screen.visibleFrame)
+        let frame = Self.layoutFrame(screen)
+        placement.screen = frame
+        placement.full = screen.frame
+        placement.cursor = point
+        placement.highlighted = Anchor.containing(point, in: frame)
         if !placement.placing {
             placement.placing = true
             overlay?.setVisible(true, on: screen)
+            // Fade out rather than order out: the DragGesture is hosted in this window, so
+            // ordering it out mid-drag stops event delivery and the drag ends on the spot.
+            // A zero-alpha window still tracks the mouse.
+            panel.alphaValue = 0
         }
     }
 
@@ -157,12 +165,16 @@ final class RecordingPillController {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         placement.placing = false
         placement.highlighted = nil
+        placement.cursor = nil
+        panel.alphaValue = 1
         overlay?.setVisible(false, on: screen)
-        guard let target = Anchor.containing(point, in: screen.visibleFrame), target != anchor else { return }
+        model.noteDragEnded()
+        let frame = Self.layoutFrame(screen)
+        guard let target = Anchor.containing(point, in: frame), target != anchor else { return }
         anchor = target
         // Size as well as origin: a side anchor turns the pill 90° and transposes its panel.
         let settled = PillView.size(for: .idle, anchor: target)
-        panel.setFrame(NSRect(origin: target.origin(size: settled, in: screen.visibleFrame), size: settled),
+        panel.setFrame(NSRect(origin: target.origin(size: settled, in: frame), size: settled),
                        display: true, animate: true)
         panel.contentView?.frame = NSRect(origin: .zero, size: settled)
     }
@@ -176,13 +188,40 @@ final class RecordingPillController {
         reposition()
     }
 
+    /// The rect the pill is laid out inside.
+    ///
+    /// `visibleFrame` normally: it stops above the Dock, so the bar sits on the Dock's top edge
+    /// rather than on top of the middle of it, eating clicks on the centre icons.
+    ///
+    /// But `visibleFrame` subtracts the Dock and menu bar from the *system configuration*, not from
+    /// the current space. With a pinned Dock it keeps reserving that strip even in a fullscreen
+    /// space where the Dock is hidden and nothing is there — which is why the bar floated a Dock's
+    /// height off the bottom of every fullscreen app instead of dropping to the edge. There is
+    /// something to detect after all.
+    static func layoutFrame(_ screen: NSScreen) -> CGRect {
+        isFullScreen(screen) ? screen.frame : screen.visibleFrame
+    }
+
+    /// A layer-0 window covering the whole screen is a fullscreen space: a normal window cannot
+    /// otherwise extend under the menu bar. Window *names* need Screen Recording permission,
+    /// geometry does not, so this stays a metadata read. Our own panels sit above layer 0.
+    private static func isFullScreen(_ screen: NSScreen) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return false }
+        return windows.contains { window in
+            guard window[kCGWindowLayer as String] as? Int == 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  let width = bounds["Width"], let height = bounds["Height"]
+            else { return false }
+            return width >= screen.frame.width && height >= screen.frame.height
+        }
+    }
+
     func reposition() {
         // Follow the screen the user is working on (keyboard focus), not the launch screen.
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        // `frame`, not `visibleFrame`: visibleFrame stops above the Dock, which parked the pill
-        // ~80pt up the screen and in the middle of whatever the user was reading. The bar belongs
-        // on the bottom edge. The panel's own `margin` supplies the small gap, so no offset here.
-        let frame = screen.visibleFrame
+        let frame = Self.layoutFrame(screen)
         let size = panel.frame.size
         let target = anchor.origin(size: size, in: frame)
         if panel.frame.origin != target {
@@ -212,6 +251,20 @@ final class PillModel: ObservableObject {
     init(controller: DictationController, onOpenDashboard: @escaping (DashboardView.Section) -> Void) {
         self.controller = controller
         self.onOpenDashboard = onOpenDashboard
+    }
+
+    private var dragEndedAt = Date.distantPast
+
+    func noteDragEnded() { dragEndedAt = Date() }
+
+    /// Every pill button goes through here. The drag is a `simultaneousGesture` so the buttons keep
+    /// working, which means a release back over the pill's own frame lands on whichever button is
+    /// under the cursor — a synthetic drag test started a real hands-free dictation that recorded
+    /// until the app was killed. SwiftUI delivers the tap after the gesture ends, so the guard is a
+    /// short window rather than a flag cleared on release.
+    func tapped(_ action: () -> Void) {
+        guard Date().timeIntervalSince(dragEndedAt) > 0.25 else { return }
+        action()
     }
 }
 
@@ -337,14 +390,14 @@ struct PillView: View {
                     PillCircleButton(help: AppSettings.shared.holdPhrase
                         .map { "Dictate hands-free (or \($0.prefix(1).lowercased() + $0.dropFirst()))" }
                         ?? "Dictate hands-free") {
-                        controller.startHandsFree()
+                        model.tapped { controller.startHandsFree() }
                     } label: {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white)
                     }
                     PillCircleButton(help: "Open Bluejay Wispr") {
-                        model.onOpenDashboard(.home)
+                        model.tapped { model.onOpenDashboard(.home) }
                     } label: {
                         if let logo = Theme.logo("Symbol_White") {
                             Image(nsImage: logo)
@@ -358,7 +411,7 @@ struct PillView: View {
                         }
                     }
                     PillCircleButton(help: "Recent dictations") {
-                        model.onOpenDashboard(.history)
+                        model.tapped { model.onOpenDashboard(.history) }
                     } label: {
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 11, weight: .medium))
@@ -379,7 +432,7 @@ struct PillView: View {
             waveform
             if locked {
                 Button {
-                    controller.stopHandsFree()
+                    model.tapped { controller.stopHandsFree() }
                 } label: {
                     ZStack {
                         Circle().fill(Theme.red).frame(width: 16, height: 16)
@@ -423,9 +476,13 @@ struct PillView: View {
 final class PlacementModel: ObservableObject {
     @Published var placing = false
     @Published var highlighted: RecordingPillController.Anchor?
-    /// The visible frame the targets were computed against, so the view can map screen
-    /// coordinates into its own.
+    /// The visible frame the targets were computed against.
     @Published var screen: CGRect = .zero
+    /// The whole screen — the overlay panel's own frame, and therefore what screen coordinates
+    /// are mapped against.
+    @Published var full: CGRect = .zero
+    /// Pointer position while placing; the icon proxy rides it. nil when not placing.
+    @Published var cursor: NSPoint?
 }
 
 /// Dims the screen and shows where the pill can go while the user drags it. Click-through, like
@@ -460,30 +517,51 @@ final class PlacementOverlayController {
 struct PlacementView: View {
     @ObservedObject var model: PlacementModel
 
+    /// Icon proxy size. Big enough to read as the pill's stand-in, small enough not to cover the
+    /// target it is being dropped on.
+    private static let proxySize: CGFloat = 40
+
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                Color.black.opacity(model.placing ? 0.34 : 0)
-                    .frame(width: geo.size.width, height: geo.size.height)
-                if model.placing {
-                    ForEach(RecordingPillController.Anchor.allCases) { anchor in
-                        target(anchor, in: geo.size)
-                    }
+        ZStack(alignment: .topLeading) {
+            Color.black.opacity(model.placing ? 0.34 : 0)
+            if model.placing {
+                ForEach(RecordingPillController.Anchor.allCases) { anchor in
+                    target(anchor)
+                }
+                if let cursor = model.cursor {
+                    proxy(at: cursor)
                 }
             }
-            .animation(.bjSoft, value: model.placing)
-            .animation(.bjHover, value: model.highlighted)
         }
+        .animation(.bjSoft, value: model.placing)
+        .animation(.bjHover, value: model.highlighted)
         .ignoresSafeArea()
     }
 
+    /// Screen coordinates are bottom-left, the view's are top-left, and both are measured against
+    /// the overlay panel's own frame — the whole screen. Flipping against the view's measured
+    /// height instead double-counts the Dock, because the targets are laid out inside
+    /// `visibleFrame` and this panel is not.
+    private func point(_ screenPoint: NSPoint) -> CGPoint {
+        CGPoint(x: screenPoint.x - model.full.minX, y: model.full.maxY - screenPoint.y)
+    }
+
+    /// The pill, in transit. The real one is faded out for the duration of the drag, so this is
+    /// the only thing under the cursor and the placeholder targets stay legible.
+    private func proxy(at cursor: NSPoint) -> some View {
+        let centre = point(cursor)
+        return LogoView(name: "Symbol_White", size: Self.proxySize)
+            .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
+            .offset(x: centre.x - Self.proxySize / 2, y: centre.y - Self.proxySize / 2)
+    }
+
     @ViewBuilder
-    private func target(_ anchor: RecordingPillController.Anchor, in size: CGSize) -> some View {
+    private func target(_ anchor: RecordingPillController.Anchor) -> some View {
         let lit = model.highlighted == anchor
         let landing = anchor.landing(in: model.screen)
-        // Screen coordinates are bottom-left; the view's are top-left.
-        let x = landing.minX - model.screen.minX
-        let y = (model.screen.maxY - landing.maxY) + (size.height - model.screen.height)
+        let topLeft = point(NSPoint(x: landing.minX, y: landing.maxY))
+        let x = topLeft.x
+        let y = topLeft.y
 
         RoundedRectangle(cornerRadius: min(landing.width, landing.height) / 2.2)
             .fill(.white.opacity(lit ? 0.95 : 0.28))
@@ -553,7 +631,8 @@ final class ToastController {
     /// otherwise hang off the side.
     func reposition() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        let frame = screen.visibleFrame
+        // The same frame the pill uses, or the toast detaches from it in a fullscreen space.
+        let frame = RecordingPillController.layoutFrame(screen)
         let size = panel.frame.size
         let anchor = RecordingPillController.Anchor(
             rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? ""

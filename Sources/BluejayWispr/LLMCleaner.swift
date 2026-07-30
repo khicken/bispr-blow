@@ -275,7 +275,7 @@ final class LLMCleaner {
         - Preserve the speaker's meaning, tone, and level of detail. Never condense, drop, or add points.
         - Clean the transcript from its first word to its last. Never summarize, never stop early, and never write anything like "and so on" — a long transcript produces a long result.
         - Never write an ellipsis ("..."). If you are tempted to elide part of the transcript, write it out in full instead. Every question, clause, and sentence in the transcript must appear in the output.
-        - Correct obvious mis-hearings from context.
+        - A wrong word in the transcript is almost always a sound-alike of the right one, because the recognizer chose it on sound alone and had no idea what the user was working on. You do. When a word does not belong in this app, this window, or the text already typed, and a similar-sounding word clearly does, write the one that fits — "quarry" in a code editor is "query", "proud" in a terminal is "prod". Only where the fit is obvious; never swap a word that already makes sense.
 
         Style by app category:
         - chat: casual and conversational; contractions fine; lowercase ok; no trailing period on short messages.
@@ -357,9 +357,15 @@ final class LLMCleaner {
     }
 
     /// True when cleanup clearly lost content: it elided part of the transcript, or came back
-    /// far shorter than it. Filler removal shrinks text ~10-25%, so half-length means dropped
-    /// points. An ellipsis anywhere counts — speech-to-text never emits one, so it can only
-    /// be the model standing in for words it skipped, mid-sentence as often as at the end.
+    /// far shorter than it. An ellipsis anywhere counts — speech-to-text never emits one, so it
+    /// can only be the model standing in for words it skipped, mid-sentence as often as at the end.
+    ///
+    /// Length is judged against the transcript with its fillers *already removed*, not the raw
+    /// one. Judging against the raw count builds in a bias exactly as large as the share of the
+    /// transcript that was filler, so the more disfluent the speech, the more likely a correct
+    /// cleanup is thrown away — which is backwards. Measured: "um um so uh uh i think we should
+    /// just ship it um today and see what breaks" came back correctly cleaned in nine words and
+    /// was rejected as truncated, because 55% of the raw eighteen is ten.
     static func looksTruncated(_ cleaned: String, raw: String) -> Bool {
         let elides = { (text: String) in text.contains("...") || text.contains("…") }
         if elides(cleaned), !elides(raw) { return true }
@@ -368,8 +374,9 @@ final class LLMCleaner {
         // Far longer than the transcript means it isn't a cleanup: a leaked reasoning trace,
         // or the model answering the dictation instead of tidying it.
         if rawWords >= 5, cleanedWords > Int(Double(rawWords) * 2.5) { return true }
-        guard rawWords >= 12 else { return false }  // a few words legitimately vary a lot
-        return cleanedWords < Int(Double(rawWords) * 0.55)
+        let spokenWords = ruleClean(raw).split(whereSeparator: \.isWhitespace).count
+        guard spokenWords >= 12 else { return false }  // a few words legitimately vary a lot
+        return cleanedWords < Int(Double(spokenWords) * 0.55)
     }
 
     // MARK: - Deterministic filler removal

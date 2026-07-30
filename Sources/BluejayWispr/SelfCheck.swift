@@ -31,6 +31,14 @@ enum SelfCheck {
             + "session. We should fix those before Friday.", raw: raw))
         // Short dictations legitimately shrink a lot.
         precondition(!LLMCleaner.looksTruncated("Does it work?", raw: "um does it uh does it work"))
+        // Filler-stuffed speech is measured against the transcript with the fillers already gone,
+        // so a tight cleanup of a third-filler transcript is not truncation. Reported by the bench:
+        // qwen3-0.6b cleaned this correctly and the guard threw the result away.
+        let stuffed = "um um so uh uh i think we should just ship it um today and see what breaks"
+        precondition(!LLMCleaner.looksTruncated(
+            "We should ship it today and see what breaks.", raw: stuffed))
+        // A one-line summary of the same transcript still is.
+        precondition(LLMCleaner.looksTruncated("Ship it today.", raw: stuffed))
 
         precondition(LLMCleaner.ruleClean("um the the tests uh pass") == "The tests pass")
         // Stacked fillers: the per-filler pass eats the space it matched on, so "uh uh" kept its
@@ -64,6 +72,19 @@ enum SelfCheck {
         precondition(settings.dictionary.filter { $0 == "worktree" }.count == 1)
         precondition(settings.dictionary.contains("Kubernetes"))
         settings.dictionary = before
+
+        // Recognizer bias comes from the words already on screen, and a plain lowercase word in a
+        // code buffer is exactly the one a general language model gets wrong — "query" heard as
+        // "quarry". So plain domain words have to survive, identifiers have to lead, and words
+        // common in any English must not crowd them out of a capped list.
+        let terms = AppContext(
+            bundleID: "com.microsoft.vscode", appName: "Code", windowTitle: "db.ts",
+            draft: "const rows = await db.query(sql) // just make sure the cache and the query are warm"
+        ).draftTerms
+        precondition(terms.contains("query") && terms.contains("cache"), "\(terms)")
+        precondition(terms.contains(where: { $0.contains("db.query") }), "\(terms)")
+        precondition(terms.firstIndex(where: { $0.contains("db.query") })! < terms.firstIndex(of: "query")!)
+        precondition(!terms.contains("just") && !terms.contains("make") && !terms.contains("the"), "\(terms)")
 
         // A section left out of a sidebar group just disappears from the nav, silently.
         precondition(DashboardView.Section.groups.flatMap(\.items) == DashboardView.Section.allCases)

@@ -93,19 +93,63 @@ enum ContextDetector {
 }
 
 extension AppContext {
-    /// Names and identifiers from the draft, which are the words a recognizer mishears.
-    /// Plain lowercase prose is skipped: it adds noise without biasing anything useful.
+    /// The words already on screen, handed to the recognizer as bias.
+    ///
+    /// This is the general mechanism behind mishearing. The recognizer picks between near
+    /// homophones using acoustics plus a general-English language model, and general English has
+    /// no idea the user is looking at code: "query" comes back as "quarry", "prod" as "proud".
+    /// What actually settles it is that the right word is usually already in the buffer being
+    /// dictated into, so the fix is to bias toward the buffer rather than to enumerate pairs.
+    ///
+    /// Identifiers lead, because they are what `contextualStrings` exists for and what no general
+    /// model has seen. Plain words follow: in a code buffer or a spec the plain lowercase words
+    /// *are* the domain vocabulary, which is what the previous "distinctive shapes only" filter
+    /// threw away — `getQuery` biased the recognizer and a buffer full of `query` did not. Only
+    /// words that are common in any English are dropped, since biasing "the" biases nothing. The
+    /// list stays capped: a long one dilutes every entry in it.
     var draftTerms: [String] {
         var seen = Set<String>()
-        let terms: [String] = draft
-            .split(whereSeparator: { $0.isWhitespace })
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?\"'()[]{}")) }
-            .filter { term in
-                guard term.count >= 3, term.count <= 30 else { return false }
-                let distinctive = term.dropFirst().contains(where: \.isUppercase)
-                    || term.contains(".") || term.contains("_") || term.contains("-")
-                return distinctive && seen.insert(term.lowercased()).inserted
+        var identifiers: [String] = []
+        var plain: [String] = []
+        for token in draft.split(whereSeparator: { $0.isWhitespace }) {
+            let term = token.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?\"'()[]{}"))
+            guard term.count >= 3, term.count <= 30,
+                  term.contains(where: \.isLetter),
+                  seen.insert(term.lowercased()).inserted
+            else { continue }
+            if term.dropFirst().contains(where: \.isUppercase)
+                || term.contains(".") || term.contains("_") || term.contains("-") {
+                identifiers.append(term)
+            } else if term.count >= 4, !Self.commonWords.contains(term.lowercased()) {
+                plain.append(term)
             }
-        return Array(terms.prefix(40))
+        }
+        let head = Array(identifiers.prefix(Self.termCap))
+        return head + plain.prefix(Self.termCap - head.count)
     }
+
+    private static let termCap = 50
+
+    /// Words that are common in every kind of English, so biasing toward them says nothing about
+    /// the topic. Deliberately only function words and generic verbs: "cache", "query", "branch",
+    /// "commit", "state" and their kind are ordinary English *and* domain terms, and dropping them
+    /// would remove exactly the words this is for.
+    private static let commonWords: Set<String> = [
+        "about", "after", "again", "against", "actually", "all", "also", "always", "and", "another",
+        "any", "anything", "are", "around", "back", "because", "been", "before", "being", "both",
+        "but", "came", "can", "come", "could", "did", "does", "doing", "done", "down", "each",
+        "even", "ever", "every", "few", "first", "for", "from", "get", "gets", "getting", "give",
+        "going", "gone", "good", "got", "had", "has", "have", "having", "her", "here", "him", "his",
+        "how", "into", "its", "itself", "just", "keep", "kind", "know", "last", "least", "less",
+        "let", "like", "little", "long", "look", "lot", "made", "make", "makes", "many", "may",
+        "maybe", "might", "more", "most", "much", "must", "need", "never", "next", "not", "nothing",
+        "now", "off", "once", "one", "only", "onto", "other", "our", "out", "over", "own", "part",
+        "put", "quite", "rather", "really", "right", "said", "same", "say", "see", "seen", "shall",
+        "she", "should", "since", "some", "something", "still", "such", "sure", "take", "than",
+        "that", "the", "their", "them", "then", "there", "these", "they", "thing", "things",
+        "think", "this", "those", "though", "through", "time", "too", "took", "two", "under",
+        "until", "use", "used", "using", "very", "want", "was", "way", "well", "went", "were",
+        "what", "when", "where", "whether", "which", "while", "who", "why", "will", "with",
+        "without", "would", "yes", "yet", "you", "your",
+    ]
 }
