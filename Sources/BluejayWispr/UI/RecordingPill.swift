@@ -23,7 +23,7 @@ final class RecordingPillController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = false
+        panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.ignoresMouseEvents = false
 
@@ -60,12 +60,70 @@ final class RecordingPillController {
         ) { [weak self] _ in
             self?.reposition()
         }
+        // Drag to move it. The bar is draggable by its background, and snaps to the nearest
+        // bottom anchor when released — free positioning would drift with every display change,
+        // and the 2s re-pin below would undo it anyway.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: panel, queue: .main
+        ) { [weak self] _ in
+            self?.panelMoved()
+        }
         repositionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.reposition()
         }
     }
 
     private var repositionTimer: Timer?
+    private var settleTimer: Timer?
+    /// True while the user is dragging, so the re-pin timer does not fight their pointer.
+    private var dragging = false
+    /// True while `reposition` is moving the panel, so our own move does not read as a drag.
+    private var movingProgrammatically = false
+
+    /// Where the user parked the pill. The bar is small and the Dock, the menu bar extras and
+    /// whatever app is open all compete for the same edges, so this is a preference, not a
+    /// constant — a bottom-centre bar sits on top of the middle of the Dock.
+    enum Anchor: String, CaseIterable {
+        case bottomLeft, bottomCentre, bottomRight
+
+        /// Nearest anchor to a dropped position, by the pill's own centre.
+        static func nearest(centreX: CGFloat, in frame: CGRect) -> Anchor {
+            let third = frame.width / 3
+            if centreX < frame.minX + third { return .bottomLeft }
+            if centreX > frame.maxX - third { return .bottomRight }
+            return .bottomCentre
+        }
+
+        /// Left edge for a panel of `width` on `frame`. Corners keep a small inset so the pill
+        /// does not touch the bezel.
+        func originX(width: CGFloat, in frame: CGRect, inset: CGFloat = 12) -> CGFloat {
+            switch self {
+            case .bottomLeft: frame.minX + inset
+            case .bottomCentre: frame.midX - width / 2
+            case .bottomRight: frame.maxX - width - inset
+            }
+        }
+    }
+
+    private var anchor: Anchor {
+        get { Anchor(rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? "") ?? .bottomCentre }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "pillAnchor") }
+    }
+
+    /// Called on every frame of a user drag. Snap to the nearest anchor once they stop.
+    private func panelMoved() {
+        guard !movingProgrammatically else { return }
+        dragging = true
+        settleTimer?.invalidate()
+        settleTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            guard let self, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+            let dropped = self.panel.frame
+            self.anchor = Anchor.nearest(centreX: dropped.midX, in: screen.frame)
+            self.dragging = false
+            self.reposition()
+        }
+    }
 
     /// Follow the pill's declared size so the panel never claims mouse events the pill cannot use.
     /// Called once per state transition, not per animation frame — see the note in `init`.
@@ -77,6 +135,8 @@ final class RecordingPillController {
     }
 
     func reposition() {
+        // Never fight the user's pointer mid-drag.
+        guard !dragging else { return }
         // Follow the screen the user is working on (keyboard focus), not the launch screen.
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         // `frame`, not `visibleFrame`: visibleFrame stops above the Dock, which parked the pill
@@ -84,9 +144,11 @@ final class RecordingPillController {
         // on the bottom edge. The panel's own `margin` supplies the small gap, so no offset here.
         let frame = screen.frame
         let size = panel.frame.size
-        let target = NSPoint(x: frame.midX - size.width / 2, y: frame.minY)
+        let target = NSPoint(x: anchor.originX(width: size.width, in: frame), y: frame.minY)
         if panel.frame.origin != target {
+            movingProgrammatically = true
             panel.setFrameOrigin(target)
+            movingProgrammatically = false
         }
         panel.orderFrontRegardless()
     }
@@ -335,15 +397,27 @@ final class ToastController {
         ) { [weak self] _ in
             self?.reposition()
         }
+        // Same 2s re-pin as the pill, so the toast follows it after a drag.
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            self?.reposition()
+        }
     }
 
-    /// Clears the tallest pill state, so the toast never overlaps the waveform.
+    private var timer: Timer?
+
+    /// Sits above the tallest pill state so it never overlaps the waveform, and over whichever
+    /// anchor the user parked the pill on so the two stay visually attached.
     func reposition() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let frame = screen.frame
         let size = panel.frame.size
-        panel.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2,
-                                     y: frame.minY + PillView.size(for: .idle).height + 4))
+        // Centred on the pill, but never hanging off the screen when the pill is in a corner.
+        let pillWidth = PillView.size(for: .idle).width
+        let pillCentre = RecordingPillController.Anchor(
+            rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? ""
+        ).map { $0.originX(width: pillWidth, in: frame) + pillWidth / 2 } ?? frame.midX
+        let x = min(max(pillCentre - size.width / 2, frame.minX), frame.maxX - size.width)
+        panel.setFrameOrigin(NSPoint(x: x, y: frame.minY + PillView.size(for: .idle).height + 4))
         panel.orderFrontRegardless()
     }
 }

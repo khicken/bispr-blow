@@ -44,6 +44,17 @@ enum SelfCheck {
         // A section left out of a sidebar group just disappears from the nav, silently.
         precondition(DashboardView.Section.groups.flatMap(\.items) == DashboardView.Section.allCases)
 
+        // Dropping the pill snaps it to the nearest bottom anchor; getting the thirds wrong
+        // parks it somewhere the user did not choose, or off screen.
+        let screen = CGRect(x: 0, y: 0, width: 1352, height: 878)
+        typealias Anchor = RecordingPillController.Anchor
+        precondition(Anchor.nearest(centreX: 10, in: screen) == .bottomLeft)
+        precondition(Anchor.nearest(centreX: 676, in: screen) == .bottomCentre)
+        precondition(Anchor.nearest(centreX: 1340, in: screen) == .bottomRight)
+        precondition(Anchor.bottomLeft.originX(width: 122, in: screen) == 12)
+        precondition(Anchor.bottomRight.originX(width: 122, in: screen) == 1218)
+        precondition(Anchor.bottomCentre.originX(width: 122, in: screen) == 615)
+
         print("self-check passed")
     }
 }
