@@ -150,7 +150,8 @@ final class DictationController: ObservableObject {
 
         let generation = sessionGeneration
         Task {
-            await transcriber.startSession(inputFormat: format)
+            await transcriber.startSession(inputFormat: format,
+                                           contextTerms: capturedContext?.draftTerms ?? [])
             guard self.sessionGeneration == generation, case .recording = self.state else { return }
             do {
                 try recorder.start()

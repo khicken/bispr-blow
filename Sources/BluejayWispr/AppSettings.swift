@@ -9,7 +9,10 @@ struct TeamMember: Codable, Identifiable, Equatable {
 /// UserDefaults-backed settings.
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
-    private let defaults = UserDefaults.standard
+    /// Named explicitly, not `.standard`: run as a bare binary (--print-prompt, --self-check)
+    /// the process has no bundle id, so `.standard` would be a different domain than the app's
+    /// and the benchmark would read a different dictionary than the one in use.
+    private let defaults = UserDefaults(suiteName: "ai.getbluejay.wispr") ?? .standard
 
     enum Provider: String, CaseIterable, Identifiable {
         case auto = "Auto"

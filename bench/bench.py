@@ -100,7 +100,10 @@ def score(case, cleaned):
 
 
 def run_case(model, prefix, case, nothink, timeout):
-    user = f"App: {case['app']}\nTranscript: {case['raw']}"
+    user = f"App: {case['app']}"
+    if case.get("draft"):
+        user += f"\nAlready typed (context only, do not clean or repeat): {case['draft']}"
+    user += f"\nTranscript: {case['raw']}"
     if nothink == "on" or (nothink == "auto" and "qwen3" in model.lower()):
         user += " /no_think"
     payload = {
@@ -146,7 +149,7 @@ def main():
             print(f"{model}: unavailable ({error})")
             continue
         for case in cases:
-            times, last = [], None
+            times, rep_scores, last, failures = [], [], None, []
             for _ in range(args.reps):
                 try:
                     result = run_case(model, prefix, case, args.nothink, args.timeout)
@@ -155,10 +158,15 @@ def main():
                     break
                 times.append(result["seconds"])
                 reasoning.append(result["reasoning_tokens"])
+                # Every rep is scored: these models are not deterministic at temperature 0.2,
+                # and scoring one sample per case made quality swing 30 points between runs.
+                rep_score, rep_failures = score(case, result["cleaned"])
+                rep_scores.append(rep_score)
+                failures = rep_failures or failures
                 last = result
             if not times or last is None:
                 continue
-            case_score, failures = score(case, last["cleaned"])
+            case_score = statistics.mean(rep_scores)
             latencies.append(statistics.median(times))
             scores.append(case_score)
             if any(f.startswith("LOSSY") for f in failures):

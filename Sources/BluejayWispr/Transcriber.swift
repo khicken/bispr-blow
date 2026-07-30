@@ -65,17 +65,17 @@ final class Transcriber {
 
     // MARK: - Session
 
-    func startSession(inputFormat: AVAudioFormat) async {
+    func startSession(inputFormat: AVAudioFormat, contextTerms: [String] = []) async {
         finalizedText = ""
         volatileText = ""
         sfLatest = ""
         usingFallback = false
         do {
-            try await startAnalyzerSession(inputFormat: inputFormat)
+            try await startAnalyzerSession(inputFormat: inputFormat, contextTerms: contextTerms)
         } catch {
             NSLog("BluejayWispr: SpeechAnalyzer unavailable (\(error)); falling back to SFSpeechRecognizer")
             usingFallback = true
-            startSFSession(inputFormat: inputFormat)
+            startSFSession(inputFormat: inputFormat, contextTerms: contextTerms)
         }
     }
 
@@ -143,7 +143,7 @@ final class Transcriber {
 
     // MARK: - SpeechAnalyzer path
 
-    private func startAnalyzerSession(inputFormat: AVAudioFormat) async throws {
+    private func startAnalyzerSession(inputFormat: AVAudioFormat, contextTerms: [String]) async throws {
         guard let locale = await Self.bestLocale() else { throw TranscriberError.localeUnsupported }
         let transcriber = SpeechTranscriber(
             locale: locale,
@@ -154,7 +154,7 @@ final class Transcriber {
         // Bias the recognizer toward the user's vocabulary. Fixing "proud" back to "prod" in
         // cleanup can't work: by then the word "prod" was never in the transcript at all.
         let analyzer = SpeechAnalyzer(modules: [transcriber])
-        let vocabulary = await MainActor.run { AppSettings.shared.vocabulary }
+        let vocabulary = await MainActor.run { AppSettings.shared.vocabulary } + contextTerms
         if !vocabulary.isEmpty {
             let context = AnalysisContext()
             context.contextualStrings = [.general: vocabulary]
@@ -207,12 +207,12 @@ final class Transcriber {
 
     // MARK: - SFSpeechRecognizer fallback
 
-    private func startSFSession(inputFormat: AVAudioFormat) {
+    private func startSFSession(inputFormat: AVAudioFormat, contextTerms: [String]) {
         let recognizer = SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer()
         guard let recognizer, recognizer.isAvailable else { return }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        request.contextualStrings = AppSettings.shared.vocabulary
+        request.contextualStrings = AppSettings.shared.vocabulary + contextTerms
         if recognizer.supportsOnDeviceRecognition {
             request.requiresOnDeviceRecognition = true
         }

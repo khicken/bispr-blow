@@ -28,13 +28,22 @@ MLX runtime ignores both `reasoning_effort` and `chat_template_kwargs`. Only the
 | qwen3-0.6b-mlx | median | worst | quality | lossy |
 |---|---|---|---|---|
 | reasoning on | 2.28s | 8.69s | 75% | 2 of 7 |
-| /no_think | 0.23s | 0.56s | 92% | 0 of 7 |
+| /no_think | 0.22s | 0.58s | 89% | 0 of 8 |
 
 Ten times faster and better at the job, because a small model spends its
 reasoning budget talking itself out of a correct answer.
 
-Bigger is not better here. qwen3-1.7b costs 2.4x the latency for 87% quality,
+Bigger is not better here. qwen3-1.7b costs 2.8x the latency for 84% quality,
 losing points by leaving fillers in that the 0.6b removes. The 0.6b is the pick.
+
+Quality is averaged over every rep, not read off one sample. These models are not
+deterministic at temperature 0.2, and single-sample scoring swung a case by 30
+points between identical runs.
+
+The suite only exercises cleanup. Recognizer biasing (contextualStrings) cannot
+be measured here, because cases start from text that was never spoken. The
+draft_context case is a partial proxy: it checks whether an identifier present
+only in the draft survives cleanup.
 
 Both models still miss two things: applying self-corrections ("at 2 actually 3"
 should become "at 3") and rendering spoken filenames (".env"). Those are prompt

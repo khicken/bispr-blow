@@ -321,6 +321,11 @@ final class LLMCleaner {
         if !context.windowTitle.isEmpty {
             line += " — window: \(context.windowTitle)"
         }
+        // Draft goes before the transcript so its terms and register are already in view,
+        // and is labelled as context so the model does not clean or continue it.
+        if !context.draft.isEmpty {
+            line += "\nAlready typed (context only, do not clean or repeat): \(context.draft)"
+        }
         return line + "\nTranscript: \(transcript)"
     }
 
