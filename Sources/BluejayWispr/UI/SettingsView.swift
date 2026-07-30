@@ -33,57 +33,6 @@ struct SettingsView: View {
                 }
             }
 
-            // Which model does the cleaning is plumbing; it stays folded away by default.
-            settingsGroup("AI cleanup") {
-                Button {
-                    withAnimation(.bjSoft) { showAdvanced.toggle() }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .rotationEffect(.degrees(showAdvanced ? 90 : 0))
-                        Text("Advanced")
-                            .font(.system(size: 12))
-                        Spacer()
-                    }
-                    .foregroundStyle(Theme.inkTertiary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .handCursor()
-
-                if showAdvanced {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Picker("Provider", selection: $settings.provider) {
-                            ForEach(AppSettings.Provider.allCases) { provider in
-                                Text(provider.rawValue).tag(provider)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: 320, alignment: .leading)
-
-                        if settings.provider != .custom, settings.provider != .off, !models.isEmpty {
-                            Picker("Model", selection: $settings.preferredModel) {
-                                Text("Automatic").tag("")
-                                ForEach(models, id: \.self) { Text($0).tag($0) }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 320, alignment: .leading)
-                        }
-
-                        if settings.provider == .custom {
-                            labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
-                                         placeholder: "https://api.groq.com/openai/v1")
-                            labeledField("Model", text: $settings.customModel,
-                                         placeholder: "llama-3.3-70b-versatile")
-                            labeledField("API key", text: $settings.customAPIKey, placeholder: "sk-…", secure: true)
-                        }
-                    }
-                    .padding(.top, 4)
-                    .transition(.opacity.combined(with: .offset(y: -4)))
-                }
-            }
-
             settingsGroup("Microphone") {
                 HStack(spacing: 8) {
                     Image(systemName: "mic")
@@ -101,6 +50,8 @@ struct SettingsView: View {
                     .frame(maxWidth: 320, alignment: .leading)
                 }
             }
+
+            advanced
         }
         .task { models = await cleaner.availableModels() }
         .onChange(of: settings.provider) { _, _ in
@@ -116,6 +67,58 @@ struct SettingsView: View {
             axTrusted = AXIsProcessTrusted()
             inputMonitoringGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
             micName = AudioRecorder.defaultInputDeviceName()
+        }
+    }
+
+    /// Which model does the cleaning is plumbing, so it sits last and folded away.
+    private var advanced: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Button {
+                withAnimation(.bjSoft) { showAdvanced.toggle() }
+            } label: {
+                HStack(spacing: 5) {
+                    SectionLabel("Advanced")
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(Theme.inkSubtle)
+                        .rotationEffect(.degrees(showAdvanced ? 90 : 0))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .handCursor()
+
+            if showAdvanced {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("Provider", selection: $settings.provider) {
+                        ForEach(AppSettings.Provider.allCases) { provider in
+                            Text(provider.rawValue).tag(provider)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 320, alignment: .leading)
+
+                    if settings.provider != .custom, settings.provider != .off, !models.isEmpty {
+                        Picker("Model", selection: $settings.preferredModel) {
+                            Text("Automatic").tag("")
+                            ForEach(models, id: \.self) { Text($0).tag($0) }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 320, alignment: .leading)
+                    }
+
+                    if settings.provider == .custom {
+                        labeledField("Endpoint (…/v1)", text: $settings.customEndpoint,
+                                     placeholder: "https://api.groq.com/openai/v1")
+                        labeledField("Model", text: $settings.customModel,
+                                     placeholder: "llama-3.3-70b-versatile")
+                        labeledField("API key", text: $settings.customAPIKey, placeholder: "sk-…", secure: true)
+                    }
+                }
+                .card()
+                .transition(.opacity.combined(with: .offset(y: -6)))
+            }
         }
     }
 

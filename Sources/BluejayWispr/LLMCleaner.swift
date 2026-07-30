@@ -213,14 +213,24 @@ final class LLMCleaner {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let key = endpoint.apiKey { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
 
+        // Qwen3 is a hybrid reasoning model and LM Studio's MLX runtime ignores both
+        // reasoning_effort and chat_template_kwargs. Measured on qwen3-0.6b: without the
+        // /no_think switch it burns ~1400 reasoning tokens and 8s per dictation; with it,
+        // 1 token and 0.2s. Goes on the last message only, so the cached prefix survives.
+        var messages = messages
+        if model.lowercased().contains("qwen3"),
+           let last = messages.indices.last, messages[last]["role"] == "user" {
+            messages[last]["content"] = (messages[last]["content"] ?? "") + " /no_think"
+        }
+
         var body: [String: Any] = [
             "model": model,
             "temperature": 0.2,
             "max_tokens": 2048,
             "messages": messages,
         ]
-        // Local servers only — a strict hosted API 400s on unknown fields. Both keys are
-        // ignored by non-reasoning models; together they cover gpt-oss and the Qwen3 templates.
+        // Local servers only: a strict hosted API 400s on unknown fields. Kept for the
+        // runtimes that do honour them (gpt-oss).
         if endpoint.name != "Custom" {
             body["reasoning_effort"] = "low"
             body["chat_template_kwargs"] = ["enable_thinking": false]
@@ -323,6 +333,10 @@ final class LLMCleaner {
         }
         if text.hasPrefix("\""), text.hasSuffix("\""), text.count > 2 {
             text = String(text.dropFirst().dropLast())
+        }
+        if text.contains("/no_think") {  // some models echo the switch back
+            text = text.replacingOccurrences(of: "/no_think", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return text.isEmpty ? fallback : text
     }

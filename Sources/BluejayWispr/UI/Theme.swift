@@ -60,9 +60,25 @@ extension View {
     /// Fade + rise on first appearance; `delay` staggers siblings.
     func appearIn(_ delay: Double = 0) -> some View { modifier(AppearIn(delay: delay)) }
 
-    /// Pointing-hand cursor. Set through AppKit — `pointerStyle` no-ops on hosted views.
+    /// Pointing-hand cursor over this view.
     func handCursor() -> some View {
-        onHover { $0 ? NSCursor.pointingHand.set() : NSCursor.arrow.set() }
+        overlay(HandCursorRect().allowsHitTesting(false))
+    }
+}
+
+/// A cursor rect, not `NSCursor.set()` on hover: the window owns cursor updates, so setting
+/// the cursor directly flickers whenever a click causes a redraw. `pointerStyle` no-ops here.
+private struct HandCursorRect: NSViewRepresentable {
+    final class RectView: NSView {
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
+    }
+
+    func makeNSView(context: Context) -> RectView { RectView() }
+
+    func updateNSView(_ view: RectView, context: Context) {
+        view.window?.invalidateCursorRects(for: view)
     }
 }
 
