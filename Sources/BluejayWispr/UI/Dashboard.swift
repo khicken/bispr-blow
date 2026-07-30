@@ -308,45 +308,24 @@ struct LogoView: View {
 /// Shared page scaffold: big title, optional subtitle, one optional action on the title line,
 /// consistent padding. The action sits on the title's baseline rather than above the content, so
 /// the page's primary verb is always in the same place.
-struct Page<Content: View, Action: View>: View {
+struct Page<Content: View>: View {
     let title: String
     var subtitle: String?
-    let action: () -> Action
-    let content: () -> Content
-
-    init(title: String, subtitle: String? = nil,
-         @ViewBuilder action: @escaping () -> Action,
-         @ViewBuilder content: @escaping () -> Content) {
-        self.title = title
-        self.subtitle = subtitle
-        self.action = action
-        self.content = content
-    }
-
-    /// Most pages have no action. A defaulted `@ViewBuilder` stored property cannot carry one, and
-    /// the generic would be uninferrable anyway, so the no-action case gets its own init.
-    init(title: String, subtitle: String? = nil,
-         @ViewBuilder content: @escaping () -> Content) where Action == EmptyView {
-        self.init(title: title, subtitle: subtitle, action: { EmptyView() }, content: content)
-    }
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(title)
-                            .font(.system(size: 27, weight: .semibold))
-                            .tracking(-0.4)
-                            .foregroundStyle(Theme.ink)
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.inkTertiary)
-                        }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 27, weight: .semibold))
+                        .tracking(-0.4)
+                        .foregroundStyle(Theme.ink)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.inkTertiary)
                     }
-                    Spacer(minLength: 0)
-                    action()
                 }
                 .appearIn()
                 content()
@@ -604,15 +583,24 @@ enum VocabPacks {
 struct DictionaryView: View {
     @ObservedObject var settings: AppSettings
     @State private var newWord = ""
-    @State private var adding = false
     @State private var search = ""
     @State private var recentFirst = false
-    @State private var generateTopic = ""
     @State private var generating = false
-    @State private var generateNote: String?
-    @FocusState private var addFocused: Bool
+    @State private var note: String?
     @AppStorage("dictionaryIntroDismissed") private var introDismissed = false
     private let cleaner = LLMCleaner()
+
+    /// Search and sort only exist once the list is long enough to need them. A one-term list with
+    /// a search box on it is asking a question nobody has.
+    private var listIsLong: Bool { settings.dictionary.count > 8 }
+
+    /// Typed text that is one topic rather than a list of words, which is the only case where
+    /// "add everything about this" means anything.
+    private var topic: String? {
+        let trimmed = newWord.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 2, !trimmed.contains(",") else { return nil }
+        return trimmed
+    }
 
     /// What the list shows: the search narrows it, the toggle orders it. `dictionary` is stored in
     /// the order terms were added, so newest-first is simply the reverse.
@@ -626,21 +614,13 @@ struct DictionaryView: View {
     }
 
     var body: some View {
-        Page(title: "Dictionary", action: {
-            Button(adding ? "Done" : "Add new") {
-                withAnimation(.bjSnap) { adding.toggle() }
-                addFocused = adding
-            }
-            .buttonStyle(CapsuleButtonStyle(tint: Theme.ink))
-        }) {
-            if adding {
-                addField
-            }
+        Page(title: "Dictionary") {
             if !introDismissed {
                 intro
             }
+            composer
             terms
-            starters
+            packs
         }
     }
 
@@ -663,22 +643,10 @@ struct DictionaryView: View {
                     .foregroundStyle(.white.opacity(0.82))
                     .lineSpacing(2.5)
                     .frame(maxWidth: 520, alignment: .leading)
+                // Terms only, no action: the field to add one sits directly below this panel, and a
+                // button here would be a second control for the same job.
                 HStack(spacing: 8) {
-                    Button {
-                        withAnimation(.bjSnap) { adding = true }
-                        addFocused = true
-                    } label: {
-                        Text("Add new word")
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(Theme.ink)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(Theme.cream))
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .handCursor()
-                    ForEach(settings.dictionary.suffix(4).reversed(), id: \.self) { word in
+                    ForEach(settings.dictionary.suffix(5).reversed(), id: \.self) { word in
                         Text(word)
                             .font(.system(size: 12.5))
                             .foregroundStyle(.white.opacity(0.92))
@@ -725,22 +693,61 @@ struct DictionaryView: View {
             )
     }
 
-    // MARK: Add
+    // MARK: Composer
 
-    private var addField: some View {
-        HStack(spacing: 8) {
-            TextField("A word, a name, or several separated by commas", text: $newWord)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .focused($addFocused)
-                .padding(10)
-                .background(fieldBackground)
-                .onSubmit(addWord)
-            Button("Add", action: addWord)
-                .buttonStyle(CapsuleButtonStyle())
-                .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+    /// One field, always visible, and the page's only place to type.
+    ///
+    /// Adding words is the job; a topic is a shortcut for adding thirty of them at once. Two fields
+    /// meant two ways to type with nothing to tell them apart, and the layout had it exactly
+    /// backwards: the word field was hidden behind a button while the topic field sat open. So the
+    /// same text now feeds both verbs, and the second verb spells out what it will do with what you
+    /// typed — which is what makes the distinction legible, and only at the moment it matters.
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("Add a word or a name — or several, separated by commas", text: $newWord)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(10)
+                    .background(fieldBackground)
+                    .onSubmit(addWord)
+                // Return adds the literal words. Asking a model for thirty terms is a bigger,
+                // slower thing to do by accident, so it costs a click.
+                Button("Add", action: addWord)
+                    .buttonStyle(CapsuleButtonStyle())
+                    .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if let topic {
+                Button(action: generate) {
+                    HStack(spacing: 6) {
+                        if generating {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "sparkles").font(.system(size: 10.5))
+                        }
+                        Text("Add every term for “\(topic)”, not just the word")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundStyle(generating ? Theme.inkSubtle : Theme.blue)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .handCursor()
+                .disabled(generating)
+                .help("Asks the local model which words people use when they talk about this, and adds them all.")
+                .padding(.leading, 2)
+                .transition(.opacity)
+            }
+
+            if let note {
+                Text(note)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.inkSubtle)
+                    .padding(.leading, 2)
+            }
         }
-        .transition(.opacity.combined(with: .offset(y: -6)))
+        .animation(.bjSoft, value: topic == nil)
     }
 
     // MARK: List
@@ -753,30 +760,31 @@ struct DictionaryView: View {
             HStack(spacing: 10) {
                 SectionLabel(settings.dictionary.count == 1 ? "1 term" : "\(settings.dictionary.count) terms")
                 Spacer()
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.inkSubtle)
-                    TextField("Search", text: $search)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12.5))
-                        .frame(width: 130)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(fieldBackground)
-                Button(recentFirst ? "Newest" : "A–Z") {
-                    withAnimation(.bjSnap) { recentFirst.toggle() }
-                }
-                .buttonStyle(QuietButtonStyle())
-                .help(recentFirst ? "Sort alphabetically" : "Sort newest first")
-                if !settings.dictionary.isEmpty {
+                if listIsLong {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.inkSubtle)
+                        TextField("Search", text: $search)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12.5))
+                            .frame(width: 130)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(fieldBackground)
+                    Button(recentFirst ? "Newest" : "A–Z") {
+                        withAnimation(.bjSnap) { recentFirst.toggle() }
+                    }
+                    .buttonStyle(QuietButtonStyle())
+                    .help(recentFirst ? "Sort alphabetically" : "Sort newest first")
                     Button("Clear all") {
                         withAnimation(.bjSnap) { settings.dictionary = [] }
                     }
                     .buttonStyle(QuietButtonStyle())
                 }
             }
+            .animation(.bjSoft, value: listIsLong)
 
             if settings.dictionary.isEmpty {
                 EmptyHint(text: "Nothing here yet. Add a word, or start from a pack below.")
@@ -799,13 +807,14 @@ struct DictionaryView: View {
         }
     }
 
-    // MARK: Starters
+    // MARK: Packs
 
-    /// Last, and quiet: bulk sources are how you fill the list on day one, not what you come back
-    /// for. Both of them do the same job, so they sit together under one header.
-    private var starters: some View {
+    /// Last, and quiet: packs are how you fill an empty list on day one, not what you come back
+    /// for. They are also the only path here that needs no typing, which is why they are the one
+    /// bulk source that stays on the page rather than folding into the field above.
+    private var packs: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SectionLabel("Add a whole topic at once")
+            SectionLabel("Starter packs")
             WrapStack(spacing: 8) {
                 ForEach(VocabPacks.all, id: \.name) { pack in
                     let missing = missingCount(pack.terms)
@@ -827,39 +836,6 @@ struct DictionaryView: View {
                     .animation(.bjSoft, value: missing)
                 }
             }
-
-            HStack(spacing: 8) {
-                TextField("Or name a topic, like React Native or genomics", text: $generateTopic)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .padding(10)
-                    .background(fieldBackground)
-                    .onSubmit(generate)
-                Button(action: generate) {
-                    HStack(spacing: 5) {
-                        if generating {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "sparkles").font(.system(size: 11))
-                        }
-                        Text("Generate")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Capsule().fill(generating ? Theme.inkSubtle : Theme.blue))
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .handCursor()
-                .disabled(generating)
-            }
-            if let generateNote {
-                Text(generateNote)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkSubtle)
-            }
         }
     }
 
@@ -876,27 +852,37 @@ struct DictionaryView: View {
 
     /// One field for one term or a whole list — commas and newlines both split.
     private func addWord() {
-        settings.addDictionaryWords(
-            newWord.split(whereSeparator: { $0 == "," || $0.isNewline }).map(String.init)
-        )
-        newWord = ""
-        addFocused = true
+        let before = settings.dictionary.count
+        withAnimation(.bjSnap) {
+            settings.addDictionaryWords(
+                newWord.split(whereSeparator: { $0 == "," || $0.isNewline }).map(String.init)
+            )
+        }
+        // Say something only when nothing happened. A term appearing in the list, and the count
+        // above it changing, is the confirmation — a line of text repeating it is a second control
+        // for a job the list already does, and the old one never went away once it had appeared.
+        note = settings.dictionary.count == before ? "Already in the dictionary." : nil
+        if settings.dictionary.count > before { newWord = "" }
     }
 
     private func generate() {
-        let topic = generateTopic.trimmingCharacters(in: .whitespaces)
-        guard !topic.isEmpty, !generating else { return }
+        guard let topic, !generating else { return }
         generating = true
-        generateNote = nil
+        note = nil
         Task { @MainActor in
             let terms = await cleaner.generateTerms(topic: topic)
             let before = settings.dictionary.count
-            settings.addDictionaryWords(terms)
+            withAnimation(.bjSnap) { settings.addDictionaryWords(terms) }
             let added = settings.dictionary.count - before
-            generateNote = terms.isEmpty
-                ? "No model available. Start LM Studio, or pick a provider in Settings."
-                : "Added \(added) terms for \(topic)."
-            if !terms.isEmpty { generateTopic = "" }
+            note = switch added {
+            case 0 where terms.isEmpty:
+                "No model reachable. Start LM Studio, or pick a provider in Settings."
+            case 0:
+                "Every term for “\(topic)” is already in the dictionary."
+            default:
+                nil
+            }
+            if added > 0 { newWord = "" }
             generating = false
         }
     }
