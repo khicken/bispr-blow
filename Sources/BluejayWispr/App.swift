@@ -15,6 +15,20 @@ enum Main {
             print(String(data: json, encoding: .utf8)!)
             return
         }
+        // Everything `clean` does to a model's reply after the HTTP call, so bench/bench.py
+        // scores the text that would land at the cursor instead of the raw model output.
+        // stdin: {"raw", "cleaned"} → stdout: {"text", "lossy"}.
+        if CommandLine.arguments.contains("--finish") {
+            let input = (try? JSONSerialization.jsonObject(
+                with: FileHandle.standardInput.readDataToEndOfFile())) as? [String: String] ?? [:]
+            let raw = input["raw"] ?? ""
+            let result = LLMCleaner.sanitize(input["cleaned"] ?? "", fallback: LLMCleaner.ruleClean(raw))
+            let lossy = LLMCleaner.looksTruncated(result, raw: raw)
+            let out: [String: Any] = ["lossy": lossy,
+                                      "text": lossy ? LLMCleaner.ruleClean(raw) : LLMCleaner.stripFillers(result)]
+            print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!)
+            return
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate

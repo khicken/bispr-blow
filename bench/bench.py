@@ -11,7 +11,6 @@ the bench can never drift from what ships).
 """
 import argparse
 import json
-import re
 import statistics
 import subprocess
 import time
@@ -48,33 +47,17 @@ def loaded_models():
     return [i for i in ids if not any(s in i.lower() for s in ("embed", "whisper"))]
 
 
-def sanitize(text):
-    """Mirrors LLMCleaner.sanitize: strip think tags, fences, quotes, the switch."""
-    text = text.strip()
-    if "</think>" in text:
-        text = text.split("</think>", 1)[1].strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-z]*\n?", "", text)
-        text = re.sub(r"\n?```$", "", text).strip()
-    if len(text) > 2 and text.startswith('"') and text.endswith('"'):
-        text = text[1:-1]
-    return text.replace("/no_think", "").strip()
+def app_tail(model_output, raw):
+    """The text the app would actually insert. Runs in the binary (`--finish`) instead of being
+    reimplemented here, so unwrapping, the truncation guard and the deterministic filler pass
+    cannot drift from LLMCleaner. Returns (text, lossy)."""
+    done = subprocess.run([str(BINARY), "--finish"], capture_output=True, text=True,
+                          input=json.dumps({"raw": raw, "cleaned": model_output}))
+    result = json.loads(done.stdout)
+    return result["text"], result["lossy"]
 
 
-def looks_truncated(cleaned, raw):
-    """Mirrors LLMCleaner.looksTruncated."""
-    elides = lambda t: "..." in t or "…" in t
-    if elides(cleaned) and not elides(raw):
-        return True
-    raw_words, cleaned_words = len(raw.split()), len(cleaned.split())
-    if raw_words >= 5 and cleaned_words > int(raw_words * 2.5):
-        return True
-    if raw_words < 12:
-        return False
-    return cleaned_words < int(raw_words * 0.55)
-
-
-def score(case, cleaned):
+def score(case, cleaned, lossy):
     """Fraction of the case's checks that passed, plus what failed."""
     checks, failures = [], []
     low = cleaned.lower()
@@ -93,9 +76,9 @@ def score(case, cleaned):
     checks.append(ok)
     if not ok:
         failures.append(f"retained {ratio:.0%} < {case['retain']:.0%}")
-    if looks_truncated(cleaned, case["raw"]):
+    if lossy:
         checks.append(False)
-        failures.append("LOSSY: guard would reject")
+        failures.append("LOSSY: guard rejected it, rules ran instead")
     return (sum(checks) / len(checks) if checks else 0.0), failures
 
 
@@ -119,9 +102,11 @@ def run_case(model, prefix, case, nothink, timeout):
     # Mirrors LLMCleaner: LM Studio files a /no_think answer under reasoning_content.
     text = message.get("content") or message.get("reasoning_content") or ""
     usage = data.get("usage", {}).get("completion_tokens_details", {})
+    cleaned, lossy = app_tail(text, case["raw"])
     return {
         "seconds": elapsed,
-        "cleaned": sanitize(text),
+        "cleaned": cleaned,
+        "lossy": lossy,
         "reasoning_tokens": usage.get("reasoning_tokens", 0),
     }
 
@@ -160,7 +145,7 @@ def main():
                 reasoning.append(result["reasoning_tokens"])
                 # Every rep is scored: these models are not deterministic at temperature 0.2,
                 # and scoring one sample per case made quality swing 30 points between runs.
-                rep_score, rep_failures = score(case, result["cleaned"])
+                rep_score, rep_failures = score(case, result["cleaned"], result["lossy"])
                 rep_scores.append(rep_score)
                 failures = rep_failures or failures
                 last = result

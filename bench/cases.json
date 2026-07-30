@@ -103,6 +103,185 @@
     "note": "The model must clean the question, not answer it"
   },
   {
+    "name": "discourse_like",
+    "app": "Claude (coding)",
+    "raw": "Our pill also still sits a bit too high when it could be like closer to, let's say, the system tray on a desktop or like the task bar on a desktop or lower down in the ID or close to the bottom of the screen. Like, it's just too far up and in the middle of everything.",
+    "must_include": [
+      "system tray",
+      "task bar",
+      "bottom of the screen"
+    ],
+    "must_exclude": [
+      "like, it",
+      "like closer"
+    ],
+    "retain": 0.7,
+    "note": "Verbatim from history.json, the reported failure. 'Like, it' is the shape stripFillers removes; 'like closer' is the bare mid-sentence one it deliberately will not touch, so that check stays on the prompt"
+  },
+  {
+    "name": "stacked_fillers",
+    "app": "Notes (general)",
+    "raw": "um um so uh uh i think we should just ship it um today and see what breaks",
+    "must_include": [
+      "ship",
+      "today",
+      "breaks"
+    ],
+    "must_exclude": [
+      "um",
+      "uh"
+    ],
+    "retain": 0.5,
+    "note": "Adjacent fillers: the per-filler regex consumes the space it matched on, so 'uh uh' kept its second one"
+  },
+  {
+    "name": "meaningful_like",
+    "app": "Slack (chat)",
+    "raw": "i like the new design and it looks like a bug in the retry logic so can you do something like that for the webhook one",
+    "must_include": [
+      "like the new design",
+      "looks like a bug",
+      "something like that"
+    ],
+    "must_exclude": [],
+    "retain": 0.8,
+    "note": "The safety case for filler stripping: every 'like' here is a real word, and losing one is worse than leaving every filler in"
+  },
+  {
+    "name": "false_start",
+    "app": "Claude (coding)",
+    "raw": "And by it's dragging to left or right, I mean, it's going to anchor to the like center, vertically centered, left side, or vertically centered right side of the screen.",
+    "must_include": [
+      "vertically centered",
+      "right side of the screen"
+    ],
+    "must_exclude": [
+      "like center"
+    ],
+    "retain": 0.5,
+    "note": "Verbatim from the user, with the output they wanted: '...it's going to anchor to the vertically centered left side, or vertically centered right side of the screen.' 'the like center,' is an abandoned phrase, not a filler — no regex can tell it from a deliberate list, so this one is entirely on the model"
+  },
+  {
+    "name": "restart_wrong_word",
+    "app": "Slack (chat)",
+    "raw": "can you move the button to the left, sorry, to the right side of the toolbar",
+    "must_include": [
+      "right side"
+    ],
+    "must_exclude": [
+      "to the left",
+      "sorry"
+    ],
+    "retain": 0.5,
+    "note": "Restart after a wrong word: only the corrected direction should survive"
+  },
+  {
+    "name": "restated_clause",
+    "app": "Notes (general)",
+    "raw": "we should ship it on friday, we should ship it on thursday actually, before the demo",
+    "must_include": [
+      "thursday",
+      "demo"
+    ],
+    "must_exclude": [
+      "friday",
+      "actually"
+    ],
+    "retain": 0.4,
+    "note": "A clause restated with a changed ending: keep the second telling only"
+  },
+  {
+    "name": "abandoned_phrase",
+    "app": "Cursor (coding)",
+    "raw": "the retry logic needs to, we need to first check whether the webhook even fired before we retry anything",
+    "must_include": [
+      "webhook",
+      "retry"
+    ],
+    "must_exclude": [
+      "needs to, we"
+    ],
+    "retain": 0.5,
+    "note": "Speaker abandons 'the retry logic needs to' and restarts the sentence"
+  },
+  {
+    "name": "snap_regions",
+    "app": "Claude (coding)",
+    "raw": "When we do the dragon, it's supposed to, like, show the 3 regions that will automatically snap the dragon too. Like, we shouldn't, like, it shouldn't move. We shouldn't even have the pill picked up until it's, like, snapped into the other 2 possible positions if that makes sense. Like currently we can pick it up and then it'll snap, but we shouldn't even be showing. It shouldn't even be shown the pill is being picked up.",
+    "must_include": [
+      "3 regions",
+      "snapped into the other 2 possible positions",
+      "and then it'll snap"
+    ],
+    "must_exclude": [
+      ", like,",
+      "dragon",
+      "shouldn't even be showing"
+    ],
+    "retain": 0.6,
+    "note": "Verbatim raw from history.json, reported live. Five failures in one utterance: 'dragging' misheard as 'dragon' twice (recognizer, and cleanup is asked to fix mis-hearings from context but does not), 'too' for 'to', four discourse 'like's, an abandoned 'we shouldn't' clause, and the model dropping 'currently we can pick it up and then it'll snap' at 82% retention where the guard cannot see it. 'if that makes sense' is left unasserted on purpose — dropping it deletes words the user said"
+  },
+  {
+    "name": "snap_regions_joined",
+    "app": "Claude (coding)",
+    "raw": "When we do the dragon, it's supposed to, like, show the 3 regions that will automatically snap the dragon too. Like, we shouldn't, like, it shouldn't move. We shouldn't even have the pill picked up until it's, like, snapped into the other 2 possible positions if that makes sense. Like currently we can pick it up and then it'll snap, but we shouldn't even be showing, it shouldn't even be shown the pill is being picked up.",
+    "must_include": [
+      "3 regions",
+      "snapped into the other 2 possible positions",
+      "and then it'll snap"
+    ],
+    "must_exclude": [
+      ", like,",
+      "dragon",
+      "shouldn't even be showing"
+    ],
+    "retain": 0.6,
+    "note": "snap_regions with one edit: the recognizer's hard stop after 'be showing' becomes a comma. Same checks, so the delta against snap_regions measures whether recognizer punctuation is what hides the restart from the model"
+  },
+  {
+    "name": "long_doc",
+    "app": "Notion (writing)",
+    "raw": "okay so um for the design doc i want to start with the problem which is that our dictation is uh accurate enough when you speak clearly but it falls apart the moment you mumble or trail off and the cleanup stage can't fix that because by then the words are already wrong. second section should cover what we actually measured, so the transcription tail is about a hundred and forty milliseconds and the cleanup call is around three hundred so neither of those is the bottleneck, the bottleneck is recognition quality. third um i want to lay out the three options we discussed which are biasing the recognizer with a vocabulary list, feeding the focused field's text in as context, and letting the user correct a word once and remembering it. and then the last section is the recommendation which is we do the third one because it's the only one that gets better the more you use it and we should ship it behind a flag so we can measure it on real dictations before turning it on for everyone.",
+    "must_include": [
+      "problem",
+      "mumble",
+      "hundred and forty",
+      "three hundred",
+      "vocabulary list",
+      "focused field",
+      "remembering it",
+      "recommendation",
+      "flag"
+    ],
+    "must_exclude": [
+      "um ",
+      " uh "
+    ],
+    "retain": 0.6,
+    "note": "Doc-length dictation, four sections. The model-routing question: does a bigger model clean this better, or just summarize it?"
+  },
+  {
+    "name": "long_meeting_notes",
+    "app": "Notes (general)",
+    "raw": "so notes from the standup, um kaleb is still on the shortcut work and he said the event tap part is done but the recorder ui is going to take another day because there's no existing pattern in the app to copy. uh the second thing is that the pill was eating clicks along the bottom of the screen and that's fixed now, it was a borderless panel claiming every point in its frame even where swiftui declined the hit. third thing, we still owe a decision on whether insert then upgrade ships on by default and i think the answer is no because replacing text in someone else's app can go wrong. and then last, um nobody has actually dictated into the instrumented build yet so the latency numbers we're quoting are from the benchmark not from real use, which we should fix before we optimize anything else.",
+    "must_include": [
+      "shortcut",
+      "event tap",
+      "recorder",
+      "eating clicks",
+      "borderless panel",
+      "insert then upgrade",
+      "instrumented build",
+      "benchmark"
+    ],
+    "must_exclude": [
+      "um ",
+      " uh "
+    ],
+    "retain": 0.6,
+    "note": "Four separate points across a long transcript, all of which must survive"
+  },
+  {
     "name": "draft_context",
     "app": "Slack (chat)",
     "draft": "Deployed the webhook retry fix to prod behind the FLAG_RETRY_V2 flag, so",
