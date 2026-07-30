@@ -70,8 +70,54 @@ to AppKit rather than layering workarounds.
 
 Losing the user's words is the worst outcome, worse than leaving fillers in.
 `looksTruncated` rejects any cleanup that elides content (an ellipsis anywhere,
-or under 55% of the transcript length) and falls back to rule-based cleaning of
-the full text. Add a case to SelfCheck.swift whenever a new failure shows up.
+or under 55% of the transcript) and falls back to rule-based cleaning of the full
+text. Add a case to SelfCheck.swift whenever a new failure shows up.
+
+That 55% is measured against the transcript with its fillers **already removed**,
+not the raw one. Measuring against the raw count builds in a bias exactly as large
+as the share of the transcript that was filler, so the more disfluent the speech,
+the likelier a correct cleanup is thrown away — backwards. It cost us a real one:
+"um um so uh uh i think we should just ship it um today and see what breaks" came
+back correctly cleaned in nine words and was discarded, because 55% of the raw
+eighteen is ten.
+
+**There are two prompts, not one.** `systemPrompt(vocabulary:lowTouch:)` picks by
+category: coding gets the low-touch pass, everything else gets polish. They exist
+because the doctrine above and "rewrite disfluent speech into complete, coherent
+sentences" cannot both be true, and on the coding path — a terminal, an editor, a
+prompt for an AI coding agent — the reader is a machine that parses disfluency
+fine, so rewriting is all risk and no reward. Each variant has its own few-shot
+array: a low-touch *rule* paired with rewriting *demonstrations* loses, because in
+a 4B model the demonstrations win. Both prefixes stay static so each keeps its own
+KV cache entry, and `warmUp()` primes both — miss one and the first dictation on
+that path pays full prefill (~3.5s) and silently falls back to rules.
+
+**Low touch means delete, repunctuate, respell — and it is checked, not trusted.**
+`rewordsContent` requires every output word to be a subsequence of the transcript,
+or to come from the closed set the user gave us (dictionary + on-screen words).
+Digit-leading tokens and two-words-as-one compounds are exempt. It catches the
+failure `looksTruncated` structurally cannot: a swap keeps the word count
+identical. It is deliberately blind to deletion and capitalization, so the two
+guards complement rather than replace each other, and it only runs on the coding
+path — a good polish rewrite fails it by design.
+
+Do NOT resolve self-corrections on the coding path. "X, or actually Y, or maybe Z"
+is a speaker listing three options and is indistinguishable from a correction
+without knowing what they meant. Leaving both halves in is recoverable; deleting
+the wrong one is not.
+
+**The cleanup deadline scales with the transcript** (`deadlineMs(words:)`,
+400ms + 6ms/word). A flat budget is wrong in both directions: measured on
+qwen3-0.6b, twelve words clean in 0.20s and 240 words in 1.51s, so a flat 450ms
+sent every long dictation — the content that most needs the model — to the rules
+path. Nobody minds 1.5s after speaking for ninety seconds. Missing the deadline
+ships `ruleClean` and leaves `resolved` alone: slow is not the same as broken.
+
+Measured over 25 cases (`bench/results.md`), the tradeoff to know: qwen3-0.6b
+holds 0/25 inside the budget but rewords all four long agent-prompt cases, so the
+guard fires and rules ship. qwen3-1.7b rewords none of them at 100% recall and
+misses the budget on 19/25. That is the real content of a fast-vs-careful setting;
+do not label one "more accurate" without re-running the bench.
 
 Qwen3 models are hybrid reasoners and LM Studio's MLX runtime ignores both
 `reasoning_effort` and `chat_template_kwargs`. The `/no_think` switch on the
