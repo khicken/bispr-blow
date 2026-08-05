@@ -85,6 +85,15 @@ enum SelfCheck {
         precondition(LLMCleaner.ruleClean("um uh the tests pass") == "The tests pass")
         // "oh" inside a word is not an interjection.
         precondition(LLMCleaner.stripFillers("Ohio and Ahmed shipped it") == "Ohio and Ahmed shipped it")
+        // Deliberate phrase repetition collapsing on a short dictation now trips the truncation
+        // guard — "Blue Jays, Blue Jays, Blue Jays" reached the cursor as "blue Jays." with every
+        // guard silent, because under 12 words nothing was checked at all.
+        precondition(LLMCleaner.looksTruncated("blue Jays.", raw: "Blue Jays, Blue Jays, Blue Jays"))
+        // ...while legitimate short cleanups still clear the floor: heavy filler stripping and a
+        // resolved self-correction both land at or above half the spoken words.
+        precondition(!LLMCleaner.looksTruncated("Does it work?", raw: "um does it uh does it work"))
+        precondition(!LLMCleaner.looksTruncated("at 3", raw: "at 2 actually 3"))
+
         // A filler between commas takes one comma with it, not neither — "decide,," reached the
         // cursor twice from real dictations before this collapsed.
         precondition(LLMCleaner.stripFillers("Basically, um, we want the script")

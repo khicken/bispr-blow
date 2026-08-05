@@ -468,7 +468,7 @@ final class LLMCleaner {
     /// content. Leaving both halves in is recoverable. Deleting the wrong one is not.
     private static let lowTouchRules = """
     Cleanup rules — this is a LOW-TOUCH pass. This text is going into a terminal, a code editor, or a prompt for an AI coding agent. A machine reads it, nobody is judging the grammar, and a reworded identifier or a dropped option breaks it. Deleting a filler is safe. Changing a word is not.
-    - Remove fillers (um, uh, er, "like" and "you know" when used as filler), stutters, and immediately-repeated words.
+    - Remove fillers (um, uh, er, "like" and "you know" when used as filler), stutters, and a word accidentally doubled back-to-back ("the the tests"). A phrase repeated on purpose, usually with punctuation between the repeats ("really, really slow", "Blue Jays, Blue Jays, Blue Jays"), is emphasis — keep every repeat.
     - Add punctuation, capitalization, and sentence breaks.
     - Render spoken symbols as symbols: "dash dash force" → "--force", "dot env" → ".env", "dot ts" → ".ts", "open paren" → "(".
     - A digit standing where a word belongs is the recognizer mishearing, not the speaker: "best 4 a sentence" → "best for a sentence", "push 2 dev" → "push to dev", "we 8 lunch" → "we ate lunch". Only when the numeral plainly is not a number — "retry 3 times" stays "3".
@@ -483,7 +483,7 @@ final class LLMCleaner {
     /// reader is a person, the speaker wants prose, and rewriting is the point.
     private static let polishRules = """
     Cleanup rules:
-    - Remove fillers (um, uh, er, "like" and "you know" when used as filler), stutters, immediately-repeated words, and abandoned false starts.
+    - Remove fillers (um, uh, er, "like" and "you know" when used as filler), stutters, a word accidentally doubled back-to-back ("the the tests"), and abandoned false starts. A phrase repeated on purpose, usually with punctuation between the repeats ("really, really slow", "Blue Jays, Blue Jays, Blue Jays"), is emphasis — keep every repeat.
     - Apply self-corrections, keeping only the speaker's final phrasing ("at 2 actually 3" → "at 3"). When the speaker abandons a phrase and restarts, or says something and then contradicts it, keep only what they settled on and delete the abandoned attempt along with the word that marked the change ("actually", "sorry", "no", "I mean"). An abandoned phrase can look like a list item, so judge it by whether the speaker replaced it: "put it near the top, the top right corner" → "put it in the top right corner".
     - Rewrite disfluent speech into complete, coherent sentences: fix grammar, smooth awkward word order, break run-ons into sentences, and add natural punctuation and capitalization. The result should read like text the speaker would have typed, not a verbatim transcript.
     - Preserve the speaker's meaning, tone, and level of detail. Never condense, drop, or add points.
@@ -502,6 +502,10 @@ final class LLMCleaner {
     static let fewShot: [(String, String)] = [
         ("App: Notes (general)\nTranscript: um does it uh does it work", "Does it work?"),
         ("App: Terminal (coding)\nTranscript: run the the tests with um dash dash verbose and then uh commit", "Run the tests with --verbose and then commit."),
+        // A real dictation that came back as "blue Jays." — deliberate repetition is emphasis and
+        // the rule alone did not save it; at this model size the demonstration is what teaches it.
+        ("App: Slack (chat)\nTranscript: Blue Jays, Blue Jays, Blue Jays",
+         "Blue Jays, Blue Jays, Blue Jays"),
         // Self-corrections need a worked example, not just the rule: with the rule alone both
         // qwen3-0.6b and 1.7b left "friday, we should ship it on thursday actually" intact.
         ("App: Notes (general)\nTranscript: the tooltip should the tooltip needs to sit above the row and let's do it in the sprint after this one no this sprint",
@@ -661,7 +665,13 @@ final class LLMCleaner {
         // or the model answering the dictation instead of tidying it.
         if rawWords >= 5, cleanedWords > Int(Double(rawWords) * 2.5) { return true }
         let spokenWords = ruleClean(raw).split(whereSeparator: \.isWhitespace).count
-        guard spokenWords >= 12 else { return false }  // a few words legitimately vary a lot
+        guard spokenWords >= 12 else {
+            // Short dictations legitimately vary a lot ("um does it uh does it work" → "Does it
+            // work?"), so the floor is half rather than 0.55 — but not unguarded: "Blue Jays,
+            // Blue Jays, Blue Jays" came back as "blue Jays.", six words to two, with every
+            // guard silent. Under half of a short dictation is deletion, not cleanup.
+            return spokenWords >= 3 && cleanedWords < Int((Double(spokenWords) * 0.5).rounded(.up))
+        }
         return cleanedWords < Int(Double(spokenWords) * 0.55)
     }
 
