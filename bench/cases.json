@@ -293,5 +293,110 @@
     "must_exclude": [],
     "retain": 0.6,
     "note": "Terms only present in the draft: the recognizer and cleanup should honour their spelling"
+  },
+  {
+    "name": "agent_prompt_streaming",
+    "app": "Claude (coding)",
+    "raw": "okay so i need you to um look at the streaming endpoint because right now uh we're we're buffering the whole response before we send it and that that defeats the point of streaming so what i want is to pipe the the chunks straight through as they come in um and then there's a second thing which is uh rate limiting we don't have any on that route so someone could just hammer it and and take the whole service down so i want a token bucket per api key like uh sixty requests a minute burst of ten and when they blow through it return a four twenty nine with a retry after header not a five hundred because a five hundred makes it look like our fault um and then the the third thing and this is the one i keep forgetting is we need to actually close the the connection when the client disconnects because right now the the generator keeps running and we keep paying for tokens on a request nobody is listening to um so check for the disconnect in the the loop and and bail out and then for testing i want um one test that asserts the first chunk arrives in under a hundred milliseconds and one that asserts we stop generating after a disconnect and maybe one for the the rate limiter but that one's less important than the other two",
+    "must_include": [
+      "streaming",
+      "token bucket",
+      "burst",
+      "retry",
+      "disconnect",
+      "generator",
+      "rate limiter"
+    ],
+    "must_exclude": [
+      " um ",
+      " uh "
+    ],
+    "retain": 0.75,
+    "note": "The reported failure: a ~250 word dictated agent prompt. Three enumerated asks, each with a reason attached, and a closing priority ranking that a condensing model drops first."
+  },
+  {
+    "name": "agent_prompt_ui_options",
+    "app": "Claude (coding)",
+    "raw": "note latency is a huge factor we want sub five hundred to six hundred milliseconds in the ui i'm thinking that there's model options like fastest medium and slow or something like that to show if someone wants to make the choice between three different choices between or maybe it could just be two choices between like you know fast but less accurate but this is or it's like slower and more accurate whatever you think is the best ui",
+    "must_include": [
+      "latency",
+      "fastest",
+      "medium",
+      "slow",
+      "accurate"
+    ],
+    "must_exclude": [
+      "you know"
+    ],
+    "retain": 0.7,
+    "note": "Real dictation, verbatim. Enumerated options ('fastest medium and slow') plus a genuine mid-sentence self-correction ('but this is or it's'). The polish prompt reads the list as a correction and eats two of the three options."
+  },
+  {
+    "name": "agent_prompt_council",
+    "app": "Claude (coding)",
+    "raw": "so we have two other agents working on blue jay whisper but i want you to mainly be concerned about the quality of how our transcription works because there's a lot of times where i say a lot of text and it doesn't take into account that i'm trying to prompt maybe i'm trying to prompt code and it just changes my text too much and it doesn't fully understand my intent so council our quality issues can you get a council of agents by using the debate skill and our prompt our system prompt and how our design works to give the best transcription quality just imagine you're whisper flow and we're trying to replicate whisper flow one to one",
+    "must_include": [
+      "council",
+      "debate",
+      "system prompt",
+      "one to one",
+      "intent"
+    ],
+    "must_exclude": [],
+    "retain": 0.8,
+    "note": "Real dictation, verbatim, and the one that started this work. Note 'council' arrived as 'how cool' and 'debate skill' as 'debates go' in the real session — recognizer errors cleanup cannot fix. This case only asserts cleanup does not make it worse."
+  },
+  {
+    "name": "enumerated_options",
+    "app": "Cursor (coding)",
+    "raw": "for the storage layer we could use um postgres with a jsonb column or actually maybe duckdb since it's all analytical or or we could just keep it in sqlite and and deal with it later i'm leaning postgres but tell me if i'm wrong",
+    "must_include": [
+      "postgres",
+      "jsonb",
+      "duckdb",
+      "sqlite",
+      "actually"
+    ],
+    "must_exclude": [
+      " um "
+    ],
+    "retain": 0.8,
+    "note": "The sharpest single case for the inverted self-correction rule: three options joined by 'or actually' / 'or or'. On the coding path all three survive AND the word 'actually' survives with them. The polish prompt is required to delete two of the three."
+  },
+  {
+    "name": "identifier_symbols",
+    "app": "Terminal (coding)",
+    "raw": "check whether flag retry v2 is set in the dot env file and if it is uh run npm run build dash dash force and then tail the logs in var log slash app dot log",
+    "draft": "if (flags.FLAG_RETRY_V2) { await rebuild(); }",
+    "must_include": [
+      "--force",
+      ".env",
+      "app.log",
+      "npm run build"
+    ],
+    "must_exclude": [
+      " uh "
+    ],
+    "retain": 0.7,
+    "note": "Spoken symbols to symbols, with the identifier sitting in the draft. Scoring is case-insensitive so this asserts the rendering, not the capitalization."
+  },
+  {
+    "name": "design_doc_polish_long",
+    "app": "Notion (writing)",
+    "raw": "okay so for the reliability section i want to start with um what actually happens today which is that when the webhook sender fails we we just log it and move on so the customer never finds out and and neither do we until they email us um and then the second part should be what we're proposing which is uh a dead letter table plus a daily digest that goes to the the org owner listing anything that failed in the last twenty four hours and then um third i want to talk about the the tradeoff which is that a digest is is not real time so if something breaks at nine in the morning they hear about it the next day and i think that's that's acceptable for now because the alternative is a whole alerting system and we don't we don't have anyone to build that this quarter and then last the the rollout plan is we ship the table first behind a flag measure how often it actually fills up on real traffic and only then decide whether the digest is even worth building",
+    "must_include": [
+      "dead letter",
+      "digest",
+      "twenty four hours",
+      "tradeoff",
+      "flag"
+    ],
+    "must_exclude": [
+      " um ",
+      " uh ",
+      "we we"
+    ],
+    "retain": 0.6,
+    "note": "The polish path at length, so splitting the prompt in two cannot silently regress the path that still wants rewriting. Here condensing four sections into prose IS correct."
   }
 ]

@@ -99,7 +99,7 @@ struct DashboardView: View {
                 .background(Theme.cream)
         }
         .frame(minWidth: 760, minHeight: 520)
-        .preferredColorScheme(.light)
+        .preferredColorScheme(settings.appearance.isDark ? .dark : .light)
     }
 
     /// Stagger delay by position in the flat nav order, so groups do not restart the cascade.
@@ -135,14 +135,11 @@ struct DashboardView: View {
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 9) {
-                LiveStatus(state: controller.state)
-                Text(Self.versionLabel)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Theme.inkSubtle.opacity(0.75))
-            }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 16)
+            Text(Self.versionLabel)
+                .font(.bj(10.5))
+                .foregroundStyle(Theme.inkSubtle.opacity(0.75))
+                .padding(.horizontal, 18)
+                .padding(.bottom, 16)
         }
         .frame(width: 250)
         .background(alignment: .bottom) {
@@ -193,6 +190,7 @@ struct DashboardView: View {
 }
 
 struct SidebarItem: View {
+    var themeID = Appearance.current
     let item: DashboardView.Section
     let selected: Bool
     let namespace: Namespace.ID
@@ -208,11 +206,11 @@ struct SidebarItem: View {
             // BrandLockup repeats both numbers; change one, change all four.
             HStack(spacing: 9) {
                 Image(systemName: item.icon)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.bj(12.5, weight: .medium))
                     .frame(width: 18)
                     .symbolEffect(.bounce, options: .speed(1.5), value: bounce)
                 Text(item.rawValue)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                    .font(.bj(13, weight: selected ? .semibold : .regular))
                 Spacer()
             }
             .foregroundStyle(selected ? Theme.blue : Theme.inkTertiary)
@@ -248,6 +246,7 @@ struct SidebarItem: View {
 /// spacing puts the text on their 45pt label column, so the whole rail shares two edges;
 /// it spins while dictating, driven by the clock so it never snaps back on stop.
 struct BrandLockup: View {
+    var themeID = Appearance.current
     let state: DictationController.State
 
     private var live: Bool { state != .idle }
@@ -260,51 +259,15 @@ struct BrandLockup: View {
             }
             .frame(width: 18, height: 18)
             Text("Bluejay Wispr")
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(.bj(13.5, weight: .semibold))
                 .tracking(-0.2)
                 .foregroundStyle(Theme.ink)
         }
     }
 }
 
-/// Sidebar footer: what the app is doing right now, with a breathing dot while live.
-struct LiveStatus: View {
-    let state: DictationController.State
-    /// Read here rather than passed in, so the label follows an edited binding live without
-    /// the sidebar having to know about shortcuts.
-    @StateObject private var settings = AppSettings.shared
-
-    private var live: Bool { state != .idle }
-
-    private var label: String {
-        switch state {
-        case .idle: return settings.holdHint
-        case .recording(let locked): return locked ? settings.lockedHint : "Listening"
-        case .processing: return "Cleaning up"
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            TimelineView(.animation(minimumInterval: 1 / 20, paused: !live)) { ctx in
-                let beat = abs(sin(ctx.date.timeIntervalSinceReferenceDate * 2.6))
-                Circle()
-                    .fill(live ? Theme.blue : Theme.inkSubtle.opacity(0.5))
-                    .frame(width: 6, height: 6)
-                    .scaleEffect(live ? 1 + 0.4 * beat : 1)
-                    .opacity(live ? 0.65 + 0.35 * beat : 1)
-            }
-            .frame(width: 9, height: 9)
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(live ? Theme.inkTertiary : Theme.inkSubtle)
-                .contentTransition(.opacity)
-        }
-        .animation(.bjSoft, value: label)
-    }
-}
-
 struct LogoView: View {
+    var themeID = Appearance.current
     let name: String
     let size: CGFloat
 
@@ -316,7 +279,7 @@ struct LogoView: View {
                 .frame(width: size, height: size)
         } else {
             Image(systemName: "bird")
-                .font(.system(size: size - 6))
+                .font(.bj(size - 6))
                 .foregroundStyle(Theme.blue)
         }
     }
@@ -326,6 +289,7 @@ struct LogoView: View {
 /// consistent padding. The action sits on the title's baseline rather than above the content, so
 /// the page's primary verb is always in the same place.
 struct Page<Content: View>: View {
+    var themeID = Appearance.current
     let title: String
     var subtitle: String?
     @ViewBuilder let content: () -> Content
@@ -335,12 +299,12 @@ struct Page<Content: View>: View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.system(size: 27, weight: .semibold))
+                        .font(.bj(27, weight: .semibold))
                         .tracking(-0.4)
                         .foregroundStyle(Theme.ink)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 13))
+                            .font(.bj(13))
                             .foregroundStyle(Theme.inkTertiary)
                     }
                 }
@@ -429,6 +393,7 @@ struct HomeView: View {
 }
 
 struct StatCard: View {
+    var themeID = Appearance.current
     let value: String
     let label: String
     @State private var hovering = false
@@ -436,7 +401,7 @@ struct StatCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(value)
-                .font(.system(size: 27, weight: .semibold))
+                .font(.bj(27, weight: .semibold))
                 .monospacedDigit()
                 .tracking(-0.4)
                 .foregroundStyle(Theme.ink)
@@ -453,16 +418,17 @@ struct StatCard: View {
 }
 
 struct EmptyHint: View {
+    var themeID = Appearance.current
     let text: String
 
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "waveform")
-                .font(.system(size: 12))
+                .font(.bj(12))
                 .foregroundStyle(Theme.blue)
                 .symbolEffect(.variableColor.iterative, options: .repeating)
             Text(text)
-                .font(.system(size: 13))
+                .font(.bj(13))
                 .foregroundStyle(Theme.inkTertiary)
         }
         .card()
@@ -501,6 +467,7 @@ struct HistoryView: View {
 }
 
 struct HistoryRow: View {
+    var themeID = Appearance.current
     let entry: DictationEntry
     var showRaw = false
     @State private var copied = false
@@ -517,30 +484,30 @@ struct HistoryRow: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 Text(entry.appName.isEmpty ? "Unknown app" : entry.appName)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.bj(11, weight: .medium))
                     .foregroundStyle(Theme.blue)
                 Spacer()
                 // Timestamp gives way to the copy affordance on hover — the row itself is the button.
                 Text(copied ? "Copied" : hovering ? "Click to copy" : Self.timeFormatter.string(from: entry.date))
-                    .font(.system(size: 11))
+                    .font(.bj(11))
                     .foregroundStyle(copied ? Theme.green : Theme.inkSubtle)
                     .contentTransition(.opacity)
                 if copied {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.bj(10, weight: .bold))
                         .foregroundStyle(Theme.green)
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 }
             }
             Text(entry.cleaned)
-                .font(.system(size: 13))
+                .font(.bj(13))
                 .foregroundStyle(Theme.inkSecondary)
                 .lineSpacing(2)
                 .lineLimit(showRaw ? nil : 3)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if showRaw, entry.raw != entry.cleaned {
                 Text(entry.raw)
-                    .font(.system(size: 12))
+                    .font(.bj(12))
                     .foregroundStyle(Theme.inkSubtle)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -653,10 +620,10 @@ struct DictionaryView: View {
                 (Text("It spells the way ")
                  + Text("you").italic()
                  + Text(" do."))
-                    .font(.system(size: 29, weight: .semibold, design: .serif))
+                    .font(.bj(29, weight: .semibold, design: .serif))
                     .foregroundStyle(.white)
                 Text("Add the names, tools, and jargon you say out loud and Wispr will spell them right instead of guessing. Teammate names come from the Team page.")
-                    .font(.system(size: 13))
+                    .font(.bj(13))
                     .foregroundStyle(.white.opacity(0.82))
                     .lineSpacing(2.5)
                     .frame(maxWidth: 520, alignment: .leading)
@@ -665,7 +632,7 @@ struct DictionaryView: View {
                 HStack(spacing: 8) {
                     ForEach(settings.dictionary.suffix(5).reversed(), id: \.self) { word in
                         Text(word)
-                            .font(.system(size: 12.5))
+                            .font(.bj(12.5))
                             .foregroundStyle(.white.opacity(0.92))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
@@ -684,7 +651,7 @@ struct DictionaryView: View {
                 withAnimation(.bjSoft) { introDismissed = true }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.bj(10, weight: .bold))
                     .foregroundStyle(.white.opacity(0.75))
                     .frame(width: 26, height: 26)
                     .background(Circle().fill(.white.opacity(0.14)))
@@ -736,7 +703,7 @@ struct DictionaryView: View {
             HStack(spacing: 8) {
                 TextField("Add a word or a name, or several separated by commas", text: $newWord)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.bj(13))
                     .padding(10)
                     .background(fieldBackground)
                     .onSubmit(addWord)
@@ -753,10 +720,10 @@ struct DictionaryView: View {
                         if generating {
                             ProgressView().controlSize(.small)
                         } else {
-                            Image(systemName: "sparkles").font(.system(size: 10.5))
+                            Image(systemName: "sparkles").font(.bj(10.5))
                         }
-                        Text("Add every term for “\(topic)”, not just the word")
-                            .font(.system(size: 12))
+                        Text("Add the words people use around “\(topic)”")
+                            .font(.bj(12))
                     }
                     .foregroundStyle(generating ? Theme.inkSubtle : Theme.blue)
                     .contentShape(Rectangle())
@@ -771,7 +738,7 @@ struct DictionaryView: View {
 
             if let note {
                 Text(note)
-                    .font(.system(size: 11.5))
+                    .font(.bj(11.5))
                     .foregroundStyle(Theme.inkSubtle)
                     .padding(.leading, 2)
             }
@@ -792,11 +759,11 @@ struct DictionaryView: View {
                 if listIsLong {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11))
+                            .font(.bj(11))
                             .foregroundStyle(Theme.inkSubtle)
                         TextField("Search", text: $search)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 12.5))
+                            .font(.bj(12.5))
                             .frame(width: 130)
                     }
                     .padding(.horizontal, 10)
@@ -819,7 +786,7 @@ struct DictionaryView: View {
                 EmptyHint(text: "Nothing here yet. Add a word, or start from a pack below.")
             } else if shown.isEmpty {
                 Text("No term matches “\(search)”.")
-                    .font(.system(size: 13))
+                    .font(.bj(13))
                     .foregroundStyle(Theme.inkTertiary)
                     .padding(.vertical, 6)
             } else if listIsLong {
@@ -829,21 +796,21 @@ struct DictionaryView: View {
                 // things to leave. Fixed height, because past the threshold there is always more
                 // content than fits — no measuring, and no dead space on a short list.
                 ScrollView {
-                    rows
+                    rows(trailingInset: 10)
                 }
                 .frame(height: 340)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tableHeader))
             } else {
-                rows
+                rows()
                     .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tableHeader))
             }
         }
     }
 
-    private var rows: some View {
+    private func rows(trailingInset: CGFloat = 0) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(shown.enumerated()), id: \.element) { index, word in
-                TermRow(word: word, first: index == 0) {
+                TermRow(word: word, first: index == 0, trailingInset: trailingInset) {
                     withAnimation(.bjSnap) { settings.dictionary.removeAll { $0 == word } }
                 }
             }
@@ -866,7 +833,7 @@ struct DictionaryView: View {
                         withAnimation(.bjSnap) { settings.addDictionaryWords(pack.terms) }
                     } label: {
                         Text(missing > 0 ? "\(pack.name) +\(missing)" : "\(pack.name) ✓")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.bj(12, weight: .medium))
                             .foregroundStyle(missing > 0 ? Theme.blue : Theme.inkSubtle)
                             .contentTransition(.numericText())
                             .padding(.horizontal, 12)
@@ -885,7 +852,7 @@ struct DictionaryView: View {
 
     private var fieldBackground: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(.white)
+            .fill(Theme.field)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
     }
 
@@ -920,7 +887,7 @@ struct DictionaryView: View {
             let added = settings.dictionary.count - before
             note = switch added {
             case 0 where terms.isEmpty:
-                "No model reachable. Start LM Studio, or pick a provider in Settings."
+                "No model reachable. Start LM Studio and try this again."
             case 0:
                 "Every term for “\(topic)” is already in the dictionary."
             default:
@@ -935,8 +902,13 @@ struct DictionaryView: View {
 /// One term. Removal is the only action, so it is the only control, and it appears on hover rather
 /// than sitting on every row — a list of a hundred terms should read as words, not as buttons.
 struct TermRow: View {
+    var themeID = Appearance.current
     let word: String
     let first: Bool
+    /// Extra room on the right for the overlay scrollbar, which draws over the content and
+    /// otherwise lands on top of the remove button. Only the scrolling list passes it; the
+    /// divider stays full width either way, so the inset never reads as a ragged edge.
+    var trailingInset: CGFloat = 0
     let onRemove: () -> Void
     @State private var hovering = false
 
@@ -947,14 +919,17 @@ struct TermRow: View {
             }
             HStack(spacing: 8) {
                 Text(word)
-                    .font(.system(size: 13))
+                    .font(.bj(13))
                     .foregroundStyle(Theme.ink)
                 Spacer()
+                // A trash bin rather than an ✕: ✕ is dismiss, and this deletes a saved word.
+                // The button is the full height of the row and wide enough to hit without
+                // aiming, since it only appears once the pointer is already here.
                 Button(action: onRemove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9.5, weight: .bold))
+                    Image(systemName: "trash")
+                        .font(.bj(11.5))
                         .foregroundStyle(Theme.inkSubtle)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 30, height: 28)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -962,10 +937,16 @@ struct TermRow: View {
                 .help("Remove \(word)")
                 .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.leading, 14)
+            .padding(.trailing, 8 + trailingInset)
+            // The button is taller than the old one, so the row keeps its height from the
+            // button rather than gaining eight points of padding around it.
+            .padding(.vertical, 4)
+            .frame(minHeight: 38)
         }
-        .background(hovering ? Theme.surfaceActive.opacity(0.6) : .clear)
+        // Full strength, not 60%: the row under the pointer is the one about to lose a term,
+        // and a highlight you have to look for is why aiming at the button felt like a guess.
+        .background(hovering ? Theme.surfaceActive : .clear)
         .onHover { hovering = $0 }
         .animation(.bjHover, value: hovering)
         .transition(.opacity)
@@ -1020,14 +1001,14 @@ struct TeamView: View {
             HStack(spacing: 8) {
                 TextField("Name", text: $newName)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.bj(13))
                     .padding(10)
                     .background(fieldBackground)
                     .frame(maxWidth: 220)
                     .onSubmit(addMember)
                 TextField("Role (optional)", text: $newRole)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.bj(13))
                     .padding(10)
                     .background(fieldBackground)
                     .frame(maxWidth: 220)
@@ -1057,7 +1038,7 @@ struct TeamView: View {
 
     private var fieldBackground: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(.white)
+            .fill(Theme.field)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
     }
 
@@ -1073,6 +1054,7 @@ struct TeamView: View {
 }
 
 struct TeamRow: View {
+    var themeID = Appearance.current
     let member: TeamMember
     let onRemove: () -> Void
     @State private var hovering = false
@@ -1082,17 +1064,17 @@ struct TeamRow: View {
             ZStack {
                 Circle().fill(Theme.blueSoft)
                 Text(String(member.name.prefix(1)).uppercased())
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.bj(12.5, weight: .semibold))
                     .foregroundStyle(Theme.blue)
             }
             .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 1) {
                 Text(member.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.bj(13, weight: .medium))
                     .foregroundStyle(Theme.ink)
                 if !member.role.isEmpty {
                     Text(member.role)
-                        .font(.system(size: 11))
+                        .font(.bj(11))
                         .foregroundStyle(Theme.inkSubtle)
                 }
             }
@@ -1100,7 +1082,7 @@ struct TeamRow: View {
             if hovering {
                 Button(action: onRemove) {
                     Image(systemName: "trash")
-                        .font(.system(size: 11))
+                        .font(.bj(11))
                         .foregroundStyle(Theme.red)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())

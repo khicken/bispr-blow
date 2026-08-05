@@ -137,7 +137,6 @@ final class DictationController: ObservableObject {
         lastError = nil
         state = .recording(locked: false)
 
-        let format = recorder.inputFormat
         recorder.onLevel = { [weak self] level in
             DispatchQueue.main.async { self?.level = level }
         }
@@ -158,15 +157,20 @@ final class DictationController: ObservableObject {
 
         let generation = sessionGeneration
         Task {
-            await transcriber.startSession(inputFormat: format,
-                                           contextTerms: capturedContext?.draftTerms ?? [])
+            await transcriber.startSession(contextTerms: capturedContext?.draftTerms ?? [])
             guard self.sessionGeneration == generation, case .recording = self.state else { return }
             do {
                 try recorder.start()
             } catch {
                 self.lastError = "Microphone unavailable: \(error.localizedDescription)"
                 self.state = .idle
+                return
             }
+            // The pill says "recording" from the moment the shortcut fires, but the mic only opens
+            // here — everything spoken while the analyzer was spinning up was never captured by
+            // anything. Whether that window is 30ms or a second decides whether it is a bug, and
+            // it has never been measured. Log it before changing the ordering.
+            logLine("audio mic open \(Int(Date().timeIntervalSince(self.recordingStartedAt) * 1000))ms after shortcut")
         }
     }
 

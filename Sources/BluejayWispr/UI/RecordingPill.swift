@@ -467,7 +467,7 @@ struct PillView: View {
                 model.tapped { controller.startHandsFree() }
             } label: {
                 Image(systemName: "mic.fill")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.bj(11, weight: .medium))
                     .foregroundStyle(.white)
             }
             PillCircleButton(help: "Open Bluejay Wispr", counterRotation: upright) {
@@ -480,7 +480,7 @@ struct PillView: View {
                         .frame(width: 13, height: 13)
                 } else {
                     Image(systemName: "house.fill")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.bj(11, weight: .medium))
                         .foregroundStyle(.white)
                 }
             }
@@ -488,7 +488,7 @@ struct PillView: View {
                 model.tapped { model.onOpenDashboard(.history) }
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.bj(11, weight: .medium))
                     .foregroundStyle(.white)
             }
         }
@@ -735,11 +735,11 @@ struct ToastView: View {
                 HStack(spacing: 6) {
                     if controller.notice == nil {
                         Image(systemName: "mic.fill")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.bj(9, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Text(message)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.bj(11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                 }
@@ -784,6 +784,7 @@ struct PillCircleButton<Label: View>: View {
 
 /// Three softly pulsing dots, Wispr-style "thinking" state.
 struct ProcessingDots: View {
+    var themeID = Appearance.current
     @State private var phase = false
 
     var body: some View {

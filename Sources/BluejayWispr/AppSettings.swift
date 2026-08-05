@@ -14,30 +14,29 @@ final class AppSettings: ObservableObject {
     /// and the benchmark would read a different dictionary than the one in use.
     private let defaults = UserDefaults(suiteName: "ai.getbluejay.wispr") ?? .standard
 
-    enum Provider: String, CaseIterable, Identifiable {
-        case auto = "Auto"
-        case lmStudio = "LM Studio"
-        case ollama = "Ollama"
-        case custom = "Custom (OpenAI-compatible)"
-        case off = "Off (raw transcript)"
+    /// The only thing the user gets to say about cleanup: how much of the pause after they let go
+    /// it is allowed to spend. Which server is running and which model id it holds are things the
+    /// app can work out, and a picker full of endpoints and model names asked the user to make a
+    /// decision out of plumbing they have no way to judge.
+    enum Cleanup: String, CaseIterable, Identifiable {
+        case fast = "Fast"
+        case accurate = "Accurate"
         var id: String { rawValue }
+
+        /// What you get, on the row next to the name. The speed half of this line used to lead —
+        /// "Text appears right away" — and it was the half doing no work: the names already say
+        /// which one is quicker. What a user cannot guess is which of their dictations each one
+        /// suits, so that is all that is left.
+        var detail: String {
+            switch self {
+            case .fast: "Best for a sentence or two"
+            case .accurate: "Best for long, rambling dictations"
+            }
+        }
     }
 
-    @Published var provider: Provider {
-        didSet { defaults.set(provider.rawValue, forKey: "provider") }
-    }
-    @Published var customEndpoint: String {
-        didSet { defaults.set(customEndpoint, forKey: "customEndpoint") }
-    }
-    @Published var customModel: String {
-        didSet { defaults.set(customModel, forKey: "customModel") }
-    }
-    @Published var customAPIKey: String {
-        didSet { defaults.set(customAPIKey, forKey: "customAPIKey") }
-    }
-    /// Cleanup model id; empty auto-picks from what the provider has loaded.
-    @Published var preferredModel: String {
-        didSet { defaults.set(preferredModel, forKey: "preferredModel") }
+    @Published var cleanup: Cleanup {
+        didSet { defaults.set(cleanup.rawValue, forKey: "cleanup") }
     }
     /// Core Audio UID of the chosen mic; empty follows the system default input.
     @Published var inputDeviceUID: String {
@@ -57,11 +56,31 @@ final class AppSettings: ObservableObject {
     @Published var launchSoundEnabled: Bool {
         didSet { defaults.set(launchSoundEnabled, forKey: "launchSoundEnabled") }
     }
-    /// Which look the app draws in. Every colour and every piece of brand imagery comes from the
-    /// matching `Palette`, so this is the only stored piece of a theme.
-    @Published var appearance: Appearance {
-        didSet { defaults.set(appearance.rawValue, forKey: "appearance") }
+    /// Lowercase the first word of every sentence in the text that lands at the cursor. Applied
+    /// after cleanup rather than asked of the model, so it holds on the rule-based path too and
+    /// costs nothing on the cached prompt prefix.
+    @Published var lowercaseSentences: Bool {
+        didSet { defaults.set(lowercaseSentences, forKey: "lowercaseSentences") }
     }
+    /// Raise the system input volume back to a healthy level before each dictation. Off by
+    /// default: it writes a system setting, so the user opts in rather than discovers it.
+    @Published var restoreMicVolume: Bool {
+        didSet { defaults.set(restoreMicVolume, forKey: "restoreMicVolume") }
+    }
+    /// Which look the app draws in. Every colour, image and type face comes from the matching
+    /// `Palette`, so this is the only stored piece of a theme.
+    @Published var appearance: Appearance {
+        didSet {
+            defaults.set(appearance.rawValue, forKey: "appearance")
+            Theme.applyToNativeControls()
+        }
+    }
+    /// Whether macOS is currently in dark mode. Published rather than read from `NSApp` at draw
+    /// time for two reasons: `Theme` is a table of static properties with no view to observe, and
+    /// a view only repaints when something it observes changes — so System mode would keep the
+    /// palette it launched with until the user touched an unrelated setting. `App.swift` keeps
+    /// this current.
+    @Published var systemIsDark: Bool = false
     /// Bindings per action, keyed by `ShortcutAction.rawValue` — a String key so the whole
     /// thing is JSON-encodable without a CodingKey dance.
     @Published var bindings: [String: [Shortcut]] {
@@ -99,6 +118,16 @@ final class AppSettings: ObservableObject {
         bindings = next
     }
 
+    /// "Bluejay" and "Bluejay World" were the two themes before there were five. The second was a
+    /// deliberate pick and is kept as World. The first was the only light option there was, so
+    /// having it stored says nothing about whether its owner wants light — they land on System
+    /// with everyone who never touched the setting. Pure so the self-check can exercise it: get
+    /// this wrong and every existing install silently loses its theme.
+    static func appearance(stored: String?) -> Appearance {
+        guard let stored else { return .system }
+        return Appearance(rawValue: stored) ?? (stored == "Bluejay World" ? .world : .system)
+    }
+
     /// Pure so the self-check can exercise it. Adding a binding *steals* it from every other
     /// action: two actions on one key means only the first one ever fires, silently.
     static func adding(_ shortcut: Shortcut, to action: ShortcutAction,
@@ -128,12 +157,6 @@ final class AppSettings: ObservableObject {
         holdPhrase.map { "\($0) to dictate" } ?? "Set a dictation shortcut in Settings"
     }
 
-    /// Sidebar footer during a hands-free session.
-    var lockedHint: String {
-        guard let name = dictationShortcutName else { return "Locked. Click the pill to finish" }
-        return "Locked. Tap \(name) to finish"
-    }
-
     /// Terms the cleanup model should correct toward: dictionary + team member names.
     /// Always applied — an empty dictionary already means no biasing, so a switch to turn it off
     /// only ever disables words the user deliberately added.
@@ -154,11 +177,7 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
-        provider = Provider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .auto
-        customEndpoint = defaults.string(forKey: "customEndpoint") ?? ""
-        customModel = defaults.string(forKey: "customModel") ?? ""
-        customAPIKey = defaults.string(forKey: "customAPIKey") ?? ""
-        preferredModel = defaults.string(forKey: "preferredModel") ?? ""
+        cleanup = Cleanup(rawValue: defaults.string(forKey: "cleanup") ?? "") ?? .fast
         inputDeviceUID = defaults.string(forKey: "inputDeviceUID") ?? ""
         dictionary = defaults.stringArray(forKey: "dictionary") ?? ["Bluejay"]
         if let data = defaults.data(forKey: "teamMembers"),
@@ -168,7 +187,9 @@ final class AppSettings: ObservableObject {
             teamMembers = []
         }
         launchSoundEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
-        appearance = Appearance(rawValue: defaults.string(forKey: "appearance") ?? "") ?? .bluejay
+        lowercaseSentences = defaults.bool(forKey: "lowercaseSentences")
+        restoreMicVolume = defaults.bool(forKey: "restoreMicVolume")
+        appearance = Self.appearance(stored: defaults.string(forKey: "appearance"))
         if let data = defaults.data(forKey: "bindings"),
            let saved = try? JSONDecoder().decode([String: [Shortcut]].self, from: data) {
             bindings = saved

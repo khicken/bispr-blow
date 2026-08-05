@@ -134,7 +134,7 @@ extension AppContext {
     /// the topic. Deliberately only function words and generic verbs: "cache", "query", "branch",
     /// "commit", "state" and their kind are ordinary English *and* domain terms, and dropping them
     /// would remove exactly the words this is for.
-    private static let commonWords: Set<String> = [
+    static let commonWords: Set<String> = [
         "about", "after", "again", "against", "actually", "all", "also", "always", "and", "another",
         "any", "anything", "are", "around", "back", "because", "been", "before", "being", "both",
         "but", "came", "can", "come", "could", "did", "does", "doing", "done", "down", "each",

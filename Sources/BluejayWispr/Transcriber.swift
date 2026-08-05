@@ -26,6 +26,9 @@ final class Transcriber {
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
     private var analyzerFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
+    /// The format `converter` was built from, so a buffer arriving in some other format rebuilds it
+    /// rather than being fed to a converter that cannot read it. See `feed`.
+    private var converterInputFormat: AVAudioFormat?
     private var resultsTask: Task<Void, Never>?
     private var finalizedText = ""
     private var volatileText = ""
@@ -36,6 +39,29 @@ final class Transcriber {
     private var sfTask: SFSpeechRecognitionTask?
     private var sfLatest = ""
     private var usingFallback = false
+
+    /// Drops the ellipsis the recognizer writes where the speaker paused. It is punctuation the
+    /// recognizer invented, not a word anybody said, and it does two kinds of damage.
+    ///
+    /// It reaches the cursor: "again to see... If we already offloaded this work" is a real
+    /// dictation from history, ellipsis and stray capital included, and no stage downstream removes
+    /// it — cleanup is told never to *write* an ellipsis, so it copies this one through, and
+    /// `ruleClean` never touched punctuation.
+    ///
+    /// Worse, it disarms a guard. `looksTruncated` reads an ellipsis in the transcript as proof the
+    /// speaker dictated one and stops rejecting elided cleanups for that whole dictation — so on any
+    /// dictation containing a pause, a model that trailed off mid-sentence sailed through. Removing
+    /// the marker here keeps that check armed everywhere, which is why this belongs at the source
+    /// rather than in cleanup.
+    ///
+    /// Three dots minimum: ".." is left alone so a spoken relative path ("dot dot slash src") is not
+    /// quietly eaten. The following word keeps whatever case the recognizer gave it — cleanup fixes
+    /// capitalization, and lowercasing blindly here would ruin "see... Kubernetes".
+    static func withoutPauseMarks(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\s*(\\.{3,}|…)\\s*", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// Downloads the on-device model if needed. Call once at startup.
     static func prepareAssets() async {
@@ -65,17 +91,19 @@ final class Transcriber {
 
     // MARK: - Session
 
-    func startSession(inputFormat: AVAudioFormat, contextTerms: [String] = []) async {
+    /// No `inputFormat` parameter: the converter is built from the first buffer that actually arrives
+    /// (see `feed`), which is the only format guaranteed to be the real one.
+    func startSession(contextTerms: [String] = []) async {
         finalizedText = ""
         volatileText = ""
         sfLatest = ""
         usingFallback = false
         do {
-            try await startAnalyzerSession(inputFormat: inputFormat, contextTerms: contextTerms)
+            try await startAnalyzerSession(contextTerms: contextTerms)
         } catch {
             logLine("SpeechAnalyzer unavailable (\(error)); falling back to SFSpeechRecognizer")
             usingFallback = true
-            startSFSession(inputFormat: inputFormat, contextTerms: contextTerms)
+            startSFSession(contextTerms: contextTerms)
         }
     }
 
@@ -88,6 +116,17 @@ final class Transcriber {
         if buffer.format == analyzerFormat {
             inputBuilder.yield(AnalyzerInput(buffer: buffer))
             return
+        }
+        // Built from the buffer actually in hand, not from a format captured earlier. `beginRecording`
+        // read `recorder.inputFormat` *before* `AudioRecorder.start` applied the selected input device,
+        // so on any non-default mic running at a different sample rate the converter was constructed
+        // for a format the buffers never had. AVAudioConverter does not recover from that — it returns
+        // nothing, silently, for the whole dictation. Keying on the format also survives a device
+        // change mid-session.
+        if converterInputFormat != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: analyzerFormat)
+            converterInputFormat = buffer.format
+            logLine("audio converting \(Int(buffer.format.sampleRate))Hz/\(buffer.format.channelCount)ch → \(Int(analyzerFormat.sampleRate))Hz/\(analyzerFormat.channelCount)ch")
         }
         guard let converter,
               let out = AVAudioPCMBuffer(
@@ -123,8 +162,7 @@ final class Transcriber {
         }
         await resultsTask?.value
         cleanupAnalyzer()
-        let text = (finalizedText + volatileText).trimmingCharacters(in: .whitespacesAndNewlines)
-        return text
+        return Self.withoutPauseMarks(finalizedText + volatileText)
     }
 
     func cancelSession() async {
@@ -143,16 +181,34 @@ final class Transcriber {
 
     // MARK: - SpeechAnalyzer path
 
-    private func startAnalyzerSession(inputFormat: AVAudioFormat, contextTerms: [String]) async throws {
+    private func startAnalyzerSession(contextTerms: [String]) async throws {
         guard let locale = await Self.bestLocale() else { throw TranscriberError.localeUnsupported }
+        // Alternatives and confidence cost nothing to ask for and are the raw material every
+        // recognition fix needs: if "Wispr" is anywhere in the n-best, choosing it is free accuracy,
+        // and confidence is what tells us which span to even consider rewriting. 1-best alone is a
+        // measurably bad input for correction — published ablations put 1-best-only rewriting at
+        // roughly break-even, and negative zero-shot, while n-best is where the gains are.
         let transcriber = SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
-            reportingOptions: [.volatileResults],
-            attributeOptions: []
+            reportingOptions: [.volatileResults, .alternativeTranscriptions],
+            attributeOptions: [.transcriptionConfidence]
         )
-        // Bias the recognizer toward the user's vocabulary. Fixing "proud" back to "prod" in
-        // cleanup can't work: by then the word "prod" was never in the transcript at all.
+        // NOTE: contextualStrings below is very likely a NO-OP on this module. Apple DTS, twice:
+        // "contextual strings only help transcriptions from the DictationTranscriber module. The
+        // SpeechTranscriber module does not currently take contextual strings into account."
+        // (developer.apple.com/forums/thread/811083, /801877). It fails silently — setContext
+        // succeeds and nothing changes — so it cannot be smoke-tested by "looks fine".
+        //
+        // Confirmed structurally on this SDK: `SpeechTranscriber` has no `contentHints:` parameter
+        // at all (the compiler rejects it), while `DictationTranscriber` does and accepts
+        // `.customizedLanguage(modelConfiguration:)`. So the real biasing door — SFCustomLanguageModelData,
+        // with per-phrase weights and X-SAMPA pronunciations — opens only onto the older, weaker
+        // acoustic model. That is a genuine trade, not an upgrade, and it needs measuring.
+        //
+        // Left in place rather than deleted: it is harmless, it is load-bearing on the
+        // SFSpeechRecognizer fallback path (where it does work, capped at 100 phrases), and the
+        // no-op has not been confirmed at runtime here. Do not tune it further until it has been.
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let vocabulary = await MainActor.run { AppSettings.shared.vocabulary } + contextTerms
         if !vocabulary.isEmpty {
@@ -165,11 +221,8 @@ final class Transcriber {
 
         let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
         self.analyzerFormat = format
-        if let format, format != inputFormat {
-            self.converter = AVAudioConverter(from: inputFormat, to: format)
-        } else {
-            self.converter = nil
-        }
+        self.converter = nil
+        self.converterInputFormat = nil
 
         let (sequence, builder) = AsyncStream<AnalyzerInput>.makeStream()
         self.inputBuilder = builder
@@ -180,12 +233,18 @@ final class Transcriber {
                     guard let self else { break }
                     let text = String(result.text.characters)
                     if result.isFinal {
+                        // Whether `alternatives` is actually populated, and how deep, is undocumented
+                        // and unreported by anyone — and it decides whether n-best rescoring is worth
+                        // building at all. A CLI probe cannot answer it (no Speech authorization), so
+                        // measure it from real dictations. Counts only, never the text: the unified log
+                        // is readable by anything on the machine.
+                        logLine("alternatives=\(result.alternatives.count) for \(text.split(whereSeparator: \.isWhitespace).count)w span")
                         self.finalizedText += text
                         self.volatileText = ""
                     } else {
                         self.volatileText = text
                     }
-                    let snapshot = self.finalizedText + self.volatileText
+                    let snapshot = Self.withoutPauseMarks(self.finalizedText + self.volatileText)
                     DispatchQueue.main.async { self.onPartial?(snapshot) }
                 }
             } catch {
@@ -202,12 +261,13 @@ final class Transcriber {
         inputBuilder = nil
         analyzerFormat = nil
         converter = nil
+        converterInputFormat = nil
         resultsTask = nil
     }
 
     // MARK: - SFSpeechRecognizer fallback
 
-    private func startSFSession(inputFormat: AVAudioFormat, contextTerms: [String]) {
+    private func startSFSession(contextTerms: [String]) {
         let recognizer = SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer()
         guard let recognizer, recognizer.isAvailable else { return }
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -221,7 +281,7 @@ final class Transcriber {
         sfTask = recognizer.recognitionTask(with: request) { [weak self] result, _ in
             guard let self, let result else { return }
             self.sfLatest = result.bestTranscription.formattedString
-            let snapshot = self.sfLatest
+            let snapshot = Self.withoutPauseMarks(self.sfLatest)
             DispatchQueue.main.async { self.onPartial?(snapshot) }
         }
     }
@@ -236,6 +296,6 @@ final class Transcriber {
         sfTask?.cancel()
         sfTask = nil
         sfRequest = nil
-        return sfLatest.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self.withoutPauseMarks(sfLatest)
     }
 }

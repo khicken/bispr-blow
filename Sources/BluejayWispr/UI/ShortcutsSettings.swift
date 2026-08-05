@@ -25,6 +25,7 @@ struct ShortcutRows: View {
 
 /// One action. The whole row is the hit target, per the UI rules.
 private struct ShortcutRow: View {
+    var themeID = Appearance.current
     let action: ShortcutAction
     let bindings: [Shortcut]
     let open: () -> Void
@@ -34,18 +35,18 @@ private struct ShortcutRow: View {
         Button(action: open) {
             HStack(spacing: 8) {
                 Text(action.title)
-                    .font(.system(size: 13))
+                    .font(.bj(13))
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: 12)
                 if bindings.isEmpty {
                     Text("Not set")
-                        .font(.system(size: 12))
+                        .font(.bj(12))
                         .foregroundStyle(Theme.inkSubtle)
                 } else {
                     ForEach(bindings) { KeyCap(text: $0.display) }
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.bj(9, weight: .bold))
                     .foregroundStyle(Theme.inkSubtle)
             }
             .padding(.vertical, 7)
@@ -66,17 +67,18 @@ private struct ShortcutRow: View {
 
 /// A single keyboard cap: "fn", "⌃⌥D", "Mouse 4".
 struct KeyCap: View {
+    var themeID = Appearance.current
     let text: String
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5, weight: .medium))
+            .font(.bj(11.5, weight: .medium))
             .foregroundStyle(Theme.inkSecondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(.white)
+                    .fill(Theme.field)
                     .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.border, lineWidth: 1))
             )
     }
@@ -95,10 +97,10 @@ struct ShortcutSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(action.title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.bj(17, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                 Text(action.blurb)
-                    .font(.system(size: 12))
+                    .font(.bj(12))
                     .foregroundStyle(Theme.inkTertiary)
             }
 
@@ -114,7 +116,7 @@ struct ShortcutSheet: View {
                             settings.remove(shortcut, from: action)
                         } label: {
                             Image(systemName: "xmark")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(.bj(9, weight: .bold))
                         }
                         .buttonStyle(QuietButtonStyle())
                         .help("Remove this shortcut")
@@ -124,7 +126,7 @@ struct ShortcutSheet: View {
                 if armed {
                     HStack(spacing: 10) {
                         Text("Press any key, combination, or mouse button…")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.bj(12, weight: .medium))
                             .foregroundStyle(Theme.blue)
                         Spacer()
                         Button("Cancel") { disarm() }
@@ -136,9 +138,9 @@ struct ShortcutSheet: View {
                     Button(action: arm) {
                         HStack(spacing: 7) {
                             Image(systemName: "plus")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.bj(10, weight: .bold))
                             Text(bindings.isEmpty ? "Record a shortcut" : "Add another")
-                                .font(.system(size: 12.5))
+                                .font(.bj(12.5))
                             Spacer()
                         }
                         .foregroundStyle(Theme.blue)

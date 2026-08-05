@@ -24,13 +24,33 @@ worktree" belongs in a tooltip on the toggle. Endpoint names, model ids, and
 fallback states are not information a user acts on, so they do not get UI. If
 you need them for debugging, log them.
 
-**Advanced goes last, as an ordinary section.** Provider and model live there,
-along with anything a normal user never touches. It is the final section on the
-page, never the first, and it never gets a topic-specific header like "AI
-cleanup" wrapped around it. It used to start collapsed; it does not any more.
-Three rows behind a disclosure nobody else on the page had cost a click and read
-as a different kind of control, when the point was only "you can ignore this".
-Order is what says a section is secondary. Nothing in this app collapses.
+**Plumbing gets no section at all, not even a last one.** There used to be an
+Advanced group holding a provider menu, a model menu, and three fields for a
+custom endpoint. It is gone. Which server is running and which model id it holds
+are things the app finds out by asking, so putting them on screen only handed
+the user a way to get it wrong, and "Auto / LM Studio / Ollama / Custom / Off"
+asked them to have an opinion about five words describing our implementation.
+What survives is the one axis they can actually judge: Fast or Accurate
+(`AppSettings.Cleanup`), which picks the model and the deadline together. Before
+adding a setting, ask whether it is a decision the user has any basis for
+making. Nothing in this app collapses, and nothing hides.
+
+**The section is "Writing", and it is not "Transcription".** Fast/Accurate and
+the lowercase switch share one card because both decide how the app writes what
+it heard. Nothing in it reaches the recognizer, so a heading naming transcription
+would promise that Accurate mishears fewer words — it does not; "prod" heard as
+"proud" comes back wrong in both. "Cleanup" is the other wrong answer: accurate,
+but it is our name for our second stage, and the user did not know there were
+stages.
+
+**A preview shows the thing, not a picture of it.** The theme swatches draw the
+window in miniature — sidebar, nav, content cards, pill — every fill read from
+the `Palette` being offered, so a swatch cannot promise a look the app will not
+draw. They used to show a brand render on one card and a bare gradient on the
+other, which is how you end up choosing a photograph and getting a settings
+page. Names carry no accent dot and no one-line blurb: the picture is the
+description, and a dot that only repeats a colour already on screen is
+decoration.
 
 **One control per job.** A field that accepts a list does not need a separate
 Bulk Add button. A row that can be clicked does not need a copy icon. Before
@@ -57,6 +77,38 @@ content in. Do not invent new spring constants per view.
 `selected` fires on the row you left as well as the one you clicked. Key it on
 a counter you bump only in the direction you care about.
 
+**A theme is a `Palette`, and that includes the type face.** Five of them:
+System, Light, Dark, World, Unhinged. Nothing draws a colour, an image or a font
+that did not come out of the table in Theme.swift — `.white` behind a text field
+is how you ship a flashbang in Dark, so even that is a token (`field`), and every
+`.font(.system(size:))` is `.font(.bj(size:))` so one theme can be in Comic Sans
+without any view knowing. Adding a look is a case plus a palette; it appears in
+Settings on its own.
+
+System is not a sixth palette, it is Light or Dark chosen by the OS. It reads
+`AppSettings.systemIsDark`, which App.swift keeps current by KVO on
+`NSApp.effectiveAppearance` — published, because `Theme` is static and a view
+repaints only when something it *observes* changes, so reading NSApp at draw time
+would leave the window in whatever mode it launched in. Do not switch to the
+AppleInterfaceThemeChanged notification: it fires before the app adopts the new
+appearance, so reading it back lands on the old value about half the time. And
+`Theme.applyToNativeControls()` has to run on every change, because switches,
+menus, scrollbars and the traffic lights are AppKit's and it has never heard of
+`Palette`.
+
+**Anything that draws a palette colour stores `var themeID = Appearance.current`.**
+`Theme` is a table of statics, so such a view holds nothing that depends on the
+theme, and SwiftUI skips redrawing a view whose stored properties compare equal.
+Switching to Dark left the section cards cream with white text on them, while
+the page and sidebar around them went dark — the views that happened to redraw
+were the ones storing a closure, which never compares equal. `@ObservedObject`
+is not the fix: `Card` is a ViewModifier and the button styles are ButtonStyles,
+and neither can observe anything.
+
+**The joke theme is not an excuse.** Unhinged keeps near-black violet ink on
+every one of its surfaces, so it is exactly as readable as Light. Somebody will
+turn it on and leave it on. A theme nobody can read is not funny, it is a bug.
+
 **Brand color is an accent, not a surface.** Blue for the selected nav row, the
 mic glyph, links. Text stays ink. Do not put gradients on the logo or the
 wordmark, and do not bake shadows into the app icon since macOS draws its own.
@@ -72,6 +124,13 @@ Losing the user's words is the worst outcome, worse than leaving fillers in.
 `looksTruncated` rejects any cleanup that elides content (an ellipsis anywhere,
 or under 55% of the transcript) and falls back to rule-based cleaning of the full
 text. Add a case to SelfCheck.swift whenever a new failure shows up.
+
+**The recognizer writes an ellipsis where the speaker paused, and it is stripped at
+the source** (`Transcriber.withoutPauseMarks`, applied at all four points a
+transcript leaves the recognizer). Do not treat an ellipsis in `raw` as something
+the speaker dictated: that assumption put "to see... If we already offloaded" at
+the cursor, and it disarmed `looksTruncated`'s elision check on every dictation
+containing a pause. Fixing it at the source is what keeps that check armed.
 
 That 55% is measured against the transcript with its fillers **already removed**,
 not the raw one. Measuring against the raw count builds in a bias exactly as large
@@ -116,8 +175,57 @@ ships `ruleClean` and leaves `resolved` alone: slow is not the same as broken.
 Measured over 25 cases (`bench/results.md`), the tradeoff to know: qwen3-0.6b
 holds 0/25 inside the budget but rewords all four long agent-prompt cases, so the
 guard fires and rules ship. qwen3-1.7b rewords none of them at 100% recall and
-misses the budget on 19/25. That is the real content of a fast-vs-careful setting;
-do not label one "more accurate" without re-running the bench.
+misses the budget on 19/25. That is the real content of the Fast/Accurate setting;
+do not relabel either one without re-running the bench.
+
+**Fast and Accurate are a model *and* a deadline, never one alone.** Fast takes
+the smallest model installed (`smallFamilies`); Accurate takes the careful order
+(`carefulFamilies`, led by qwen3-4b-2507) and a budget scaled to match — see
+`deadlineMs`, which owns both numbers. Give the careful model the fast budget and
+it is not more accurate, it just misses the deadline and ships the same
+`ruleClean` text later: the worst of both, and invisible from outside. Benched on
+qwen3-1.7b over the 25 cases, the careful budget leaves 2/25 over, both of them
+cold-load outliers of the kind `warmUp()` exists to absorb. Fast falls through to
+the careful order when the machine has no small model, because "Fast" still has
+to mean cleanup rather than nothing.
+
+**Name every model size before the family that contains it.** `carefulFamilies`
+ended in a generic `"qwen"`, and on a machine holding only qwen3-0.6b and
+qwen3-1.7b that matched the 0.6b — so Accurate resolved to the same model as Fast
+and the setting silently did nothing. A pattern loose enough to match a family
+will match its smallest member.
+
+**Output style is a post-pass, not a prompt rule.** Both settled cases — no em
+dashes, and the optional lowercase sentence starts (`AppSettings.lowercaseSentences`)
+— are substitutions applied after cleanup. A 0.6b model obeys a style instruction
+unreliably, the prompt prefix is cached for latency so every added line costs, and
+a post-pass holds on the rule-based fallback path too, where there is no model to
+instruct. Sentence casing is applied in `clean` around `cleaned`, because all six
+of that function's exits end at the cursor.
+
+**No em dash ever lands at the cursor.** It is a model tic rather than something
+the speaker said, and a comma carries the same break. Enforced in `sanitize` as a
+substitution, not asked for in the prompt: a 0.6b model obeys a style rule
+unreliably, the prompt prefix is cached for latency so every line costs, and the
+low-touch guards are blind to punctuation by design. The few-shot demonstrates the
+comma too, since demonstrations outweigh instructions at this size.
+
+**A guard rejection escalates once to the careful model before falling back to rules.**
+The guards are the app's own signal that a dictation was too disfluent for the fast
+model, and shipping `ruleClean` on that signal is what "chunky" feels like. The retry
+runs on the careful budget plus a cold-prefill allowance, only in Fast mode, and only
+when the careful order resolves to a genuinely different model. Exercise it with
+`--clean` (stdin `{"raw"}` → the full resolution/guards/escalation path against the
+live endpoint); the long agent-prompt bench cases trip it reliably.
+
+**LM Studio's MLX prompt cache holds ONE prefix globally.** Serving any model evicts
+every other model's cached prefix — measured 0.12s → 4.5s on the next call after
+touching a second model, in both directions. Consequences, all load-bearing: warmUp
+must warm only the resolved model (warming a second one last would hand the first
+real dictation a cold cache); every escalation is a cold prefill (~5.5-8s on
+qwen3-1.7b), which is why its deadline carries a +6s allowance; and after an
+escalation the fast prefix must be re-warmed in the background or the next ordinary
+dictation pays ~4.5s and misses its deadline, turning one bad dictation into two.
 
 Qwen3 models are hybrid reasoners and LM Studio's MLX runtime ignores both
 `reasoning_effort` and `chat_template_kwargs`. The `/no_think` switch on the
@@ -128,3 +236,97 @@ server's cached prompt prefix survives.
 Cross-platform note: SpeechAnalyzer, Foundation Models, and SwiftUI are all
 Apple-only. Anything aimed at Windows or Linux needs llama.cpp and either
 whisper.cpp or sherpa-onnx instead.
+
+## Audio capture rules
+
+**Measure the signal before blaming the model.** A weak or clipped mic comes back
+as confident wrong words, never as silence, so it is indistinguishable from a
+cleanup problem from the outside. `AudioRecorder.logSignal` writes one line per
+dictation — sample rate, channels, seconds, mean RMS and peak in dBFS, clipped
+sample count. Speech wants roughly -30 to -12 dBFS mean; under about -45 is a gain
+problem no prompt or model work will fix. Measured on this machine with the macOS
+input volume at 30/100: mean -33 to -42 dBFS with peaks as low as -22, i.e. 20 dB
+of unused headroom, which is the likeliest remaining source of proper-noun mishears
+("pork tree", "blue jet bottles"). Check `osascript -e 'input volume of (get volume
+settings)'` before touching recognition code.
+
+**The mic opens ~78ms after the shortcut, and that is not a bug.** The pill shows
+"recording" the instant the gesture fires but `beginRecording` awaits
+`transcriber.startSession` before `recorder.start()`, so speech in that window is
+captured by nothing. It looked like the cause of "text just doesn't appear" — it is
+not: measured 77-80ms on every dictation. Do not add a pending-buffer queue for it
+without re-measuring first.
+
+**Build the audio converter from the buffer, never from a format read earlier.**
+`beginRecording` used to read `recorder.inputFormat` and hand it to the transcriber
+*before* `AudioRecorder.start` applied the selected input device, so on any
+non-default mic at a different sample rate the `AVAudioConverter` was constructed
+for a format the buffers never had — and AVAudioConverter does not recover, it
+silently yields nothing for the whole dictation. `Transcriber.feed` now builds it
+lazily, keyed on `buffer.format`, which also survives a device change mid-session.
+That is why `startSession` takes no `inputFormat`.
+
+**`Result.alternatives` IS populated.** Measured from real dictations: N ranges 1
+to 5, usually 2-3 on short spans. n-best rescoring against the dictionary has real
+raw material — this was an open question and the answer is yes.
+
+## Inference runtime rules
+
+**Upstream LocalLLMClient's prompt cache was structurally broken, twice over, and the
+fix lives in our local copy.** The known bug: the KV trim ran inside
+`assert(llama_memory_seq_rm(...))`, which Swift compiles out under `-O`. The deeper
+bug, found by instrumenting rather than trusting the first fix: at EOS the generated
+reply is merged into the cached prompt *text*, so the next prompt — which never
+contains the previous reply — fails the `hasPrefix` match and the cache NEVER hits.
+Every call was a full re-prefill on a context that never shrank; in the real app,
+where no two dictations render the same prompt, `onDevice` would have died after ~6
+dictations no matter what the assert did. The local copy replaces the text cache with
+a token-level one (diff the new prompt's tokens against what the KV holds, trim at
+the divergence, decode only the tail) — the same mechanism llama-server uses.
+Measured after the fix: flat 192ms warm on identical prompts, 150ms median on varied
+transcripts against the warm static prefix, vs LM Studio's 0.33s. Watch for it
+climbing monotonically across calls; that is the signature of the cache not matching.
+
+The dependency is `.package(path: "../../GitHub/LocalLLMClient")`, branch
+`kk-kv-trim-fix` — fork-vs-vendor is still an open user decision, and an upstream PR
+should carry both fixes. **A fresh clone of that repo needs
+`git submodule update --init`**: its C sources are symlinks into a llama.cpp
+submodule, and without it `swift build` fails on `build-info.h` — while the previous
+binary keeps sitting in `.build/release`, silently passing self-check. Check
+`strings .build/release/BluejayWispr` for something you just added if a change seems
+to have no effect.
+
+`LLMCleaner.endpoints` lists `onDevice` **last**, now on quality rather than latency
+grounds: same-day bench, Q4_K_M in-process vs MLX 4-bit via LM Studio, reads 94%/77%
+recall/quality with 12/25 lossy against 96%/85% with 7/25 — the GGUF quantization is
+measurably worse while the latency is better (0.20s vs 0.33s median, p95 1.01 vs
+1.48). Promote it when a better GGUF (Q8_0 is ~640MB) benches at parity, not before.
+
+**mlx-swift cannot be built by `swift build`.** Its own README says SwiftPM on the
+command line cannot compile the Metal shaders. Worse, a missing `default.metallib`
+makes MLX **abort the process** rather than throw, so the fallback to LM Studio or
+rules never runs and the app dies on the first dictation — any `onDevice` endpoint
+backed by MLX has to be gated on the metallib existing. Getting MLX working needs
+Xcode's multi-GB Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`)
+plus a metallib step in build.sh, re-run on every MLX bump. MLX looks for it beside
+the executable first, so that step is a file copy rather than a bundle. This is the
+trade to weigh: MLX is the fast runtime, llama.cpp is the portable one that builds.
+
+**The in-process dependency is pinned by revision, not version, and must be.**
+LocalLLMClient's llama.cpp C target uses `unsafeFlags`, which SwiftPM refuses in a
+dependency resolved by version ("contains unsafe build flags"). A revision carries
+the same permission with none of the drift their README's `branch: "main"` would
+bring. Its umbrella header also hard-errors unless the importing target sets
+`.interoperabilityMode(.Cxx)`, so C++ interop propagates to the whole app target.
+It works with SwiftUI and AppKit; do not remove that setting.
+
+**Never block the main thread waiting on a `Task` in a CLI path.** `main()` on a
+`@main` type is MainActor-isolated, so a plain `Task` inherits that isolation and
+can never run while a semaphore holds the main thread. It deadlocks outright with no
+log output, which reads exactly like a hung model. `App.swift`'s `awaitSync` uses
+`Task.detached` for this reason.
+
+Known rough edges before `onDevice` can ship: the `--complete` process exits with
+SIGABRT inside ggml's `ggml_metal_device` destructor, and a 10-request run returned
+only 6 replies. Both land after the output for the CLI seam, but neither is
+acceptable inside the app.
