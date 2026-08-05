@@ -15,14 +15,22 @@ cp -R .build/release/BluejayWispr_BluejayWispr.bundle "$APP/Contents/Resources/"
 cp Info.plist "$APP/Contents/"
 cp AppIcon.icns "$APP/Contents/Resources/"
 
+# llama.framework resolves via @loader_path beside the CLI binary, so `swift build` output runs
+# fine while an installed bundle without its own copy dies at launch: "Library not loaded".
+mkdir -p "$APP/Contents/Frameworks"
+cp -R .build/arm64-apple-macosx/release/llama.framework "$APP/Contents/Frameworks/"
+install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/BluejayWispr"
+
 IDENTITY="Bluejay Wispr Dev"
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-    codesign --force -s "$IDENTITY" --identifier ai.getbluejay.wispr "$APP"
-    echo "Signed with \"$IDENTITY\" (stable — permissions persist across rebuilds)."
+    SIGN_ID="$IDENTITY"
+    echo "Signing with \"$IDENTITY\" (stable — permissions persist across rebuilds)."
 else
-    codesign --force -s - --identifier ai.getbluejay.wispr "$APP"
-    echo "Signed ad-hoc (run ./setup-signing.sh once for stable permissions)."
+    SIGN_ID="-"
+    echo "Signing ad-hoc (run ./setup-signing.sh once for stable permissions)."
 fi
+codesign --force -s "$SIGN_ID" "$APP/Contents/Frameworks/llama.framework"
+codesign --force -s "$SIGN_ID" --identifier ai.getbluejay.wispr "$APP"
 DEST=/Applications/BluejayWispr.app
 pkill -x BluejayWispr 2>/dev/null || true
 sleep 1
