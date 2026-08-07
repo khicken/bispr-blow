@@ -13,20 +13,15 @@ final class LLMCleaner {
         var isInProcess: Bool { baseURL.isEmpty }
     }
 
-    /// In-process, so no separate app and nothing for the user to start. Ordered **last** for now,
-    /// and the reason is a fixable bug rather than a verdict on the runtime: LocalLLMClient trims its
-    /// KV cache inside a Swift `assert`, which `-O` compiles out, so the static prefix is re-prefilled
-    /// every call and the context grows until it overflows (see CLAUDE.md). Measured that way it looks
-    /// 2.6x slower than LM Studio; decode alone is ~200ms at ~110 tok/s, so with the trim working a
-    /// dictation should land around 250-350ms and beat the HTTP path. Promote this to first only after
-    /// that fix and a bench run — never on the strength of the integration merely existing.
+    /// In-process, so no separate app and nothing for the user to start. First — and it earned the
+    /// spot on a bench run, not on the integration existing: MLX weights through the forked
+    /// LocalLLMClient with prompt-prefix caching read 96%/85% recall/quality at 0.19s median over
+    /// the 26 cases, against LM Studio's 96%/85% at 0.33s. LM Studio itself was retired on that
+    /// result. The HTTP entry stays as an escape hatch for any OpenAI-compatible server someone
+    /// happens to run; nothing starts or keeps such a server alive anymore.
     static let onDevice = Endpoint(baseURL: "", name: "On-device")
-    static let lmStudio = Endpoint(baseURL: "http://localhost:1234/v1", name: "LM Studio")
-    static let ollama = Endpoint(baseURL: "http://localhost:11434/v1", name: "Ollama")
-    /// Every server we know how to reach, tried in order. Deliberately not a setting: which local
-    /// server is installed is something we can find out by asking it, and asking the user instead
-    /// only gives them a way to get it wrong.
-    private static let endpoints = [lmStudio, ollama, onDevice]
+    static let localServer = Endpoint(baseURL: "http://localhost:1234/v1", name: "Local server")
+    private static let endpoints = [onDevice, localServer]
 
     private let settings: AppSettings
     /// Resolved once per app launch, re-resolved when the mode changes or the endpoint fails.
@@ -104,17 +99,17 @@ final class LLMCleaner {
                 return (Self.ruleClean(trimmed), "rules")
             }
             logLine("cleanup escalating to \(careful)")
-            // The careful budget plus a cold-prefill allowance: LM Studio's MLX prompt cache holds
-            // one prefix globally, so the escalation model is always cold (measured 5.5-8s for the
-            // prefill on qwen3-1.7b). The wait is bounded and only paid by dictations that were
-            // about to ship as barely-cleaned rules anyway — for the long rambles that trip the
-            // guards, seconds after a minute of speaking beats losing the punctuation.
+            // The careful budget plus a cold-load allowance: LocalEngine holds one resident model,
+            // so escalating swaps it out and pays the careful model's load plus a full prefill.
+            // Bounded, and only paid by dictations that were about to ship as barely-cleaned rules
+            // anyway — for the long rambles that trip the guards, seconds after a minute of
+            // speaking beats losing the punctuation.
             let outcome = await attempt(endpoint: endpoint, model: careful, trimmed: trimmed,
                                         context: context, lowTouch: lowTouch,
                                         deadline: Self.deadlineMs(words: words, careful: true) + 6000)
-            // Whatever happened, the fast model's prefix cache was just evicted by the model
-            // switch — without this, the next ordinary dictation pays ~4.5s and misses its
-            // deadline, turning one bad dictation into two.
+            // Whatever happened, the fast model was just swapped out by the escalation — without
+            // this, the next ordinary dictation pays the reload and misses its deadline, turning
+            // one bad dictation into two.
             Task { await self.warmUp() }
             switch outcome {
             case .ok(let text):
@@ -241,44 +236,19 @@ final class LLMCleaner {
         }
     }
 
-    /// Boots the LM Studio headless server if it isn't already up (it tends to stop on
-    /// its own). Fire-and-forget at app launch; no-op if lms isn't installed.
-    static func bootLMStudioIfNeeded() async {
-        if let url = URL(string: lmStudio.baseURL + "/models") {
-            var request = URLRequest(url: url, timeoutInterval: 2)
-            request.httpMethod = "GET"
-            if (try? await URLSession.shared.data(for: request)) != nil { return }  // already up
-        }
-        let lms = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".lmstudio/bin/lms")
-        guard FileManager.default.isExecutableFile(atPath: lms.path) else { return }
-        let process = Process()
-        process.executableURL = lms
-        process.arguments = ["server", "start"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            logLine("started LM Studio server")
-        } catch {
-            logLine("failed to start LM Studio server: \(error)")
-        }
-    }
-
-    /// Resolves the endpoint and fires a tiny completion so LM Studio JIT-loads the model
-    /// at launch instead of on the first dictation (~20s cold for gpt-oss-20b).
+    /// Resolves the endpoint and fires a tiny completion so the model loads and both prompt
+    /// prefixes enter the KV cache at launch instead of on the first dictation.
     func warmUp() async {
         if resolutionIsStale { resolved = nil }
         if resolved == nil { resolved = await resolveEndpoint() }
         guard let (endpoint, model, _) = resolved else { return }
-        // Both prefixes, because there are two of them now and each has its own cache entry. Miss
-        // one and the first dictation on that path pays full prefill (~3.5s measured warm on
-        // qwen3-4b) — which, with a 450ms deadline, means it silently falls back to rules.
-        // No deadline here on purpose: this call is the one that JIT-loads the model (~20s cold).
-        // Only the resolved model — do NOT warm the escalation model too. LM Studio's MLX prompt
-        // cache holds one prefix globally: serving any model evicts every other model's cache
-        // (measured: 0.12s → 4.5s on the very next call after touching the other model). Warming
-        // the careful model after the fast one would hand the first real dictation a cold cache.
+        // No deadline here on purpose: this call is the one that loads the model.
+        // Only the resolved model — do NOT warm the escalation model too: LocalEngine holds one
+        // resident model, so warming the careful one would swap the fast one back out and hand
+        // the first real dictation a cold load.
+        // The engine keeps ONE cached prompt sequence, so of these two warms only the second
+        // survives — lowTouch last, because coding is the dominant context and a category switch
+        // only costs a prefix re-prefill (~0.3-0.9s, inside every deadline), not a model load.
         for lowTouch in [false, true] {
             var messages = Self.staticPrefix(vocabulary: settings.vocabulary, lowTouch: lowTouch)
             messages.append(["role": "user", "content": "App: Notes (general)\nTranscript: ok"])

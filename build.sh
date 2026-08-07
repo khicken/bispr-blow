@@ -6,11 +6,25 @@ cd "$(dirname "$0")"
 
 swift build -c release
 
+# MLX aborts the process at first use without mlx.metallib beside the executable, and SwiftPM
+# cannot compile .metal sources — so build.sh does, and copies it next to the binary in both places.
+METALLIB=.build/release/mlx.metallib
+KERNELS=.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal
+if [ ! -f "$METALLIB" ] || [ -n "$(find "$KERNELS" -name '*.metal' -newer "$METALLIB" 2>/dev/null)" ]; then
+    AIR=$(mktemp -d)
+    for f in "$KERNELS"/*.metal; do
+        xcrun metal -c "$f" -I"$KERNELS" -o "$AIR/$(basename "${f%.metal}").air"
+    done
+    xcrun metallib "$AIR"/*.air -o "$METALLIB"
+    rm -rf "$AIR"
+fi
+
 # Staged in .build: a second launchable copy means two fn event taps fighting.
 APP=.build/BluejayWispr.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/BluejayWispr "$APP/Contents/MacOS/"
+cp "$METALLIB" "$APP/Contents/MacOS/"
 cp -R .build/release/BluejayWispr_BluejayWispr.bundle "$APP/Contents/Resources/" 2>/dev/null || true
 cp Info.plist "$APP/Contents/"
 cp AppIcon.icns "$APP/Contents/Resources/"

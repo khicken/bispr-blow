@@ -24,7 +24,7 @@ let package = Package(
         // -O) and its text-prefix cache never matched a realistic follow-up prompt, so every call
         // re-prefilled a context that never shrank. No upstream PR yet, at the user's request.
         .package(url: "https://github.com/khicken/LocalLLMClient",
-                 revision: "f7b7c8de2849cb6493306d0a79e58c5fd3058f7f")
+                 revision: "7741fbcdbd318ed6be9c32b2516f5062cd559b7c")
     ],
     targets: [
         .executableTarget(
@@ -32,6 +32,7 @@ let package = Package(
             dependencies: [
                 .product(name: "LocalLLMClient", package: "LocalLLMClient"),
                 .product(name: "LocalLLMClientLlama", package: "LocalLLMClient"),
+                .product(name: "LocalLLMClientMLX", package: "LocalLLMClient"),
             ],
             path: "Sources/BluejayWispr",
             resources: [.copy("Resources")],

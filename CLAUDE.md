@@ -218,14 +218,18 @@ when the careful order resolves to a genuinely different model. Exercise it with
 `--clean` (stdin `{"raw"}` → the full resolution/guards/escalation path against the
 live endpoint); the long agent-prompt bench cases trip it reliably.
 
-**LM Studio's MLX prompt cache holds ONE prefix globally.** Serving any model evicts
-every other model's cached prefix — measured 0.12s → 4.5s on the next call after
-touching a second model, in both directions. Consequences, all load-bearing: warmUp
-must warm only the resolved model (warming a second one last would hand the first
-real dictation a cold cache); every escalation is a cold prefill (~5.5-8s on
-qwen3-1.7b), which is why its deadline carries a +6s allowance; and after an
-escalation the fast prefix must be re-warmed in the background or the next ordinary
-dictation pays ~4.5s and misses its deadline, turning one bad dictation into two.
+**The in-process engine holds ONE resident model and ONE cached prompt sequence.**
+Consequences, all load-bearing: warmUp warms only the resolved model (warming the
+careful one too would swap the fast one back out and hand the first real dictation a
+cold load); of warmUp's two prefix warms only the LAST survives, so lowTouch goes
+last on purpose — coding is the dominant context, and a category switch costs a
+prefix re-prefill (~0.3-0.9s, inside every deadline) rather than a model load; every
+escalation swaps models and pays the careful model's load plus a full prefill, which
+is why its deadline carries a +6s allowance; and after an escalation the fast model
+is re-warmed in the background or the next ordinary dictation pays the reload and
+misses its deadline, turning one bad dictation into two. (LM Studio, retired, had
+the same shape for a different reason: its MLX prompt cache held one prefix
+globally across models.)
 
 Qwen3 models are hybrid reasoners and LM Studio's MLX runtime ignores both
 `reasoning_effort` and `chat_template_kwargs`. The `/no_think` switch on the
@@ -296,11 +300,30 @@ binary keeps sitting in `.build/release`, silently passing self-check. Check
 `strings .build/release/BluejayWispr` for something you just added if a change seems
 to have no effect.
 
-`LLMCleaner.endpoints` lists `onDevice` **last**, now on quality rather than latency
-grounds: same-day bench, Q4_K_M in-process vs MLX 4-bit via LM Studio, reads 94%/77%
-recall/quality with 12/25 lossy against 96%/85% with 7/25 — the GGUF quantization is
-measurably worse while the latency is better (0.20s vs 0.33s median, p95 1.01 vs
-1.48). Promote it when a better GGUF (Q8_0 is ~640MB) benches at parity, not before.
+`LLMCleaner.endpoints` lists `onDevice` **first**, earned on a bench run: the MLX
+backend running the same Qwen3-0.6B-MLX-4bit weights LM Studio served reads 96%/85%
+recall/quality at 0.19s median over the 26 cases, against LM Studio's 96%/85% at
+0.33s — parity by construction, since it is the same runtime and the same weights.
+LM Studio was uninstalled on that result; the weights moved to
+`Application Support/BluejayWispr/models`. GGUF quants were tried first and lost on
+quality, not speed (Q4_K_M 77%, Q8_0 78-81% — the quantization itself, not sampling;
+repeat-penalty was tested and ruled out). The GGUF files remain as the fallback when
+the metallib is missing.
+
+**MLX aborts the process — no throw, no fallback — without `mlx.metallib` beside the
+executable.** The name is `mlx.metallib`, NOT `default.metallib`: the first path
+`load_colocated_library` tries is `<binary dir>/mlx.metallib` (device.cpp:140); the
+"default" name only resolves inside a SwiftPM resource bundle. SwiftPM cannot compile
+.metal sources, so build.sh compiles mlx-swift's eight JIT kernels with `xcrun metal`
+(needs the Metal Toolchain component, ~700MB one-time download) and copies the result
+beside the binary in both .build/release and the app bundle. `LocalEngine.mlxAvailable`
+gates MLX model discovery on that file existing. One cosmetic edge: a process that
+exits immediately after a deadline-cancelled MLX generation can SIGABRT in Metal
+teardown — CLI-harness timing only; a full bench run and every completed call exit 0.
+
+The fork carries prompt-prefix KV caches for BOTH backends now (token-level diff,
+trim at divergence, prefill only the tail): llama.cpp got it first, MLX measured
+363ms → 39ms on identical calls and ~70-100ms on varied transcripts.
 
 **mlx-swift cannot be built by `swift build`.** Its own README says SwiftPM on the
 command line cannot compile the Metal shaders. Worse, a missing `default.metallib`

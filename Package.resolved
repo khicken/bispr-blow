@@ -1,5 +1,5 @@
 {
-  "originHash" : "71fc04326437b151f2d331575c7d9c6bc6a3d2a52d1920bab83e7c64453fde95",
+  "originHash" : "ea5e5a24cab5feee9baff8b82a8294134dd7352af3f559c3811c20ade9cec8fd",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/khicken/LocalLLMClient",
       "state" : {
-        "revision" : "f7b7c8de2849cb6493306d0a79e58c5fd3058f7f"
+        "revision" : "7741fbcdbd318ed6be9c32b2516f5062cd559b7c"
       }
     },
     {

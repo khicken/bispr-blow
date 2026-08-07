@@ -23,7 +23,6 @@ final class DictationController: ObservableObject {
     @Published private(set) var micFlash: String?
 
     private var axPollTimer: Timer?
-    private var keepAliveTimer: Timer?
 
     private let monitor = ShortcutMonitor.shared
     private let recorder = AudioRecorder()
@@ -74,18 +73,8 @@ final class DictationController: ObservableObject {
             await Transcriber.prepareAssets()
         }
         Task.detached(priority: .utility) { [cleaner] in
-            await LLMCleaner.bootLMStudioIfNeeded()
-            try? await Task.sleep(nanoseconds: 2_000_000_000)  // give the server a moment
             await cleaner.warmUp()
             logLine("cleanup using \(cleaner.activeDescription)")
-        }
-        // Keepalive: LM Studio idle-unloads models after ~60 min; a periodic warm call
-        // keeps the model and the prompt-prefix cache hot so dictations never hit a
-        // ~20s cold reload.
-        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 20 * 60, repeats: true) { [cleaner] _ in
-            Task.detached(priority: .utility) {
-                await cleaner.warmUp()
-            }
         }
     }
 
