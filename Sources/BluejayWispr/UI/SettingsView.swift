@@ -108,6 +108,14 @@ struct SettingsView: View {
                           help: "Video call apps often turn the microphone down and leave it there, which makes dictation mishear. Turns it back up before each dictation. Never turns it down.",
                           isOn: $settings.restoreMicVolume)
             }
+
+            // Only in builds where a project is configured — an Account section that can never
+            // sign in is a promise the app cannot keep.
+            if CloudConfig.ready {
+                settingsGroup("Account", padding: 5) {
+                    AccountSection(cloud: CloudClient.shared, settings: settings)
+                }
+            }
         }
         .onChange(of: settings.cleanup) { _, _ in
             // Load the mode's model and prime the prompt-prefix cache now, server-side, so the
@@ -155,7 +163,7 @@ struct SettingsView: View {
 /// Label left, switch hard right, and the whole row is the target. The switch is a small thing to
 /// aim at, and the row already says what it does — so the switch does not take the click at all
 /// (`allowsHitTesting(false)`), which also rules out a click landing on both and cancelling itself.
-private struct ToggleRow: View {
+struct ToggleRow: View {
     var themeID = Appearance.current
     let title: String
     let help: String
