@@ -164,10 +164,19 @@ actor LocalEngine {
                 if output.count > 16_000 { break }
             }
         case .mlx(let client):
-            for await chunk in try await client.textStream(from: .chat(chat)) {
-                output += chunk
-                if output.count > 16_000 { break }
-            }
+            // Metal asserts — and aborts the whole app — when a generation is cancelled mid
+            // command-buffer commit, so a deadline miss must never cancel MLX. The stream is
+            // drained in a detached task that outer cancellation cannot reach; the deadline
+            // returns rules while the abandoned generation finishes quietly and is discarded.
+            let stream = try await client.textStream(from: .chat(chat))
+            output = await Task.detached {
+                var out = ""
+                for await chunk in stream {
+                    out += chunk
+                    if out.count > 16_000 { break }
+                }
+                return out
+            }.value
         }
         logLine("local completion \(Int(Date().timeIntervalSince(started) * 1000))ms \(output.count)chars")
         return output

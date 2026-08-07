@@ -317,9 +317,15 @@ executable.** The name is `mlx.metallib`, NOT `default.metallib`: the first path
 .metal sources, so build.sh compiles mlx-swift's eight JIT kernels with `xcrun metal`
 (needs the Metal Toolchain component, ~700MB one-time download) and copies the result
 beside the binary in both .build/release and the app bundle. `LocalEngine.mlxAvailable`
-gates MLX model discovery on that file existing. One cosmetic edge: a process that
-exits immediately after a deadline-cancelled MLX generation can SIGABRT in Metal
-teardown — CLI-harness timing only; a full bench run and every completed call exit 0.
+gates MLX model discovery on that file existing.
+
+**Never cancel an MLX generation.** Metal asserts — and aborts the whole app — when a
+generation is cancelled mid command-buffer commit; the deadline race used to do
+exactly that on every miss (reproduced ~1 in 3). `LocalEngine.complete` drains the
+MLX stream in a detached task that outer cancellation cannot reach, so a deadline
+miss returns rules while the abandoned generation finishes quietly and is discarded.
+The cost is that the actor stays busy until it settles, which the 16k-char runaway
+ceiling bounds.
 
 The fork carries prompt-prefix KV caches for BOTH backends now (token-level diff,
 trim at divergence, prefill only the tail): llama.cpp got it first, MLX measured
