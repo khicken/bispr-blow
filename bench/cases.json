@@ -409,5 +409,18 @@
   "must_exclude": [],
   "retain": 0.9,
   "note": "Shipped broken: reached the cursor as 'blue Jays.' \u2014 repeated phrase read as a stutter, and both guards are off under 12 words."
+ },
+ {
+  "name": "spoken_underscore",
+  "app": "Code (coding)",
+  "raw": "Should our paper even mention X underscore audio if we never use it?",
+  "must_include": [
+   "X_audio"
+  ],
+  "must_exclude": [
+   "X underscore"
+  ],
+  "retain": 0.7,
+  "note": "Real dictation: 'X underscore audio' survived as words. The symbols rule had no underscore example, and at 0.6B the examples are the rule."
  }
 ]

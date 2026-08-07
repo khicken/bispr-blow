@@ -77,7 +77,9 @@ def is_low_touch(case):
 
 # Fillers belong here alongside the function words: cleanup is *supposed* to delete them, and
 # counting them as lost content marks a correct cleanup down by the transcript's filler share.
+# Spoken symbol names likewise: "underscore" rendered as "_" is correct, not a lost word.
 STOPWORDS = set("""
+underscore hyphen dash dot paren parens period colon semicolon slash
 um umm uh uhh er erm ah like know okay so yeah just really actually maybe
 the a an and or but if then that this these those there here it its it's is are was were be been
 being have has had do does did doing done will would should could can cannot may might must
