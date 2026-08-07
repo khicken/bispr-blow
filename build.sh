@@ -24,7 +24,11 @@ APP=.build/BluejayWispr.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/BluejayWispr "$APP/Contents/MacOS/"
-cp "$METALLIB" "$APP/Contents/MacOS/"
+# Not beside the executable in the bundle: codesign treats any file in MacOS/ as nested code and
+# refuses to seal a metallib. MLX's SwiftPM search path (Resources/mlx-swift_Cmlx.bundle/default
+# .metallib) is sealed as a resource instead; the CLI binary keeps the colocated copy.
+mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
+cp "$METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 cp -R .build/release/BluejayWispr_BluejayWispr.bundle "$APP/Contents/Resources/" 2>/dev/null || true
 cp Info.plist "$APP/Contents/"
 cp AppIcon.icns "$APP/Contents/Resources/"

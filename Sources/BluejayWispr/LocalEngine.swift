@@ -29,14 +29,21 @@ actor LocalEngine {
     private var loadedID: String?
 
     /// MLX aborts the whole process — no thrown error, no fallback — when its metallib is
-    /// missing, so MLX models stay invisible unless the library sits beside the executable.
-    /// `mlx.metallib`, not `default.metallib`: the first path `load_colocated_library` tries is
-    /// `<binary dir>/mlx.metallib` (device.cpp:140), and the "default" name only works inside a
-    /// SwiftPM resource bundle. build.sh compiles and places it.
+    /// missing, so MLX models stay invisible unless the library is where MLX will look. Two
+    /// homes, matching MLX's search order: `mlx.metallib` beside the executable (the CLI binary
+    /// in .build/release — codesign refuses that spot inside the app bundle), or
+    /// `default.metallib` in the Resources/mlx-swift_Cmlx.bundle SwiftPM bundle (the app).
+    /// build.sh compiles and places both.
     static var mlxAvailable: Bool {
-        guard let exe = Bundle.main.executableURL else { return false }
-        return FileManager.default.fileExists(
-            atPath: exe.deletingLastPathComponent().appendingPathComponent("mlx.metallib").path)
+        let fm = FileManager.default
+        if let exe = Bundle.main.executableURL,
+           fm.fileExists(atPath: exe.deletingLastPathComponent()
+               .appendingPathComponent("mlx.metallib").path) {
+            return true
+        }
+        guard let resources = Bundle.main.resourceURL else { return false }
+        return fm.fileExists(atPath: resources
+            .appendingPathComponent("mlx-swift_Cmlx.bundle/default.metallib").path)
     }
 
     /// Directories scanned for models, in preference order. `Application Support` is where the
