@@ -81,6 +81,20 @@ final class AppSettings: ObservableObject {
     /// palette it launched with until the user touched an unrelated setting. `App.swift` keeps
     /// this current.
     @Published var systemIsDark: Bool = false
+    /// Back up dictation stats — counts and timings, never text — to the signed-in account.
+    /// Off by default: the app's promise is that nothing leaves the machine unless asked.
+    @Published var syncStats: Bool {
+        didSet { defaults.set(syncStats, forKey: "syncStats") }
+    }
+    /// Also back up what was said, readable only by its author. Its own opt-in, so "my stats but
+    /// not my words" is a real setting rather than a hope.
+    @Published var syncTexts: Bool {
+        didSet { defaults.set(syncTexts, forKey: "syncTexts") }
+    }
+    /// The Supabase project cloud accounts live in. Read once at launch; see `CloudConfig` for
+    /// how to set them. Empty means accounts stay off and the app is local-only.
+    let cloudURL: String
+    let cloudAnonKey: String
     /// Bindings per action, keyed by `ShortcutAction.rawValue` — a String key so the whole
     /// thing is JSON-encodable without a CodingKey dance.
     @Published var bindings: [String: [Shortcut]] {
@@ -187,6 +201,10 @@ final class AppSettings: ObservableObject {
             teamMembers = []
         }
         launchSoundEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
+        syncStats = defaults.bool(forKey: "syncStats")
+        syncTexts = defaults.bool(forKey: "syncTexts")
+        cloudURL = defaults.string(forKey: "cloudURL") ?? ""
+        cloudAnonKey = defaults.string(forKey: "cloudAnonKey") ?? ""
         lowercaseSentences = defaults.bool(forKey: "lowercaseSentences")
         restoreMicVolume = defaults.bool(forKey: "restoreMicVolume")
         appearance = Self.appearance(stored: defaults.string(forKey: "appearance"))

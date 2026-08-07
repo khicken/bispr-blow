@@ -144,6 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Starting the monitor is what decides whether the macOS fn action gets suppressed:
         // it only happens while fn is one of the user's bindings.
         controller.start()
+        // Wiring only: cloud sync wakes on new history entries and a slow timer, and touches
+        // the network only while someone is signed in with a sync switch on.
+        SyncEngine.shared.start()
 
         // First run: open the dashboard so permissions/setup are visible.
         if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
