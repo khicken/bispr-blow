@@ -1,3 +1,4 @@
+import AppKit
 import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
@@ -63,8 +64,134 @@ enum SelfCheck {
         precondition(LLMCleaner.stripFillers("the system tray or like the task bar")
                      == "the system tray or like the task bar")
 
+        // A leading-dot filename must survive the tidy pass. This ran on every dictation and glued
+        // the dot to the word before it, undoing the one thing the coding path exists to protect —
+        // and it read in the bench as the model "missing '.env'" when the model had it right.
+        precondition(LLMCleaner.stripFillers("check the .env file") == "check the .env file")
+        precondition(LLMCleaner.stripFillers("cd ../src and run it") == "cd ../src and run it")
+        precondition(LLMCleaner.stripFillers("open .gitignore and .env") == "open .gitignore and .env")
+        // ...while punctuation that really is terminal still gets pulled back.
+        precondition(LLMCleaner.stripFillers("It was really slow .") == "It was really slow.")
+        precondition(LLMCleaner.stripFillers("Ship it , then commit") == "Ship it, then commit")
+
+        // Interjections nothing used to look for, and the stray full stop they left behind.
+        precondition(LLMCleaner.stripFillers("Oh. Uh. The login flow is broken.")
+                     == "The login flow is broken.")
+        precondition(LLMCleaner.ruleClean("oh so i think we should ship it")
+                     == "So i think we should ship it")
+        precondition(LLMCleaner.stripFillers("It's fine. Oh and also the spinner hangs.")
+                     == "It's fine. And also the spinner hangs.")
+        // Both fillers go, not just the first: the marker counts as a word boundary.
+        precondition(LLMCleaner.ruleClean("um uh the tests pass") == "The tests pass")
+        // "oh" inside a word is not an interjection.
+        precondition(LLMCleaner.stripFillers("Ohio and Ahmed shipped it") == "Ohio and Ahmed shipped it")
+        // Deliberate phrase repetition collapsing on a short dictation now trips the truncation
+        // guard — "Blue Jays, Blue Jays, Blue Jays" reached the cursor as "blue Jays." with every
+        // guard silent, because under 12 words nothing was checked at all.
+        precondition(LLMCleaner.looksTruncated("blue Jays.", raw: "Blue Jays, Blue Jays, Blue Jays"))
+        // ...while legitimate short cleanups still clear the floor: heavy filler stripping and a
+        // resolved self-correction both land at or above half the spoken words.
+        precondition(!LLMCleaner.looksTruncated("Does it work?", raw: "um does it uh does it work"))
+        precondition(!LLMCleaner.looksTruncated("at 3", raw: "at 2 actually 3"))
+
+        // A filler between commas takes one comma with it, not neither — "decide,," reached the
+        // cursor twice from real dictations before this collapsed.
+        precondition(LLMCleaner.stripFillers("Basically, um, we want the script")
+                     == "Basically, we want the script")
+        precondition(LLMCleaner.stripFillers("a smaller model decide, oh, this seems incoherent")
+                     == "a smaller model decide, this seems incoherent")
+
         precondition(LLMCleaner.sanitize("```\nhello\n```", fallback: "x") == "hello")
         precondition(LLMCleaner.sanitize("", fallback: "fallback") == "fallback")
+
+        // No em dash reaches the cursor, spaced or not. The few-shot demonstrates the comma, so
+        // this is the backstop rather than the mechanism.
+        precondition(LLMCleaner.sanitize("both — I don't know", fallback: "") == "both, I don't know")
+        precondition(LLMCleaner.sanitize("both—I don't know", fallback: "") == "both, I don't know")
+        precondition(!LLMCleaner.lowTouchFewShot.contains { $0.1.contains("—") })
+        precondition(!LLMCleaner.fewShot.contains { $0.1.contains("—") })
+
+        checkLowercaseSentences()
+        // The recognizer marks a pause with an ellipsis. Verbatim from history — this reached the
+        // cursor, and while it sat in the transcript it also switched off looksTruncated's elision
+        // check, so a cleanup that trailed off would have been accepted on the same dictation.
+        precondition(Transcriber.withoutPauseMarks(
+            "You check blue jet bottles again to see... If we already offloaded this work.")
+            == "You check blue jet bottles again to see If we already offloaded this work.")
+        precondition(Transcriber.withoutPauseMarks("wait … never mind") == "wait never mind")
+        precondition(Transcriber.withoutPauseMarks("so anyway...") == "so anyway")
+        // Two dots are left alone: a spoken relative path is not a pause.
+        precondition(Transcriber.withoutPauseMarks("cd ../src") == "cd ../src")
+        // ...and with the marker gone, the guard it used to disarm is armed again.
+        precondition(LLMCleaner.looksTruncated(
+            "I tested the build and...",
+            raw: Transcriber.withoutPauseMarks("i tested the build and uh the login flow was "
+                                              + "mostly working... but the spinner never stopped")))
+
+        // Verbatim from history: 45 words in, 24 out, the whole second half deleted — and it PASSED
+        // looksTruncated, because 24 clears 55% of the filler-stripped 40 by two words. A length
+        // ratio cannot see which half the survivors came from.
+        let halfLost = "In the text section, we should also add a formatting option to like reduce "
+            + "commas, like then, I don't know, or do like punctuation. So if it's on, it would be "
+            + "like one of my punctuation. I I don't know, justice system problem or something."
+        let firstHalfOnly = "In the text section, we should also add a formatting option to like "
+            + "reduce commas, like then, I don't know, or do like punctuation."
+        precondition(!LLMCleaner.looksTruncated(firstHalfOnly, raw: halfLost), "the old guard let this through")
+        precondition(LLMCleaner.losesContent(firstHalfOnly, raw: halfLost), "half the dictation is gone")
+        // A correct cleanup of the same transcript keeps the content and must not be rejected.
+        precondition(!LLMCleaner.losesContent(
+            "In the text section, we should also add a formatting option to reduce commas, or adjust "
+            + "punctuation. So if it's on, it would adjust my punctuation. I don't know, just a "
+            + "system problem or something.", raw: halfLost))
+        // Filler-heavy speech compressed hard is not content loss: every content word is still there.
+        precondition(!LLMCleaner.losesContent(
+            "I tested the new build and the login flow is mostly working, but I found two issues. "
+            + "First, the spinner never goes away. Second, when you log out it doesn't clear the "
+            + "session. We should fix those before Friday.", raw: raw))
+        // Too short to judge — one dropped word would swing the ratio past any threshold.
+        precondition(!LLMCleaner.losesContent("Does it work?", raw: "um does it uh does it work"))
+
+        checkLowTouchInvariant()
+
+        // Verbatim from history: the recognizer chose "four" over "for" by sound and its number
+        // formatting made it a numeral, and the guard then threw away the only stage that could
+        // see the sentence and fix it.
+        precondition(!LLMCleaner.rewordsContent("Just keep the best for and afterwards text.",
+                                                raw: "Just keep the best 4 and afterwards text."))
+        precondition(!LLMCleaner.rewordsContent("push to dev, not prod", raw: "push 2 dev not prod"))
+        // The exemption is a closed table, not a licence to rewrite numbers.
+        precondition(LLMCleaner.rewordsContent("keep the best bits", raw: "keep the best 4"))
+        precondition(LLMCleaner.rewordsContent("retry many times", raw: "retry 3 times"))
+        // A real number the model spelled out stays legal in the other direction too.
+        precondition(!LLMCleaner.rewordsContent("retry three times", raw: "retry 3 times"))
+
+        // The floor has to clear the cleanup latency actually observed in the log — 280-729ms, only
+        // weakly tied to length. A 400ms base sat inside that spread, so the deadline coin-flipped
+        // and threw away the model's punctuation on ~30% of dictations to save 14-47ms.
+        precondition(LLMCleaner.deadlineMs(words: 0) > 729)
+        precondition(LLMCleaner.deadlineMs(words: 47) > 729)
+        // ...and a long dictation still gets proportionally more, since cost does grow with length:
+        // measured on qwen3-0.6b, 0.20s for twelve words against 1.51s for two hundred and forty.
+        precondition(LLMCleaner.deadlineMs(words: 240) > 1510)
+        precondition(LLMCleaner.deadlineMs(words: 100_000) == 2500)
+        // Accurate resolves to a model several times the size, so it has to get several times the
+        // budget at every length. A careful model on the fast budget is not more accurate — it
+        // misses the deadline and ships the same rule-cleaned text, only later.
+        for words in [0, 12, 240, 100_000] {
+            precondition(LLMCleaner.deadlineMs(words: words, careful: true)
+                            > LLMCleaner.deadlineMs(words: words) * 2)
+        }
+
+        // Theme migration. "Bluejay" was the only light option there was, so storing it says
+        // nothing about wanting light; "Bluejay World" was a real choice and survives.
+        precondition(AppSettings.appearance(stored: nil) == .system)
+        precondition(AppSettings.appearance(stored: "Bluejay") == .system)
+        precondition(AppSettings.appearance(stored: "Bluejay World") == .world)
+        precondition(AppSettings.appearance(stored: "Dark") == .dark)
+        // The joke theme still has to be legible, so it names a real face — a missing one makes
+        // Font.custom fall back silently and the theme just looks like it forgot.
+        precondition(Appearance.unhinged.palette.fontNames.contains { NSFont(name: $0, size: 12) != nil },
+                     "no installed face among \(Appearance.unhinged.palette.fontNames)")
 
         let settings = AppSettings.shared
         let before = settings.dictionary
@@ -96,6 +223,84 @@ enum SelfCheck {
         print("self-check passed")
     }
 
+    /// Lowercase sentence starts, and the three kinds of word that must survive it. The failure
+    /// that matters is a capital getting eaten off a term the user put in the dictionary
+    /// precisely so it would be spelled that way.
+    private static func checkLowercaseSentences() {
+        let vocab = ["Kubernetes", "Bluejay", "Priya"]
+        func lower(_ s: String) -> String { LLMCleaner.lowercaseSentenceStarts(s, keeping: vocab) }
+
+        precondition(lower("Run the tests. Then commit.") == "run the tests. then commit.")
+        precondition(lower("I think it works") == "i think it works")
+        // Dictionary terms, acronyms, and internal capitals all keep theirs.
+        precondition(lower("Kubernetes crashed again") == "Kubernetes crashed again")
+        precondition(lower("Ship it. Kubernetes is fine.") == "ship it. Kubernetes is fine.")
+        precondition(lower("API returned a 500") == "API returned a 500")
+        precondition(lower("GitHub is down") == "GitHub is down")
+        precondition(lower("Priya said no") == "Priya said no")
+        // Only sentence starts: a capital mid-sentence is the speaker's, not ours to take.
+        precondition(lower("we told Kaleb and Sam") == "we told Kaleb and Sam")
+        precondition(lower("Ask Sam about it") == "ask Sam about it")
+        // A full stop inside quotes still ends the sentence; a comma does not start one.
+        precondition(lower("He said \"go.\" Then he left.") == "he said \"go.\" then he left.")
+        precondition(lower("First, Then second") == "first, Then second")
+        // Newlines open a sentence, and the text is otherwise returned byte for byte.
+        precondition(lower("One thing\nTwo things") == "one thing\ntwo things")
+        precondition(lower("") == "")
+        precondition(lower("   Spaced   out  ") == "   spaced   out  ")
+    }
+
+    /// The coding path promises the model may only delete, repunctuate and respell, and
+    /// `rewordsContent` is what makes that a fact rather than a hope. Every case here is one the
+    /// prompt's own few-shot demonstrates, or one the bench caught the model doing.
+    private static func checkLowTouchInvariant() {
+        let reworded = LLMCleaner.rewordsContent
+
+        // The three low-touch few-shot outputs must all satisfy the invariant they teach.
+        for (user, cleaned) in LLMCleaner.lowTouchFewShot {
+            let raw = String(user.split(separator: "\n").last!.dropFirst("Transcript: ".count))
+            precondition(!reworded(cleaned, raw, []), "few-shot violates the invariant: \(cleaned)")
+        }
+
+        // Deleting fillers and rendering spoken symbols is what the path is for.
+        precondition(!reworded("Run the tests with --verbose, and then commit.",
+                               "run the the tests with um dash dash verbose and then uh commit", []))
+        precondition(!reworded("Check the .env file.", "check the dot env file", []))
+        // Numbers spoken as words, written as digits. "500s" keeps its plural.
+        precondition(!reworded("Capping at 30 seconds, retry on 500s.",
+                               "capping at thirty seconds retry on five hundreds", []))
+        // Two spoken words respelled as one compound.
+        precondition(!reworded("A fixed backoff.", "a fixed back off", []))
+        // An identifier surviving verbatim is the whole point of the path.
+        precondition(!reworded("The FLAG_RETRY_V2 flag is on for 10 percent of orgs.",
+                               "the flag retry v2 flag is on for 10 percent of orgs", []))
+
+        // ...and the failures. A swapped word is the one looksTruncated can never see: same length,
+        // different meaning. Allowed only when the user handed us the term.
+        precondition(reworded("Run it against the query.", "run it against the quarry", []))
+        precondition(!reworded("Run it against the query.", "run it against the quarry", ["query"]))
+        precondition(!reworded("Push to prod.", "push to proud",
+                               LLMCleaner.allowedTerms(vocabulary: [], draftTerms: ["prod", "db.query"])))
+        // Reordering, which the prompt forbids and a length ratio cannot detect.
+        precondition(reworded("Warm the index then cache the query.",
+                              "cache the query then warm the index", []))
+        // An invented connective — the model writing rather than cleaning.
+        precondition(reworded("The spinner hangs. Furthermore, the session persists.",
+                              "the spinner hangs the session persists", []))
+        // A compound may only be assembled from a pair at the scan head, never from two words
+        // grabbed from opposite ends of the transcript.
+        precondition(reworded("Backoff.", "back it off", []))
+
+        // And the reason this is gated on the coding path: a perfectly good polish-path rewrite
+        // fails it, by design. Applying it everywhere would reject almost every dictation.
+        precondition(reworded(
+            "I tested the new build and the login flow is mostly working, but I found two issues. "
+            + "First, the spinner never goes away. Second, when you log out it doesn't clear the session.",
+            "okay so um i tested the new build and uh the login flow it's mostly working but i found "
+            + "like two issues one is the spinner never goes away and two um when you log out it "
+            + "doesn't clear the session", []))
+    }
+
     /// Where a release lands the pill. Everything here is in screen coordinates, bottom-left
     /// origin, against a `visibleFrame`-shaped rect.
     private static func checkAnchors() {
@@ -112,9 +317,15 @@ enum SelfCheck {
         precondition(Anchor.leftCentre.zone(in: screen)
             .contains(NSPoint(x: 60, y: 440)))
         precondition(Anchor.leftCentre.landing(in: screen).size == CGSize(width: 48, height: 122))
-        precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 12, y: 415))
-        precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1218, y: 415))
+        precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 4, y: 415))
+        precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1226, y: 415))
         precondition(Anchor.bottomCentre.origin(size: pill, in: screen) == NSPoint(x: 615, y: 0))
+        // The bar hugs its panel's edge, and `rotation` maps that local edge onto the parked screen
+        // edge. Get this pair out of step and the sliver drifts to the middle of the panel or, worse,
+        // to the side facing away from the bezel.
+        precondition(Anchor.bottomCentre.contentAlignment == .bottom)
+        precondition(Anchor.leftCentre.contentAlignment == .top
+                     && Anchor.rightCentre.contentAlignment == .top)
         // A side-anchored pill is the same bar turned 90°, so its panel is the transpose. If these
         // ever disagree the panel clips the pill or claims mouse events beside it.
         let flat = PillView.size(for: .idle, anchor: .bottomCentre)

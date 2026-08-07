@@ -97,11 +97,24 @@ final class RecordingPillController {
             }
         }
 
-        /// Bottom-left origin for a panel of `size`, within the screen's *visible* frame. That is
-        /// what makes the bar sit on top of the Dock when the Dock is showing and drop to the
-        /// screen edge when it is not — visibleFrame already tracks that, including fullscreen
-        /// spaces, so there is nothing to detect. The inset keeps the side anchors off the bezel.
-        func origin(size: CGSize, in frame: CGRect, inset: CGFloat = 12) -> NSPoint {
+        /// Which edge of its own panel the bar sits against, in the panel's *unrotated* space.
+        /// `rotation` then maps that onto the screen edge the pill is parked on: rotating clockwise
+        /// sends the local top edge to the right and counter-clockwise sends it to the left, so both
+        /// side anchors want `.top` and only the bottom anchor wants `.bottom`.
+        ///
+        /// This exists because the panel is always as big as the *expanded* row — it cannot be sized
+        /// from hover state — so without it the resting sliver is centred in a box four times its
+        /// size, floating off the bezel with nothing anchoring the expansion.
+        var contentAlignment: Alignment {
+            self == .bottomCentre ? .bottom : .top
+        }
+
+        /// Bottom-left origin for a panel of `size`, within the frame the pill lays out in.
+        ///
+        /// The inset keeps the side anchors off the bezel. It is small because the bar inside the
+        /// panel now hugs the panel's own edge (see `contentAlignment`) and carries a 6pt shadow
+        /// margin of its own, so the gap the user sees is this plus that.
+        func origin(size: CGSize, in frame: CGRect, inset: CGFloat = 4) -> NSPoint {
             switch self {
             case .bottomCentre: NSPoint(x: frame.midX - size.width / 2, y: frame.minY)
             case .leftCentre: NSPoint(x: frame.minX + inset, y: frame.midY - size.height / 2)
@@ -202,26 +215,50 @@ final class RecordingPillController {
         isFullScreen(screen) ? screen.frame : screen.visibleFrame
     }
 
-    /// A layer-0 window covering the whole screen is a fullscreen space: a normal window cannot
-    /// otherwise extend under the menu bar. Window *names* need Screen Recording permission,
-    /// geometry does not, so this stays a metadata read. Our own panels sit above layer 0.
+    /// Whether an ordinary window is covering a strip that `visibleFrame` is still reserving, which
+    /// is the actual question: if something is drawn over the Dock's strip then the Dock is not
+    /// there and the pill should drop past it.
+    ///
+    /// Measured against `visibleFrame`, not the full screen. Matching the full screen exactly was
+    /// the obvious test and it never fired: on a notched display a fullscreen window gets the area
+    /// *below* the camera, so it is a menu bar's height shorter than the screen. A merely zoomed
+    /// window is exactly `visibleFrame` tall, so "taller than visibleFrame" separates the two
+    /// cleanly whether or not there is a notch, and whether the Dock is pinned or on a side.
+    ///
+    /// When the Dock is hidden this can fail to fire on a notched display — and it does not matter
+    /// there, because `visibleFrame` already reaches the bottom of the screen.
+    ///
+    /// Window *names* need Screen Recording permission; geometry does not, so this stays a metadata
+    /// read. Our own panels sit above layer 0 and are never counted.
     private static func isFullScreen(_ screen: NSScreen) -> Bool {
         guard let windows = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
         else { return false }
+        let visible = screen.visibleFrame
         return windows.contains { window in
             guard window[kCGWindowLayer as String] as? Int == 0,
-                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
-                  let width = bounds["Width"], let height = bounds["Height"]
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let width = (bounds["Width"] as? NSNumber)?.doubleValue,
+                  let height = (bounds["Height"] as? NSNumber)?.doubleValue
             else { return false }
-            return width >= screen.frame.width && height >= screen.frame.height
+            return height > visible.height + 1 && width >= visible.width - 1
         }
     }
+
+    private var lastLayoutFrame: CGRect?
 
     func reposition() {
         // Follow the screen the user is working on (keyboard focus), not the launch screen.
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let frame = Self.layoutFrame(screen)
+        // Logged on change only, because getting this wrong is invisible from the code: it depends
+        // on the Dock's setting, whether the display has a notch, and what the frontmost app does
+        // in fullscreen. If the bar is at the wrong height, this line says which frame it chose.
+        if frame != lastLayoutFrame {
+            lastLayoutFrame = frame
+            logLine("layout frame=\(frame.debugDescription) screen=\(screen.frame.debugDescription) "
+                    + "visible=\(screen.visibleFrame.debugDescription)")
+        }
         let size = panel.frame.size
         let target = anchor.origin(size: size, in: frame)
         if panel.frame.origin != target {
@@ -273,6 +310,9 @@ final class PillModel: ObservableObject {
 struct PillView: View {
     @ObservedObject var model: PillModel
     @ObservedObject var controller: DictationController
+    /// Observed, not just read: the pill draws `Theme` colours and shows the user's own shortcut
+    /// name, and without this it keeps whichever theme and binding it was built with until relaunch.
+    @StateObject private var settings = AppSettings.shared
     @State private var hovering = false
     @State private var waveSamples: [Float] = Array(repeating: 0, count: PillView.barCount)
 
@@ -333,8 +373,7 @@ struct PillView: View {
             // hover region out from under a stationary pointer and the pill flaps open and shut.
             // `targetSize` only grows around the same bottom-centre anchor, so a pointer inside
             // the collapsed rect is always inside the expanded one.
-            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: controller.state)
-            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: hovering)
+            .animation(Self.grow, value: controller.state)
             // Rotation keeps the unrotated layout size, so the transposed frame below is exactly
             // what the turned bar occupies, and the panel matches it.
             .rotationEffect(.degrees(model.anchor.rotation))
@@ -361,6 +400,8 @@ struct PillView: View {
             }
     }
 
+    static let grow = Animation.spring(response: 0.32, dampingFraction: 0.82)
+
     @ViewBuilder
     private var pill: some View {
         Group {
@@ -368,63 +409,93 @@ struct PillView: View {
             case .idle:
                 idlePill
             case .recording(let locked):
-                recordingPill(locked: locked)
+                capsule(recordingPill(locked: locked))
             case .processing:
-                processingPill
+                capsule(processingPill)
             }
         }
-        .background(
+        .padding(Self.margin)
+    }
+
+    /// The dark capsule a state sits on. Applied to whatever actually carries that state's size,
+    /// rather than wrapped around the whole pill: for idle the capsule is the thing that grows, and
+    /// a background around a fixed-size parent would just draw it full size the whole time.
+    private func capsule(_ content: some View) -> some View {
+        content.background(
             Capsule().fill(Theme.pillBackground)
                 // Fits inside `margin`. A shadow wider than the panel gets clipped by the window
                 // edge, and a clipped gaussian reads as a translucent rectangle around the pill.
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
         )
-        .padding(Self.margin)
     }
 
-    /// Idle: tiny sliver; on hover, Wispr-style circular action buttons.
+    /// Idle: a sliver on the parked edge that grows into three circular action buttons on hover.
+    ///
+    /// Exactly one thing animates — the capsule's own frame — and it is pinned to the edge the pill
+    /// is parked on, so the expansion has a single fixed anchor. Everything else is a constant: the
+    /// outer box is always the expanded size, and the buttons are centred in *that*, so they fade in
+    /// where they will end up rather than travelling with a capsule that is still growing.
+    ///
+    /// The animation modifier stays inside the outer frame. Outside it, the fixed box interpolates
+    /// too, and a hit region that slides under a stationary pointer makes the pill flap open and
+    /// shut.
     private var idlePill: some View {
-        Group {
-            if hovering {
-                HStack(spacing: 7) {
-                    PillCircleButton(help: AppSettings.shared.holdPhrase
-                        .map { "Dictate hands-free (or \($0.prefix(1).lowercased() + $0.dropFirst()))" }
-                        ?? "Dictate hands-free") {
-                        model.tapped { controller.startHandsFree() }
-                    } label: {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
-                    PillCircleButton(help: "Open Bluejay Wispr") {
-                        model.tapped { model.onOpenDashboard(.home) }
-                    } label: {
-                        if let logo = Theme.logo("Symbol_White") {
-                            Image(nsImage: logo)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 13, height: 13)
-                        } else {
-                            Image(systemName: "house.fill")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    PillCircleButton(help: "Recent dictations") {
-                        model.tapped { model.onOpenDashboard(.history) }
-                    } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .padding(.horizontal, 9)
-                .frame(height: 36)
-            } else {
-                Color.clear.frame(width: 42, height: 9)
-            }
+        capsule(
+            Color.clear.frame(width: hovering ? 110 : 42, height: hovering ? 36 : 9)
+        )
+        .animation(Self.grow, value: hovering)
+        .frame(width: 110, height: 36, alignment: model.anchor.contentAlignment)
+        .overlay {
+            hoverButtons
+                .opacity(hovering ? 1 : 0)
+                .scaleEffect(hovering ? 1 : 0.86)
+                .animation(Self.grow, value: hovering)
+                .allowsHitTesting(hovering)
         }
         .contentShape(Capsule())
+    }
+
+    /// The glyphs counter-rotate: the bar turns 90° on a side edge, but an icon lying on its side
+    /// is just wrong to look at — a side Dock does not rotate its icons either. The capsule and
+    /// the waveform still turn with the bar, which is what should turn.
+    private var hoverButtons: some View {
+        let upright = -model.anchor.rotation
+        return HStack(spacing: 7) {
+            PillCircleButton(help: AppSettings.shared.holdPhrase
+                .map { "Dictate hands-free (or \($0.prefix(1).lowercased() + $0.dropFirst()))" }
+                ?? "Dictate hands-free", counterRotation: upright) {
+                model.tapped { controller.startHandsFree() }
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.bj(11, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+            PillCircleButton(help: "Open Bluejay Wispr", counterRotation: upright) {
+                model.tapped { model.onOpenDashboard(.home) }
+            } label: {
+                if let logo = Theme.logo("Symbol_White") {
+                    Image(nsImage: logo)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 13, height: 13)
+                } else {
+                    Image(systemName: "house.fill")
+                        .font(.bj(11, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+            }
+            PillCircleButton(help: "Recent dictations", counterRotation: upright) {
+                model.tapped { model.onOpenDashboard(.history) }
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.bj(11, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(.horizontal, 9)
+        // The `.idle` row in `size(for:)`. Explicit, so the overlay keeps its natural size instead
+        // of being squashed into the 42x9 sliver on the way in.
+        .frame(width: 110, height: 36)
     }
 
     private func recordingPill(locked: Bool) -> some View {
@@ -648,6 +719,8 @@ final class ToastController {
 
 struct ToastView: View {
     @ObservedObject var controller: DictationController
+    /// Same reason as the pill: it draws the pill's background colour.
+    @StateObject private var settings = AppSettings.shared
 
     /// A notice is something the user needs; a mic change is something they might like to know.
     private var message: String? {
@@ -662,11 +735,11 @@ struct ToastView: View {
                 HStack(spacing: 6) {
                     if controller.notice == nil {
                         Image(systemName: "mic.fill")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.bj(9, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Text(message)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.bj(11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                 }
@@ -687,6 +760,8 @@ struct ToastView: View {
 /// Circular action button on the hover pill, with its own hover highlight.
 struct PillCircleButton<Label: View>: View {
     let help: String
+    /// Turned back upright when the bar itself is rotated onto a side edge.
+    var counterRotation: Double = 0
     let action: () -> Void
     @ViewBuilder let label: () -> Label
     @State private var hovering = false
@@ -695,7 +770,7 @@ struct PillCircleButton<Label: View>: View {
         Button(action: action) {
             ZStack {
                 Circle().fill(.white.opacity(hovering ? 0.28 : 0.14))
-                label()
+                label().rotationEffect(.degrees(counterRotation))
             }
             .frame(width: 26, height: 26)
             .contentShape(Circle())
@@ -709,6 +784,7 @@ struct PillCircleButton<Label: View>: View {
 
 /// Three softly pulsing dots, Wispr-style "thinking" state.
 struct ProcessingDots: View {
+    var themeID = Appearance.current
     @State private var phase = false
 
     var body: some View {
