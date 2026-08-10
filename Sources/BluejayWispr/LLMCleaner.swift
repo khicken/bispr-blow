@@ -642,6 +642,11 @@ final class LLMCleaner {
         text.hasSuffix(".") && !text.hasSuffix("..") ? String(text.dropLast()) : text
     }
 
+    /// Homophones the recognizer picks the wrong side of, keyed lowercase. Only words whose
+    /// other meaning a dictation into this app essentially never wants belong here: the swap is
+    /// unconditional, so "the coast of Maine" becomes "the coast of main" too. Keep it short.
+    static let misheard: [String: String] = ["maine": "main"]
+
     /// Deterministic dictionary respelling, after the model. The prompt asks the model to correct
     /// sound-alikes to the vocabulary, and at 0.6B–1.7B it simply does not: "Christian Parik"
     /// shipped uncorrected on every real dictation even with both names in the prompt. Code cannot
@@ -658,8 +663,14 @@ final class LLMCleaner {
     ///   right, and with a dictionary full of common terms it fires constantly — "per api key"
     ///   shipped as "Vite API git" on a real dictation when exact matches counted.
     /// - joined: two words that concatenate into a term ("work tree" → "worktree").
+    ///
+    /// Ahead of all four tiers is `misheard`: whole words the recognizer reliably hears as the
+    /// wrong homophone, which the dictionary cannot express safely. "Maine" for "main" is the
+    /// live case — the raw transcript really does say Maine, cleanup faithfully keeps it, and
+    /// putting "main" in the dictionary is not the fix: at four letters the `near` tier would
+    /// then rewrite "mail", "rain", "pain" and "gain" into "main" as well. An exact whole-word
+    /// swap is the only form that corrects the mishear without endangering its neighbours.
     static func applyVocabulary(_ text: String, vocabulary: [String]) -> String {
-        guard !vocabulary.isEmpty else { return text }
         let terms = vocabulary.filter { !$0.isEmpty && !$0.contains(" ") }
 
         // Words and the separators between them, so reassembly preserves the original spacing.
@@ -703,6 +714,12 @@ final class LLMCleaner {
         while i < words.count {
             let b = bare(words[i])
             guard plainWord(b) else { i += 1; continue }
+            if let fix = Self.misheard[b.lowercased()] {
+                replace(i, with: fix)
+                corrected.insert(i)
+                i += 1
+                continue
+            }
             // Two words that join into one term: "work tree" → "worktree".
             if i + 1 < words.count, words[i].hasSuffix(bare(words[i])) {
                 let b2 = bare(words[i + 1])

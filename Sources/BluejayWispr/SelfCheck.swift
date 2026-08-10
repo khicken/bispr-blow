@@ -94,6 +94,17 @@ enum SelfCheck {
         precondition(LLMCleaner.applyVocabulary("run FLAG_RETRY_V2 now", vocabulary: ["flagRetry"])
                      == "run FLAG_RETRY_V2 now")
 
+        // Recognizer homophones. The real transcript: "branches that all need to be merged into
+        // Maine". The swap is whole-word and runs with an empty dictionary too, since it is not
+        // a dictionary entry — and it must not drag the rhymes along with it, which is exactly
+        // what putting "main" in the dictionary would have done at edit distance 1.
+        precondition(LLMCleaner.applyVocabulary("merge it into Maine.", vocabulary: [])
+                     == "merge it into main.")
+        precondition(LLMCleaner.applyVocabulary("rebase onto Maine", vocabulary: vocab)
+                     == "rebase onto main")
+        precondition(LLMCleaner.applyVocabulary("check the mail in the rain", vocabulary: vocab)
+                     == "check the mail in the rain")
+
         // The trailing period comes off when "End with a period" is off — but only a lone final
         // full stop. Question marks carry meaning, inner sentence periods stay, and a trailing
         // identifier keeps its dots.
