@@ -254,12 +254,22 @@ of unused headroom, which is the likeliest remaining source of proper-noun mishe
 ("pork tree", "blue jet bottles"). Check `osascript -e 'input volume of (get volume
 settings)'` before touching recognition code.
 
-**The mic opens ~78ms after the shortcut, and that is not a bug.** The pill shows
-"recording" the instant the gesture fires but `beginRecording` awaits
-`transcriber.startSession` before `recorder.start()`, so speech in that window is
-captured by nothing. It looked like the cause of "text just doesn't appear" — it is
-not: measured 77-80ms on every dictation. Do not add a pending-buffer queue for it
-without re-measuring first.
+**The mic opens ~170ms after the shortcut, and `AudioRecorder.start` is where it
+goes.** The pill shows "recording" the instant the gesture fires, but speech before
+the mic opens is captured by nothing. Re-measured with `ActivationTrace` (see
+`Log.swift`) over warm dictations: `onStart=0ms pill=4-10ms session=13-21ms
+mic=165-177ms`, and ~270ms on the first dictation after launch.
+
+This supersedes an earlier "~78ms, because `beginRecording` awaits
+`transcriber.startSession`" note, which was wrong about both the size and the cause.
+`startSession` is the small half — about 15ms. The other ~150ms is `engine.start()`:
+`stop()` calls `engine.stop()`, so every dictation pays a cold CoreAudio input-graph
+start. Reordering around `startSession` would buy 15ms, not 150.
+
+Keeping the engine running between dictations is the fix that matches the
+measurement, and it is a product decision rather than a free win: a running engine
+holds the microphone, so the macOS mic indicator stays lit between dictations. Ask
+before doing it. Still no pending-buffer queue without re-measuring.
 
 **Build the audio converter from the buffer, never from a format read earlier.**
 `beginRecording` used to read `recorder.inputFormat` and hand it to the transcriber

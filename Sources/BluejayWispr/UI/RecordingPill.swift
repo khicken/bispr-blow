@@ -392,7 +392,11 @@ struct PillView: View {
                 Divider()
                 Button("Quit") { NSApp.terminate(nil) }
             }
-            .onChange(of: targetSize, initial: true) { _, size in model.onSize?(size) }
+            .onChange(of: targetSize, initial: true) { _, size in
+                model.onSize?(size)
+                // The panel is now the recording bar's size — the frame the reveal animates from.
+                if case .recording = controller.state { ActivationTrace.mark("pill") }
+            }
             .onReceive(controller.$level) { level in
                 guard case .recording = controller.state else { return }
                 waveSamples.removeFirst()

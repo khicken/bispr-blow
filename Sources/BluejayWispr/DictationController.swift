@@ -108,6 +108,7 @@ final class DictationController: ObservableObject {
 
     private func beginRecording(sendEnter: Bool) {
         guard state == .idle else { return }
+        ActivationTrace.mark("onStart")
         sessionGeneration += 1
         self.sendEnter = sendEnter
         capturedContext = ContextDetector.current()
@@ -147,6 +148,7 @@ final class DictationController: ObservableObject {
         let generation = sessionGeneration
         Task {
             await transcriber.startSession(contextTerms: capturedContext?.draftTerms ?? [])
+            ActivationTrace.mark("session")
             guard self.sessionGeneration == generation, case .recording = self.state else { return }
             do {
                 try recorder.start()
@@ -157,9 +159,9 @@ final class DictationController: ObservableObject {
             }
             // The pill says "recording" from the moment the shortcut fires, but the mic only opens
             // here — everything spoken while the analyzer was spinning up was never captured by
-            // anything. Whether that window is 30ms or a second decides whether it is a bug, and
-            // it has never been measured. Log it before changing the ordering.
-            logLine("audio mic open \(Int(Date().timeIntervalSince(self.recordingStartedAt) * 1000))ms after shortcut")
+            // anything. Reported against the gesture edge alongside the other activation stages,
+            // so the old "ms after shortcut" number is still there as `mic` minus `onStart`.
+            ActivationTrace.mark("mic")
         }
     }
 

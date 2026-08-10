@@ -452,6 +452,7 @@ final class ShortcutMonitor {
                 onLock?()
                 return
             }
+            ActivationTrace.begin()
             onStart?(action == .pressEnter)
         } else if !down, triggerIsDown, heldAction == action {
             triggerIsDown = false
