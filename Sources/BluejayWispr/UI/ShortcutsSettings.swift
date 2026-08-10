@@ -84,84 +84,145 @@ struct KeyCap: View {
     }
 }
 
+/// One row of the editor's list — a bound shortcut, or the row that records a new one. Every
+/// row is the same height and the same inset whatever it holds, because the list gains and
+/// loses rows as you edit it and the ones that stay should not move when it does.
+private struct BindingRow<Content: View>: View {
+    var themeID = Appearance.current
+    /// Rows that do something on click take the hover fill; a bound shortcut's row does not,
+    /// since only its × is clickable.
+    var hoverable = false
+    @ViewBuilder let content: Content
+    @State private var hovering = false
+
+    var body: some View {
+        content
+            .frame(height: 30)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(hoverable && hovering ? Theme.surfaceActive.opacity(0.7) : .clear)
+            )
+            .contentShape(Rectangle())
+            .onHover { hovering = hoverable && $0 }
+            .animation(.bjHover, value: hovering)
+    }
+}
+
 /// Editor for one action's bindings: remove, record another, reset.
+///
+/// Fixed size, deliberately. Every part of it grows and shrinks as you use it — the blurb runs
+/// one line or three depending on the action, the list gains rows, the recorder swaps a prompt
+/// in for the add row — and a sheet that resizes under the pointer moves the button you were
+/// reaching for. The list is the one part that can overflow, so it is the one part that scrolls.
 struct ShortcutSheet: View {
+    var themeID = Appearance.current
     let action: ShortcutAction
     @ObservedObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
     @State private var armed = false
+    /// The combination currently under the user's fingers, mid-record.
+    @State private var holding: Shortcut?
 
     private var bindings: [Shortcut] { settings.shortcuts(for: action) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(action.title)
-                    .font(.bj(17, weight: .semibold))
+                    .font(.bj(16, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                 Text(action.blurb)
                     .font(.bj(12))
                     .foregroundStyle(Theme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            // One line of blurb, reserved: every action's is one line now, and pinning it keeps
+            // the card below at the same height in all four.
+            .frame(height: 40, alignment: .top)
 
             // The list is the control. Adding lives as its last row rather than as a button below,
             // so there is one place to click to change a binding instead of a dead box plus a
             // button beside it.
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(bindings) { shortcut in
-                    HStack(spacing: 8) {
-                        KeyCap(text: shortcut.display)
-                        Spacer()
-                        Button {
-                            settings.remove(shortcut, from: action)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.bj(9, weight: .bold))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(bindings) { shortcut in
+                        BindingRow {
+                            HStack(spacing: 8) {
+                                KeyCap(text: shortcut.display)
+                                Spacer(minLength: 8)
+                                Button {
+                                    settings.remove(shortcut, from: action)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.bj(9, weight: .bold))
+                                }
+                                .buttonStyle(QuietButtonStyle())
+                                .help("Remove this shortcut")
+                            }
                         }
-                        .buttonStyle(QuietButtonStyle())
-                        .help("Remove this shortcut")
                     }
-                }
-                if !bindings.isEmpty { Divider().opacity(0.5) }
-                if armed {
-                    HStack(spacing: 10) {
-                        Text("Press any key, combination, or mouse button…")
-                            .font(.bj(12, weight: .medium))
+                    if armed {
+                        BindingRow {
+                            HStack(spacing: 8) {
+                                // What is under your fingers right now, drawn in the same cap the
+                                // saved binding will use, so recording shows the result rather
+                                // than describing it. It lands when you let go.
+                                if let holding {
+                                    KeyCap(text: holding.display)
+                                    Text("release to save")
+                                        .font(.bj(12))
+                                } else {
+                                    // The dot belongs to the waiting state only: it says the app
+                                    // is listening for you. Once you are holding keys the cap
+                                    // says that already, and a pulsing dot beside it is decoration.
+                                    Image(systemName: "record.circle")
+                                        .font(.bj(11, weight: .bold))
+                                        .symbolEffect(.pulse)
+                                    Text("Listening…")
+                                        .font(.bj(12, weight: .medium))
+                                }
+                                Spacer(minLength: 8)
+                                Button("Cancel") { disarm() }
+                                    .buttonStyle(QuietButtonStyle())
+                            }
                             .foregroundStyle(Theme.blue)
-                        Spacer()
-                        Button("Cancel") { disarm() }
-                            .buttonStyle(QuietButtonStyle())
-                    }
-                    .padding(.vertical, 4)
-                    .transition(.opacity)
-                } else {
-                    Button(action: arm) {
-                        HStack(spacing: 7) {
-                            Image(systemName: "plus")
-                                .font(.bj(10, weight: .bold))
-                            Text(bindings.isEmpty ? "Record a shortcut" : "Add another")
-                                .font(.bj(12.5))
-                            Spacer()
                         }
-                        .foregroundStyle(Theme.blue)
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
+                        .transition(.opacity)
+                    } else {
+                        Button(action: arm) {
+                            BindingRow(hoverable: true) {
+                                HStack(spacing: 7) {
+                                    Image(systemName: "plus")
+                                        .font(.bj(10, weight: .bold))
+                                    Text(bindings.isEmpty ? "Record a shortcut" : "Add another")
+                                        .font(.bj(12.5))
+                                    Spacer(minLength: 0)
+                                }
+                                .foregroundStyle(Theme.blue)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .handCursor()
                     }
-                    .buttonStyle(.plain)
-                    .handCursor()
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .card(padding: 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .card(padding: 6)
 
             // One primary action, bottom right, where every macOS sheet puts it.
             HStack(spacing: 8) {
-                if bindings != action.defaults {
-                    Button("Reset to default") {
-                        settings.resetToDefault(action)
-                    }
-                    .buttonStyle(QuietButtonStyle())
+                // Always present, dimmed when there is nothing to undo. It used to appear only
+                // once the bindings differed, which meant the footer gained a control the first
+                // time you edited anything — the row you were reading changed shape under you.
+                Button("Reset to default") {
+                    settings.resetToDefault(action)
                 }
+                .buttonStyle(QuietButtonStyle())
+                .disabled(bindings == action.defaults)
+                .opacity(bindings == action.defaults ? 0.35 : 1)
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(CapsuleButtonStyle())
@@ -169,8 +230,9 @@ struct ShortcutSheet: View {
         }
         .animation(.bjSnap, value: armed)
         .animation(.bjSnap, value: bindings)
-        .padding(22)
-        .frame(width: 400)
+        .animation(.bjSnap, value: holding)
+        .padding(20)
+        .frame(width: 400, height: 300)
         .background(Theme.cream)
         .onDisappear { ShortcutMonitor.shared.endCapture() }
     }
@@ -179,14 +241,17 @@ struct ShortcutSheet: View {
     /// button system-wide, and while armed it swallows them so nothing else reacts.
     private func arm() {
         armed = true
-        ShortcutMonitor.shared.beginCapture { shortcut in
+        holding = nil
+        ShortcutMonitor.shared.beginCapture(preview: { holding = $0 }) { shortcut in
             settings.add(shortcut, to: action)
             armed = false
+            holding = nil
         }
     }
 
     private func disarm() {
         armed = false
+        holding = nil
         ShortcutMonitor.shared.endCapture()
     }
 }

@@ -863,7 +863,7 @@ struct DictionaryView: View {
 
     /// One field for one term or a whole list — commas and newlines both split.
     private func addWord() {
-        let before = settings.dictionary.count
+        let before = settings.dictionary
         withAnimation(.bjSnap) {
             settings.addDictionaryWords(
                 newWord.split(whereSeparator: { $0 == "," || $0.isNewline }).map(String.init)
@@ -872,8 +872,9 @@ struct DictionaryView: View {
         // Say something only when nothing happened. A term appearing in the list, and the count
         // above it changing, is the confirmation — a line of text repeating it is a second control
         // for a job the list already does, and the old one never went away once it had appeared.
-        note = settings.dictionary.count == before ? "Already in the dictionary." : nil
-        if settings.dictionary.count > before { newWord = "" }
+        // Compared as arrays, not counts: a case-only re-add changes a term without changing the count.
+        note = settings.dictionary == before ? "Already in the dictionary." : nil
+        if settings.dictionary != before { newWord = "" }
     }
 
     private func generate() {
@@ -997,7 +998,10 @@ struct TeamView: View {
     @State private var newRole = ""
 
     var body: some View {
-        Page(title: "Team", subtitle: "Teammate names are added to the dictation vocabulary.") {
+        // What it does, not how it works: "added to the dictation vocabulary" is our word for our
+        // own mechanism, and a teammate list is worth having for exactly one reason — a name you
+        // say out loud comes back spelled wrong until it is in here.
+        Page(title: "Team", subtitle: "Teammate names get spelled right when you dictate them.") {
             HStack(spacing: 8) {
                 TextField("Name", text: $newName)
                     .textFieldStyle(.plain)
@@ -1018,7 +1022,10 @@ struct TeamView: View {
             }
 
             if settings.teamMembers.isEmpty {
-                EmptyHint(text: "Add the names you say in standups and reviews.")
+                // The state, then the control — the same job the Dictionary page's empty hint
+                // does. Naming a scenario ("standups and reviews") pictured a workplace instead
+                // of saying anything, and the subtitle right above already carries the why.
+                EmptyHint(text: "Nothing here yet. Add a name above.")
             } else {
                 VStack(spacing: 6) {
                     ForEach(settings.teamMembers) { member in

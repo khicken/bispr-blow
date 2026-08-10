@@ -12,6 +12,11 @@ struct Shortcut: Codable, Equatable, Identifiable {
         case key(Int)
         /// CGEvent button number: 2 = middle, so 2 and up. Left and right stay the user's.
         case mouse(Int)
+        /// Modifiers and nothing else — ⌃⇧ held on its own. It has no keycode of its own, so
+        /// `flags` carries the whole binding and the gesture is that set completing and breaking.
+        /// A *single* modifier stays `.key` instead, because only a keycode tells left ⌃ from
+        /// right ⌃ and bare fn has always matched that way.
+        case modifiers
     }
 
     var trigger: Trigger
@@ -51,6 +56,13 @@ struct Shortcut: Codable, Equatable, Identifiable {
         return false
     }
 
+    /// A modifiers-only binding, matched on the whole set held. Exact rather than "contains", so
+    /// ⌃⇧ and ⌃⇧⌘ stay different bindings the way ⌃⇧G and ⌃⇧⌘G do.
+    func matches(modifiers: CGEventFlags) -> Bool {
+        guard case .modifiers = trigger, !modifiers.isEmpty else { return false }
+        return modifiers.intersection(Self.tracked).rawValue == flags
+    }
+
     /// True when this binding needs the fn key, so the macOS Globe action has to be suppressed.
     var usesFn: Bool {
         if case .key(kVK_Function) = trigger { return true }
@@ -64,6 +76,8 @@ struct Shortcut: Codable, Equatable, Identifiable {
         switch trigger {
         case .mouse(let button):
             return "Mouse \(button + 1)"  // 0 is left, so button 2 is what everyone calls mouse 3
+        case .modifiers:
+            return Self.glyphs(for: CGEventFlags(rawValue: flags))
         case .key(let code):
             if let name = Self.modifierNames[code] { return name }
             return Self.glyphs(for: CGEventFlags(rawValue: flags)) + (Self.keyNames[code] ?? "Key \(code)")
@@ -126,15 +140,16 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// One line each. This sits above the list you came here to edit, so it says what the action
+    /// does and stops; the longer version was three lines of reading before the first control.
     var blurb: String {
         switch self {
-        case .pushToTalk: return "Hold to dictate, release to insert. Double-tap to go hands-free."
-        // Says the double-tap out loud: hands-free ships with no binding of its own, and without
+        case .pushToTalk: return "Hold or double-tap to dictate."
+        // Still names the double-tap: hands-free ships with no binding of its own, and without
         // this the editor reads as though the feature were unavailable rather than already working.
-        case .handsFree: return "Press once to start, again to finish. Double-tapping push to talk "
-            + "does this too, so a binding here is only if you want a dedicated key."
-        case .pressEnter: return "Like push to talk, but presses Return after the text lands."
-        case .cancel: return "Throw away whatever is being dictated."
+        case .handsFree: return "Press to start, again to finish. Or double-tap push to talk."
+        case .pressEnter: return "Push to talk, then presses Return."
+        case .cancel: return "Throw away the current dictation."
         }
     }
 

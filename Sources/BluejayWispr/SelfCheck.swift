@@ -58,6 +58,49 @@ enum SelfCheck {
                      == "I like it, and it looks like a bug, something like that.")
         precondition(LLMCleaner.stripFillers("Do you know the answer?") == "Do you know the answer?")
         precondition(LLMCleaner.stripFillers("Ship it and like the post.") == "Ship it and like the post.")
+
+        // Dictionary respelling is code, not the model: at 0.6B the prompt's vocabulary line went
+        // unapplied on every real dictation ("Christian Parik" shipped as-is with both names in
+        // the prompt), so the substitution runs after the model, where it cannot be ignored.
+        let vocab = ["Krishin", "Parikh", "Claude", "worktree", "Kubernetes"]
+        // One edit away respells; exact letters in the wrong case take the dictionary casing.
+        precondition(LLMCleaner.applyVocabulary("Ask Parik about it.", vocabulary: vocab)
+                     == "Ask Parikh about it.")
+        precondition(LLMCleaner.applyVocabulary("ask claude to fix it", vocabulary: vocab)
+                     == "ask Claude to fix it")
+        // A sound-alike is corrected only beside another dictionary hit — a misheard name arrives
+        // as a misheard pair, and the pair is the evidence...
+        precondition(LLMCleaner.applyVocabulary("My name is Christian Parik.", vocabulary: vocab)
+                     == "My name is Krishin Parikh.")
+        // ...and the evidence must be a word the pass itself respelled. An exact dictionary hit
+        // is a word the recognizer got RIGHT, and with a dictionary of common dev terms it fires
+        // on nearly every dictation: "per api key" shipped as "Vite API git" on a real one when
+        // exact matches licensed their neighbors. The case fix on "api" still applies.
+        precondition(LLMCleaner.applyVocabulary("a token bucket per api key",
+                                                vocabulary: ["Vite", "API", "git"])
+                     == "a token bucket per API key")
+        // ...so the same sound-alikes alone are never touched: not every christian is Krishin and
+        // not every cloud is Claude.
+        precondition(LLMCleaner.applyVocabulary("the christian church", vocabulary: vocab)
+                     == "the christian church")
+        precondition(LLMCleaner.applyVocabulary("push it to cloud storage", vocabulary: vocab)
+                     == "push it to cloud storage")
+        // Two words that concatenate into a term join.
+        precondition(LLMCleaner.applyVocabulary("commit the work tree changes", vocabulary: vocab)
+                     == "commit the worktree changes")
+        // Short words never respell: "def" in a terminal is a Python keyword, not a mishearing
+        // of "dev". Identifiers and anything with an inner capital are likewise untouchable.
+        precondition(LLMCleaner.applyVocabulary("def main", vocabulary: ["dev"]) == "def main")
+        precondition(LLMCleaner.applyVocabulary("run FLAG_RETRY_V2 now", vocabulary: ["flagRetry"])
+                     == "run FLAG_RETRY_V2 now")
+
+        // The trailing period comes off when "End with a period" is off — but only a lone final
+        // full stop. Question marks carry meaning, inner sentence periods stay, and a trailing
+        // identifier keeps its dots.
+        precondition(LLMCleaner.droppingTrailingPeriod("Blue Jays.") == "Blue Jays")
+        precondition(LLMCleaner.droppingTrailingPeriod("Did the deploy work?") == "Did the deploy work?")
+        precondition(LLMCleaner.droppingTrailingPeriod("Ship it. Then tag it") == "Ship it. Then tag it")
+        precondition(LLMCleaner.droppingTrailingPeriod("tail app.log") == "tail app.log")
         // Bare "like" mid-sentence is deliberately left in. "or like the task bar" is filler and
         // "and like the post" is a verb, and only what sits before the conjunction tells them
         // apart, so this one goes to the prompt rather than to a regex.
@@ -362,6 +405,63 @@ enum SelfCheck {
         precondition(Shortcut.fn.usesFn && !combo.usesFn)
         precondition(Shortcut(trigger: .key(kVK_ANSI_D),
                               flags: CGEventFlags.maskSecondaryFn.rawValue).usesFn)
+
+        // Recording a binding: hold the combination, let go, and what was down is what is saved.
+        // Both halves are from real reports — ⌃⇧G recorded as ⇧G, and ⌃⇧ not recording at all.
+        //
+        // The flags on these keyDowns are deliberately wrong, because that is the bug: the
+        // recorder swallows each modifier's flagsChanged, so the window server never learns the
+        // modifier went down and the flags it stamps on the following keyDown are missing it —
+        // the modifier held *first* being the one that vanishes.
+        func record(_ steps: [(CGEventType, Int?, CGEventFlags)]) -> Shortcut? {
+            var state = ShortcutMonitor.CaptureState()
+            for (type, code, flags) in steps {
+                if case .record(let shortcut) = ShortcutMonitor.captureStep(
+                    type: type, keyCode: code, mouseButton: nil, flags: flags, state: &state) {
+                    return shortcut
+                }
+            }
+            return nil
+        }
+        // ⌃⇧G, with the keyDown carrying only shift, then everything released.
+        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
+                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
+                             (.keyDown, kVK_ANSI_G, [.maskShift]),
+                             (.keyUp, kVK_ANSI_G, [.maskShift]),
+                             (.flagsChanged, kVK_Shift, [.maskControl]),
+                             (.flagsChanged, kVK_Control, [])])?.display == "⌃⇧G")
+        // Nothing is recorded until the last key is up: the same sequence, stopped early.
+        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
+                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
+                             (.keyDown, kVK_ANSI_G, [.maskShift]),
+                             (.keyUp, kVK_ANSI_G, [.maskShift])]) == nil)
+        // Modifiers with no key at all is a binding in its own right — hold ⌃⇧ to talk. It has
+        // no keycode, so it can only be recorded on release, which is why the model is release-
+        // to-finalize rather than first-key-wins.
+        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
+                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
+                             (.flagsChanged, kVK_Shift, [.maskControl]),
+                             (.flagsChanged, kVK_Control, [])])?.display == "⌃⇧")
+        // A lone modifier stays a keycode, so left ⌃ and right ⌃ remain different bindings.
+        precondition(record([(.flagsChanged, kVK_Function, [.maskSecondaryFn]),
+                             (.flagsChanged, kVK_Function, [])]) == Shortcut.fn)
+        precondition(record([(.flagsChanged, kVK_RightControl, [.maskControl]),
+                             (.flagsChanged, kVK_RightControl, [])])?.display == "Right ⌃")
+        // A plain key with no modifiers at all.
+        precondition(record([(.keyDown, kVK_ANSI_G, []), (.keyUp, kVK_ANSI_G, [])])?.display == "G")
+
+        // A modifiers-only binding fires when its set completes and stops when it breaks — the
+        // set is the whole gesture, so it matches exactly rather than as a subset.
+        let ctrlShift = Shortcut(trigger: .modifiers,
+                                 flags: CGEventFlags([.maskControl, .maskShift]).rawValue)
+        precondition(ctrlShift.matches(modifiers: [.maskControl, .maskShift]))
+        precondition(!ctrlShift.matches(modifiers: [.maskControl]))
+        precondition(!ctrlShift.matches(modifiers: [.maskControl, .maskShift, .maskCommand]))
+        precondition(!ctrlShift.matches(modifiers: []))
+        // It carries no keycode, so the key path must never claim it as well.
+        precondition(!ctrlShift.matches(keyCode: kVK_Control, flags: [.maskControl, .maskShift]))
+        precondition(Shortcut(trigger: .modifiers,
+                              flags: CGEventFlags([.maskSecondaryFn, .maskShift]).rawValue).usesFn)
 
         // Round trip: bindings live in UserDefaults as JSON.
         let saved = ["pushToTalk": [Shortcut.fn, combo], "handsFree": [mouse4]]

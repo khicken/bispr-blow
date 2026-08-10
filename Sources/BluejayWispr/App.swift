@@ -66,8 +66,12 @@ enum Main {
                                      appName: input["appName"] as? String ?? "Terminal",
                                      windowTitle: "")
             let cleaner = LLMCleaner()
+            // Warm first, as the app does at launch: a cold model load eats the whole deadline,
+            // so without this every long case reports a deadline miss instead of exercising the
+            // guards and the escalation the seam exists to verify.
             let result: (text: String, provider: String) = awaitSync {
-                await cleaner.clean(input["raw"] as? String ?? "", context: context)
+                await cleaner.warmUp()
+                return await cleaner.clean(input["raw"] as? String ?? "", context: context)
             }
             let out: [String: Any] = ["text": result.text, "provider": result.provider]
             print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!)

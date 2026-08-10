@@ -51,8 +51,14 @@ final class LLMCleaner {
     /// ends in text that goes to the cursor and there are six of them.
     func clean(_ raw: String, context: AppContext) async -> (text: String, provider: String) {
         let result = await cleaned(raw, context: context)
-        guard settings.lowercaseSentences else { return result }
-        return (Self.lowercaseSentenceStarts(result.text, keeping: settings.vocabulary), result.provider)
+        var text = Self.applyVocabulary(result.text, vocabulary: settings.vocabulary)
+        if settings.lowercaseSentences {
+            text = Self.lowercaseSentenceStarts(text, keeping: settings.vocabulary)
+        }
+        if !settings.endWithPeriod {
+            text = Self.droppingTrailingPeriod(text)
+        }
+        return (text, result.provider)
     }
 
     private func cleaned(_ raw: String, context: AppContext) async -> (text: String, provider: String) {
@@ -482,6 +488,11 @@ final class LLMCleaner {
          "The tooltip needs to sit above the row, and let's do it this sprint."),
         ("App: Notes (general)\nTranscript: okay so um i tested the new build and uh the login flow it's it's mostly working but i found like two issues one is the the spinner never goes away on slow connections and two um when you when you log out it doesn't actually clear the session so so yeah we should probably fix those before before friday",
          "I tested the new build and the login flow is mostly working, but I found two issues. First, the spinner never goes away on slow connections. Second, when you log out it doesn't actually clear the session. We should fix those before Friday."),
+        // The custom-vocabulary line went unapplied on every real dictation (misheard names passed
+        // straight through) until it had a demonstration; the corrected term is one of the
+        // instruction line's own canonical examples, so the demo is consistent for every user.
+        ("App: Notes (general)\nTranscript: did the cooper netties deploy work",
+         "Did the Kubernetes deploy work?"),
     ]
 
     /// The coding path's own demonstrations. A low-touch *rule* paired with the polish few-shot
@@ -509,6 +520,12 @@ final class LLMCleaner {
          "We could cache it in Redis keyed on user_id, or actually maybe just in memory, or a plain dict would probably be fine for now."),
         ("App: Claude (coding)\nTranscript: okay so um i want you to look at the the way we're doing the retry logic in the webhook sender because right now uh it retries three times with a fixed backoff and i don't think that's right um so what i want is exponential backoff starting at like two hundred milliseconds and capping at uh thirty seconds and then also we should we should only retry on five hundreds and timeouts not on four hundreds because a four hundred is never going to succeed on a retry um and then the other thing is the the dead letter queue we don't have one right now so anything that fails all its retries just uh just disappears which is bad so i want a dead letter table with the original payload and the error and the the attempt count and then um a way to replay from it maybe a cli command or or actually a button in the dashboard or maybe both i don't know what you think is easier um and then last thing is uh make sure the retry state is in postgres not in memory because we we lost a bunch of retries last time the pod restarted and uh yeah write tests for the backoff calculation specifically the the cap because that's the part i got wrong last time",
          "Okay, so I want you to look at the way we're doing the retry logic in the webhook sender, because right now it retries three times with a fixed backoff and I don't think that's right. So what I want is exponential backoff starting at 200 milliseconds and capping at 30 seconds. And then also, we should only retry on 500s and timeouts, not on 400s, because a 400 is never going to succeed on a retry. And then the other thing is the dead letter queue. We don't have one right now, so anything that fails all its retries just disappears, which is bad. So I want a dead letter table with the original payload and the error and the attempt count, and then a way to replay from it. Maybe a CLI command, or actually a button in the dashboard, or maybe both, I don't know what you think is easier. And then last thing is, make sure the retry state is in Postgres, not in memory, because we lost a bunch of retries last time the pod restarted. And yeah, write tests for the backoff calculation, specifically the cap, because that's the part I got wrong last time."),
+        // "Do not swap a word for a better one" above directly contradicts the custom-vocabulary
+        // instruction, and on this path the contradiction always resolved against the vocabulary —
+        // misheard terms passed through uncorrected. The demo settles it: a respelling toward the
+        // vocabulary is a spelling fix, not a swap (and `rewordsContent` exempts it as such).
+        ("App: Terminal (coding)\nTranscript: commit the work tree changes",
+         "Commit the worktree changes."),
     ]
 
     /// The identical leading messages of every cleanup call (cache-friendly). Two variants, so the
@@ -614,6 +631,157 @@ final class LLMCleaner {
         }
         flush()
         return out
+    }
+
+    /// The period the model puts on the very end is its habit, not something the speaker said,
+    /// and on a one-or-two-word dictation it reads as noise ("Blue Jays."). Off by default via
+    /// `AppSettings.endWithPeriod`. Only a lone final "." comes off: question marks and
+    /// exclamations carry meaning, sentence periods inside the text stay, and a trailing "app.log"
+    /// or "v2.0" never ends in a bare period to begin with.
+    static func droppingTrailingPeriod(_ text: String) -> String {
+        text.hasSuffix(".") && !text.hasSuffix("..") ? String(text.dropLast()) : text
+    }
+
+    /// Deterministic dictionary respelling, after the model. The prompt asks the model to correct
+    /// sound-alikes to the vocabulary, and at 0.6B–1.7B it simply does not: "Christian Parik"
+    /// shipped uncorrected on every real dictation even with both names in the prompt. Code cannot
+    /// fail the way a small model does, and it also covers the rules fallback, which has no model
+    /// at all. Substitution is deliberately tiered, because a wrong swap corrupts the user's words:
+    ///
+    /// - exact: same letters, wrong case → take the dictionary casing ("claude" → "Claude").
+    /// - near: edit distance ≤1 (≤2 from eight letters), four letters minimum — "Parik" → "Parikh"
+    ///   but never "def" → "dev", which would rewrite a Python keyword in a terminal.
+    /// - loose: sound-alike by phonetic key ("Christian" ~ "Krishin") — accepted ONLY next to a
+    ///   word this pass itself just respelled, because alone this tier would turn every "cloud"
+    ///   into "Claude". A misheard name usually arrives as a misheard *pair*, and the correction
+    ///   is the evidence. An exact match is NOT evidence: it means the recognizer got that word
+    ///   right, and with a dictionary full of common terms it fires constantly — "per api key"
+    ///   shipped as "Vite API git" on a real dictation when exact matches counted.
+    /// - joined: two words that concatenate into a term ("work tree" → "worktree").
+    static func applyVocabulary(_ text: String, vocabulary: [String]) -> String {
+        guard !vocabulary.isEmpty else { return text }
+        let terms = vocabulary.filter { !$0.isEmpty && !$0.contains(" ") }
+
+        // Words and the separators between them, so reassembly preserves the original spacing.
+        var words: [String] = []
+        var seps: [String] = [""]
+        for ch in text {
+            if ch.isWhitespace {
+                if words.count == seps.count { seps.append(String(ch)) } else { seps[seps.count - 1].append(ch) }
+            } else {
+                if words.count < seps.count { words.append(String(ch)) } else { words[words.count - 1].append(ch) }
+            }
+        }
+        if words.count == seps.count { seps.append("") }
+
+        func bare(_ w: String) -> String {
+            w.trimmingCharacters(in: CharacterSet(charactersIn: "\"')]}”’([{“‘.,!?;:"))
+        }
+        // Identifiers, paths, numbers: not the recognizer mishearing a name, leave them alone.
+        func plainWord(_ b: String) -> Bool {
+            !b.isEmpty && b.allSatisfy(\.isLetter) && !b.dropFirst().contains(where: \.isUppercase)
+        }
+        func replace(_ i: Int, with term: String) {
+            let w = words[i], b = bare(w)
+            guard let r = w.range(of: b) else { return }
+            words[i] = w.replacingCharacters(in: r, with: term)
+        }
+
+        enum Tier: Int { case none, loose, near, exact }
+        func tier(_ b: String, _ term: String) -> Tier {
+            let w = b.lowercased(), t = term.lowercased()
+            if w == t { return .exact }
+            guard w.count >= 3, t.count >= 3 else { return .none }
+            if w.count >= 4, levenshtein(w, t) <= (max(w.count, t.count) >= 8 ? 2 : 1) { return .near }
+            if abs(w.count - t.count) <= 3, levenshtein(phoneticKey(w), phoneticKey(t)) <= 1 { return .loose }
+            return .none
+        }
+
+        var corrected = Set<Int>()
+        var looseCandidates: [(index: Int, term: String)] = []
+        var i = 0
+        while i < words.count {
+            let b = bare(words[i])
+            guard plainWord(b) else { i += 1; continue }
+            // Two words that join into one term: "work tree" → "worktree".
+            if i + 1 < words.count, words[i].hasSuffix(bare(words[i])) {
+                let b2 = bare(words[i + 1])
+                if plainWord(b2), let term = terms.first(where: { tier(b + b2, $0) == .exact }) {
+                    let tail = String(words[i + 1].dropFirst(b2.count))
+                    replace(i, with: term)
+                    words[i] += tail
+                    words.remove(at: i + 1)
+                    seps.remove(at: i + 1)
+                    corrected.insert(i)
+                    i += 1
+                    continue
+                }
+            }
+            var best: (Tier, String)? = nil
+            for term in terms {
+                let t = tier(b, term)
+                if t.rawValue > (best?.0.rawValue ?? 0) { best = (t, term) }
+            }
+            switch best {
+            case let (.exact, term)? where term.contains(where: \.isUppercase) && b != term:
+                replace(i, with: term)
+            case (.exact, _)?:
+                break
+            case let (.near, term)?:
+                replace(i, with: term)
+                corrected.insert(i)
+            case let (.loose, term)?:
+                looseCandidates.append((i, term))
+            default:
+                break
+            }
+            i += 1
+        }
+        for (index, term) in looseCandidates where corrected.contains(index - 1) || corrected.contains(index + 1) {
+            replace(index, with: term)
+        }
+
+        return zip(seps, words + [""]).map { $0 + $1 }.joined()
+    }
+
+    /// Soundex-style consonant classes, first letter included (so C and K agree), vowels reset
+    /// the run. "christian" and "krishin" land one edit apart; "clot", "cloud" and "claude" all
+    /// collapse to the same key — which is exactly why `loose` needs a matched neighbor.
+    private static func phoneticKey(_ s: String) -> String {
+        var out = ""
+        var last: Character? = nil
+        for ch in s {
+            var code: Character? = nil
+            switch ch {
+            case "b", "f", "p", "v": code = "1"
+            case "c", "g", "j", "k", "q", "s", "x", "z": code = "2"
+            case "d", "t": code = "3"
+            case "l": code = "4"
+            case "m", "n": code = "5"
+            case "r": code = "6"
+            case "h", "w": continue
+            default: last = nil; continue
+            }
+            if code != last { out.append(code!) }
+            last = code
+        }
+        return out
+    }
+
+    private static func levenshtein(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        if x.isEmpty || y.isEmpty { return max(x.count, y.count) }
+        var row = Array(0...y.count)
+        for (i, cx) in x.enumerated() {
+            var prev = row[0]
+            row[0] = i + 1
+            for (j, cy) in y.enumerated() {
+                let cost = cx == cy ? prev : min(prev, row[j], row[j + 1]) + 1
+                prev = row[j + 1]
+                row[j + 1] = cost
+            }
+        }
+        return row[y.count]
     }
 
     /// True when cleanup clearly lost content: it elided part of the transcript, or came back
