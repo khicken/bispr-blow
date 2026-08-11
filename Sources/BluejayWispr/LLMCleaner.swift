@@ -611,7 +611,12 @@ final class LLMCleaner {
             // the rest of the punctuation comes off to compare the word against the dictionary.
             let quoted = word.trimmingCharacters(in: CharacterSet(charactersIn: "\"')]}”’"))
             let bare = quoted.trimmingCharacters(in: CharacterSet(charactersIn: ".,!?;:"))
-            if opensSentence, word.first?.isUppercase == true,
+            // "I" is a word that is always capitalised, not a sentence's opening capital, and
+            // lowercasing it is the one case where this pass reads as wrong rather than casual:
+            // "I thought I did that." shipped as "i thought I did that", the second one untouched
+            // because only the first word opens a sentence. Contractions count — "I'm", "I'll".
+            let pronounI = bare == "I" || bare.hasPrefix("I'") || bare.hasPrefix("I’")
+            if opensSentence, word.first?.isUppercase == true, !pronounI,
                !protected.contains(bare), !bare.dropFirst().contains(where: \.isUppercase) {
                 out += word.prefix(1).lowercased() + word.dropFirst()
             } else {

@@ -285,7 +285,11 @@ enum SelfCheck {
         func lower(_ s: String) -> String { LLMCleaner.lowercaseSentenceStarts(s, keeping: vocab) }
 
         precondition(lower("Run the tests. Then commit.") == "run the tests. then commit.")
-        precondition(lower("I think it works") == "i think it works")
+        // "I" keeps its capital wherever it lands. This case used to assert the opposite, which
+        // is how "i thought I did that" reached a real dictation looking like a typo.
+        precondition(lower("I think it works") == "I think it works")
+        precondition(lower("I thought I did that.") == "I thought I did that.")
+        precondition(lower("I'm on it. I'll check.") == "I'm on it. I'll check.")
         // Dictionary terms, acronyms, and internal capitals all keep theirs.
         precondition(lower("Kubernetes crashed again") == "Kubernetes crashed again")
         precondition(lower("Ship it. Kubernetes is fine.") == "ship it. Kubernetes is fine.")
