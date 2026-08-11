@@ -140,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pill = RecordingPillController(controller: controller) { [weak self] section in
             self?.dashboard.show(section)
         }
-        toast = ToastController(controller: controller)
+        toast = ToastController(controller: controller, model: pill.model)
 
         setupMenuBar()
         setupQuitShortcut()

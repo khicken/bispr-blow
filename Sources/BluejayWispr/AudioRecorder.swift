@@ -105,14 +105,30 @@ final class AudioRecorder {
     private var peak: Float = 0
     private var clipped = 0
 
+    /// How long the engine keeps running after a dictation ends. `engine.start()` is ~150ms of
+    /// cold CoreAudio graph setup and was the bulk of the gap between the pill saying "recording"
+    /// and the mic actually capturing (see `ActivationTrace` in `Log.swift`). Staying up across a
+    /// burst of dictations skips it. Not forever, though: a running engine holds the microphone,
+    /// and macOS keeps its recording indicator lit for exactly as long as it does.
+    private static let warmWindow: TimeInterval = 30
+    private var coolDown: DispatchWorkItem?
+    /// The device the running engine was started on. `setDeviceID` is not honoured on a running
+    /// engine, so a changed selection has to pay the cold start rather than record the wrong mic.
+    private var warmDeviceID: AudioDeviceID?
+
     func start() throws {
         guard !isRunning else { return }
+        coolDown?.cancel()
+        coolDown = nil
         let input = engine.inputNode
 
         // Empty UID = follow the system default input.
         let uid = AppSettings.shared.inputDeviceUID
         let deviceID = uid.isEmpty ? Self.defaultInputDeviceID() : Self.deviceID(forUID: uid)
-        if !uid.isEmpty, let deviceID {
+        if engine.isRunning, warmDeviceID != deviceID {
+            engine.stop()
+        }
+        if !engine.isRunning, !uid.isEmpty, let deviceID {
             try? input.auAudioUnit.setDeviceID(deviceID)
         }
         if AppSettings.shared.restoreMicVolume, let deviceID {
@@ -130,17 +146,29 @@ final class AudioRecorder {
             self.onBuffer?(buffer)
             self.onLevel?(self.measure(buffer))
         }
-        engine.prepare()
-        try engine.start()
+        if !engine.isRunning {
+            engine.prepare()
+            try engine.start()
+        }
+        warmDeviceID = deviceID
         isRunning = true
     }
 
+    /// Ends capture but leaves the engine warm — see `warmWindow`. Removing the tap is what stops
+    /// audio reaching us, so nothing is captured in the meantime.
     func stop() {
         guard isRunning else { return }
         engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
         isRunning = false
         logSignal()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.isRunning else { return }
+            self.engine.stop()
+            self.warmDeviceID = nil
+        }
+        coolDown = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.warmWindow, execute: work)
     }
 
     /// RMS level for the waveform, folded together with the per-dictation quality accumulators so

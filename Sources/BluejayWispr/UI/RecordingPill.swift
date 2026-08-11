@@ -7,7 +7,8 @@ import SwiftUI
 /// (pulsing dots).
 final class RecordingPillController {
     private let panel: NSPanel
-    private let model: PillModel
+    /// Shared with the toast, which has to sit against the same edge the pill is parked on.
+    let model: PillModel
     private let placement = PlacementModel()
     private var overlay: PlacementOverlayController?
 
@@ -406,19 +407,54 @@ struct PillView: View {
 
     static let grow = Animation.spring(response: 0.32, dampingFraction: 0.82)
 
-    @ViewBuilder
-    private var pill: some View {
-        Group {
-            switch controller.state {
-            case .idle:
-                idlePill
-            case .recording(let locked):
-                capsule(recordingPill(locked: locked))
-            case .processing:
-                capsule(processingPill)
-            }
+    /// The visible capsule's own size: the `size(for:)` numbers without the shadow margin, plus the
+    /// one thing that table deliberately ignores — hover, which changes what is drawn and not what
+    /// the panel claims.
+    private var capsuleSize: CGSize {
+        switch controller.state {
+        case .idle: hovering ? CGSize(width: 110, height: 36) : CGSize(width: 42, height: 9)
+        case .recording, .processing: box
         }
-        .padding(Self.margin)
+    }
+
+    /// The box the capsule is positioned inside — the panel minus the margin its shadow needs.
+    private var box: CGSize {
+        let panel = Self.size(for: controller.state)
+        return CGSize(width: panel.width - Self.margin * 2, height: panel.height - Self.margin * 2)
+    }
+
+    /// One capsule for every state, resized per state, rather than a `switch` handing back a
+    /// different view for each. A switch changes the view's *identity*, and SwiftUI cannot morph
+    /// between identities — only dissolve — which is why this used to cross-fade instead of grow.
+    /// The same identity change also relaid the outgoing state into the incoming state's smaller
+    /// box, so the fade came with a visible sideways nudge. Both are the one bug.
+    ///
+    /// The capsule hugs `contentAlignment` — the same parked edge in every state, and the edge the
+    /// panel's own origin is pinned to — so that edge stays put while the rest of it grows.
+    private var pill: some View {
+        capsule(Color.clear.frame(width: capsuleSize.width, height: capsuleSize.height))
+            .animation(Self.grow, value: capsuleSize)
+            .frame(width: box.width, height: box.height, alignment: model.anchor.contentAlignment)
+            .overlay { contents }
+            .contentShape(Capsule())
+            .padding(Self.margin)
+    }
+
+    /// What rides on the capsule. Only this cross-fades; the shape underneath it morphs.
+    @ViewBuilder
+    private var contents: some View {
+        switch controller.state {
+        case .idle:
+            hoverButtons
+                .opacity(hovering ? 1 : 0)
+                .scaleEffect(hovering ? 1 : 0.86)
+                .animation(Self.grow, value: hovering)
+                .allowsHitTesting(hovering)
+        case .recording(let locked):
+            recordingPill(locked: locked)
+        case .processing:
+            processingPill
+        }
     }
 
     /// The dark capsule a state sits on. Applied to whatever actually carries that state's size,
@@ -431,32 +467,6 @@ struct PillView: View {
                 // edge, and a clipped gaussian reads as a translucent rectangle around the pill.
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
         )
-    }
-
-    /// Idle: a sliver on the parked edge that grows into three circular action buttons on hover.
-    ///
-    /// Exactly one thing animates — the capsule's own frame — and it is pinned to the edge the pill
-    /// is parked on, so the expansion has a single fixed anchor. Everything else is a constant: the
-    /// outer box is always the expanded size, and the buttons are centred in *that*, so they fade in
-    /// where they will end up rather than travelling with a capsule that is still growing.
-    ///
-    /// The animation modifier stays inside the outer frame. Outside it, the fixed box interpolates
-    /// too, and a hit region that slides under a stationary pointer makes the pill flap open and
-    /// shut.
-    private var idlePill: some View {
-        capsule(
-            Color.clear.frame(width: hovering ? 110 : 42, height: hovering ? 36 : 9)
-        )
-        .animation(Self.grow, value: hovering)
-        .frame(width: 110, height: 36, alignment: model.anchor.contentAlignment)
-        .overlay {
-            hoverButtons
-                .opacity(hovering ? 1 : 0)
-                .scaleEffect(hovering ? 1 : 0.86)
-                .animation(Self.grow, value: hovering)
-                .allowsHitTesting(hovering)
-        }
-        .contentShape(Capsule())
     }
 
     /// The glyphs counter-rotate: the bar turns 90° on a side edge, but an icon lying on its side
@@ -659,7 +669,7 @@ struct PlacementView: View {
 final class ToastController {
     private let panel: NSPanel
 
-    init(controller: DictationController) {
+    init(controller: DictationController, model: PillModel) {
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 34),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -674,7 +684,7 @@ final class ToastController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.ignoresMouseEvents = true
 
-        let host = NSHostingView(rootView: ToastView(controller: controller))
+        let host = NSHostingView(rootView: ToastView(controller: controller, model: model))
         host.frame = panel.contentRect(forFrameRect: panel.frame)
         panel.contentView = host
 
@@ -701,9 +711,15 @@ final class ToastController {
 
     private var timer: Timer?
 
-    /// Sits directly above the pill wherever the user parked it, so the two read as one thing.
-    /// Clamped to the screen, because a 420pt toast centred on an edge-anchored pill would
-    /// otherwise hang off the side.
+    /// Sits against the pill wherever the user parked it, so the two read as one thing: above it
+    /// on the bottom edge, and *beside* it on a side edge.
+    ///
+    /// Beside, not above, because above is what put the message in the middle of nowhere. On a
+    /// side anchor the pill is a tall bar at the screen's vertical centre, so "above the pill"
+    /// is halfway up the screen — and the 420pt panel then clamped to the screen edge, leaving
+    /// the message floating in open space with nothing to attach it to. The panel's own width is
+    /// why clamping was needed at all; `ToastView` now aligns its capsule to the same edge, so
+    /// the visible pill of text lands against the pill instead of 210pt away from it.
     func reposition() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         // The same frame the pill uses, or the toast detaches from it in a fullscreen space.
@@ -714,17 +730,34 @@ final class ToastController {
         ) ?? .bottomCentre
         let pillSize = PillView.size(for: .idle, anchor: anchor)
         let pill = NSRect(origin: anchor.origin(size: pillSize, in: frame), size: pillSize)
-        let x = min(max(pill.midX - size.width / 2, frame.minX), frame.maxX - size.width)
-        let y = min(pill.maxY + 4, frame.maxY - size.height)
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        let spot: NSPoint = switch anchor {
+        case .bottomCentre: NSPoint(x: pill.midX - size.width / 2, y: pill.maxY + 4)
+        case .leftCentre: NSPoint(x: pill.maxX + 4, y: pill.midY - size.height / 2)
+        case .rightCentre: NSPoint(x: pill.minX - size.width - 4, y: pill.midY - size.height / 2)
+        }
+        panel.setFrameOrigin(NSPoint(
+            x: min(max(spot.x, frame.minX), frame.maxX - size.width),
+            y: min(max(spot.y, frame.minY), frame.maxY - size.height)
+        ))
         panel.orderFrontRegardless()
     }
 }
 
 struct ToastView: View {
     @ObservedObject var controller: DictationController
+    @ObservedObject var model: PillModel
     /// Same reason as the pill: it draws the pill's background colour.
     @StateObject private var settings = AppSettings.shared
+
+    /// Which edge of its own panel the capsule hugs, so it lands against the pill rather than
+    /// centred in a 420pt panel the user cannot see the edges of.
+    private var alignment: Alignment {
+        switch model.anchor {
+        case .bottomCentre: .bottom
+        case .leftCentre: .leading
+        case .rightCentre: .trailing
+        }
+    }
 
     /// A notice is something the user needs; a mic change is something they might like to know.
     private var message: String? {
@@ -756,7 +789,7 @@ struct ToastView: View {
                 .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
         .animation(.bjSoft, value: message)
     }
 }
