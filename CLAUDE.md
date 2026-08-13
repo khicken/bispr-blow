@@ -444,8 +444,10 @@ recall/quality at 0.19s median over the 26 cases, against LM Studio's 96%/85% at
 LM Studio was uninstalled on that result; the weights moved to
 `Application Support/BluejayWispr/models`. GGUF quants were tried first and lost on
 quality, not speed (Q4_K_M 77%, Q8_0 78-81% — the quantization itself, not sampling;
-repeat-penalty was tested and ruled out). The GGUF files remain as the fallback when
-the metallib is missing.
+repeat-penalty was tested and ruled out). The llama.cpp backend still reads any GGUF on
+disk, and is what a machine without the metallib falls back to — but no GGUF ships in the
+installer and none is left on this machine, so that path is code without weights behind it.
+A machine that loses its metallib gets `ruleClean`, not a slower model.
 
 **MLX aborts the process — no throw, no fallback — without `mlx.metallib` beside the
 executable.** The name is `mlx.metallib`, NOT `default.metallib`: the first path
