@@ -46,13 +46,16 @@ actor LocalEngine {
             .appendingPathComponent("mlx-swift_Cmlx.bundle/default.metallib").path)
     }
 
-    /// Directories scanned for models, in preference order. `Application Support` is where the
-    /// download-on-setup step lands them; LM Studio's directory is read too so a machine that already
-    /// has weights is not asked to download them twice.
+    /// Directories scanned for models, in preference order. The home one is where a hand-placed or
+    /// downloaded model lands; the root one is where the installer's weight payloads go, since a
+    /// `.pkg` cannot write to `~` without switching the whole install to the user domain — which
+    /// would drag the app out of /Applications with it. LM Studio's directory is read too so a
+    /// machine that already has weights is not asked for them twice.
     private static var searchRoots: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
             home.appendingPathComponent("Library/Application Support/BluejayWispr/models"),
+            URL(fileURLWithPath: "/Library/Application Support/BluejayWispr/models"),
             home.appendingPathComponent(".lmstudio/models"),
         ]
     }

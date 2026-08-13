@@ -32,6 +32,25 @@ hold fn / double-tap fn
 
 Requires macOS 26+ and Swift 6.2+ (Xcode CLT).
 
+## Installing it on another Mac
+
+`./package.sh` builds `.build/BisprBlow.pkg` — the app plus the model weights it needs, since the
+weights live outside the bundle and an app without them quietly falls back to rule-based cleanup.
+The installer asks which weights to install: the fast model always goes in, and "Accurate writing"
+is an optional 1.7 GB on top. The package is ~1.9 GB either way, because it carries both and the
+choice only decides what lands on disk.
+
+**Opening it takes an extra step.** BisprBlow is not notarized — that needs a paid Apple Developer
+Program membership — so macOS refuses the installer on a double-click. Right-click it, choose
+**Open**, then **Open** again at the warning. Same for the app's first launch. If Gatekeeper is
+stubborn:
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/BisprBlow.pkg
+```
+
+Installing to `/Library` needs an admin password, which the installer will ask for.
+
 ## First-run setup
 
 1. **Microphone** — allow when prompted.

@@ -154,6 +154,42 @@ macOS: `DisclosureGroup` with a custom label has almost no hit target, so a
 Button plus a rotating chevron beats it. When a native control misbehaves, drop
 to AppKit rather than layering workarounds.
 
+## Packaging rules
+
+`./package.sh` builds `.build/BisprBlow.pkg`. `./build.sh` is still the local iteration path and
+package.sh calls it, so the bundle is assembled in exactly one place.
+
+**It is a .pkg because the weights are a question, and a .dmg cannot ask one.** A disk image is
+drag-and-drop with no UI. `customize="always"` in the distribution XML is what makes Installer show
+the choice pane instead of a bare Install button; without it the choices exist but nobody sees them.
+A literal drop-down needs a custom Installer plugin, which is an ObjC bundle for one question.
+
+**The Fast weights are not deselectable, and that is not timidity.** Fast means the smallest model
+installed, so a machine holding only the 1.7B resolves *Fast* to it as well — the Writing setting
+becomes a label with one model behind both sides. Shipping the 335M always is what keeps that
+setting honest, and it is also what keeps the app from launching into silent `ruleClean`.
+
+**Weights install to `/Library/Application Support/BluejayWispr/models`, not `~/Library`.** A .pkg
+cannot write to a home directory without moving the whole install to the user domain, which drags
+the app out of /Applications with it. `LocalEngine.searchRoots` scans both, home first, so a
+hand-placed model still wins over the installed one.
+
+**The choice saves disk, not download.** Both payloads are inside the one package, so it is ~1.9 GB
+whichever way the box is ticked. Making the download smaller means either two separate packages (no
+choice) or fetching over the network at first run (no code for it exists — `LocalEngine`'s comment
+about "the download-on-setup step" describes something that was never written).
+
+**package.sh fails the build when the bundle has no metallib**, because MLX aborts the process
+rather than throwing and there is no degraded mode to notice later. Verify payloads with
+`lsbom -s` on the extracted component BOMs; the weights are worth diffing against the source, since
+a truncated safetensors is invisible until first dictation.
+
+**Nothing is notarized: the Apple account is free, so there is no Developer ID cert.** The app is
+signed with the self-signed `Bluejay Wispr Dev` identity and installs behind a right-click > Open.
+Moving to a paid membership and a Developer ID is the only thing that makes it open cleanly on a
+stranger's Mac — and it will re-prompt Accessibility, Microphone and Speech Recognition on every
+machine including Kaleb's, because TCC keys grants to the signing identity.
+
 ## Cleanup rules
 
 Losing the user's words is the worst outcome, worse than leaving fillers in.
