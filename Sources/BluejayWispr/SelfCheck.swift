@@ -85,6 +85,21 @@ enum SelfCheck {
                      == "the christian church")
         precondition(LLMCleaner.applyVocabulary("push it to cloud storage", vocabulary: vocab)
                      == "push it to cloud storage")
+        // A word the recognizer got RIGHT is never respelled, however close it sits to a term.
+        // "just put a code fix for it" shipped as "just put a Xcode Vite for it" on a real
+        // dictation: levenshtein("code", "xcode") is 1, and correcting it licensed the phonetic
+        // tier on its neighbour. Being real English is what disqualifies it — not being long,
+        // because "Parik" above is five letters and must still respell.
+        precondition(LLMCleaner.applyVocabulary("just put a code fix for it",
+                                                vocabulary: ["Xcode", "Vite"])
+                     == "just put a code fix for it")
+        precondition(LLMCleaner.applyVocabulary("i sent you a gift",
+                                                vocabulary: ["git"]) == "i sent you a gift")
+        precondition(LLMCleaner.applyVocabulary("hold shift and click",
+                                                vocabulary: ["Swift"]) == "hold shift and click")
+        // The guard is the word list, so its absence must not be silent.
+        precondition(!LLMCleaner.englishWords.isEmpty,
+                     "/usr/share/dict/words is missing — vocabulary respelling is unguarded")
         // Two words that concatenate into a term join.
         precondition(LLMCleaner.applyVocabulary("commit the work tree changes", vocabulary: vocab)
                      == "commit the worktree changes")
@@ -204,6 +219,31 @@ enum SelfCheck {
             + "session. We should fix those before Friday.", raw: raw))
         // Too short to judge — one dropped word would swing the ratio past any threshold.
         precondition(!LLMCleaner.losesContent("Does it work?", raw: "um does it uh does it work"))
+
+        // Verbatim, and it reproduced every run: the last sentence simply gone, at 88% of the words
+        // and ~90% content recall, so both ratios above pass it. Position is what sees it.
+        let tailLost = "Date filtering is very limited, and there is some redundant types at the "
+            + "bottom. The custom line should be a, should show a modal that will show, like, a date "
+            + "selection and time selection. So not only it'll be days, but also time. Like, let's "
+            + "say I want to see the past 12 hours. It should be really easy to do that."
+        let withoutTail = "Date filtering is very limited, and there are some redundant types at the "
+            + "bottom. The custom line should show a modal with a date and time selection, so not "
+            + "only days but also time. Let's say I want to see the past 12 hours."
+        precondition(!LLMCleaner.looksTruncated(withoutTail, raw: tailLost), "88% of the words")
+        precondition(!LLMCleaner.losesContent(withoutTail, raw: tailLost), "~90% content recall")
+        precondition(LLMCleaner.dropsTail(withoutTail, raw: tailLost), "the last sentence is gone")
+        // The same cleanup with that sentence kept is correct and must ship.
+        precondition(!LLMCleaner.dropsTail(withoutTail + " It should be really easy to do that.",
+                                           raw: tailLost))
+        // A respelling of the final word is not a deletion, in either direction.
+        let respelled = "check the work tree before you rebase, and then run the whole suite again "
+            + "against the staging database and the local work tree"
+        precondition(!LLMCleaner.dropsTail(
+            "Check the worktree before you rebase, then run the whole suite again against the "
+            + "staging database and the local worktree.", raw: respelled))
+        // Short dictations are not judged: the last word is as likely to be a discarded "yeah".
+        precondition(!LLMCleaner.dropsTail("Ship it today.", raw: "um so i think we should just ship "
+                                           + "it um today yeah"))
 
         checkLowTouchInvariant()
 

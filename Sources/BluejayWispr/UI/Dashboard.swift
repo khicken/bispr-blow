@@ -258,7 +258,7 @@ struct BrandLockup: View {
                     .rotationEffect(.degrees(ctx.date.timeIntervalSinceReferenceDate * 115))
             }
             .frame(width: 18, height: 18)
-            Text("Bluejay Wispr")
+            Text("BisprBlow")
                 .font(.bj(13.5, weight: .semibold))
                 .tracking(-0.2)
                 .foregroundStyle(Theme.ink)
@@ -559,7 +559,7 @@ enum VocabPacks {
         ]),
         ("Bluejay stack", [
             "Bluejay", "Next.js", "Prisma", "Supabase", "LiveKit", "middleware", "Slack",
-            "Notion", "Sentry", "Twilio", "Deepgram", "Wispr",
+            "Notion", "Sentry", "Twilio", "Deepgram", "BisprBlow",
         ]),
     ]
 }
@@ -622,7 +622,7 @@ struct DictionaryView: View {
                  + Text(" do."))
                     .font(.bj(29, weight: .semibold, design: .serif))
                     .foregroundStyle(.white)
-                Text("Add the names, tools, and jargon you say out loud and Wispr will spell them right instead of guessing. Teammate names come from the Team page.")
+                Text("Add the names, tools, and jargon you say out loud and BisprBlow will spell them right instead of guessing. Teammate names come from the Team page.")
                     .font(.bj(13))
                     .foregroundStyle(.white.opacity(0.82))
                     .lineSpacing(2.5)

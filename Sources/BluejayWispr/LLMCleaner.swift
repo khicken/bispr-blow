@@ -152,26 +152,10 @@ final class LLMCleaner {
             // Empty output falls back to rule-cleaned text, not the bare transcript — a model
             // that returns nothing shouldn't leave the fillers in too.
             let result = Self.sanitize(cleaned, fallback: Self.ruleClean(trimmed))
-            // Small models summarize long dictations or stop mid-sentence with an ellipsis.
-            // Losing the speaker's words is worse than leaving fillers in, so keep everything.
-            if Self.looksTruncated(result, raw: trimmed) {
-                logLine("cleanup dropped content (\(result.count) of \(trimmed.count) chars)")
-                return .rejected
-            }
-            // Both paths: the words that carry the meaning have to still be there. This is the one
-            // that catches a model stopping halfway through a long dictation while landing on a
-            // word count the length ratio above is happy with.
-            if Self.losesContent(result, raw: trimmed) {
-                logLine("cleanup lost content words")
-                return .rejected
-            }
-            // On the low-touch path the model was told it may only delete, repunctuate and respell.
-            // Check it rather than trust it: this is the one that catches a swapped word, which
-            // leaves the length untouched and so is invisible to looksTruncated.
-            if lowTouch, Self.rewordsContent(result, raw: trimmed,
-                                             allowed: Self.allowedTerms(vocabulary: settings.vocabulary,
-                                                                        draftTerms: context.draftTerms)) {
-                logLine("cleanup reworded content on the coding path")
+            if let why = Self.rejection(result, raw: trimmed, lowTouch: lowTouch,
+                                        allowed: Self.allowedTerms(vocabulary: settings.vocabulary,
+                                                                   draftTerms: context.draftTerms)) {
+                logLine("cleanup \(why.rawValue) (\(result.count) of \(trimmed.count) chars)")
                 return .rejected
             }
             // Whatever fillers the model left in, take out deterministically.
@@ -245,6 +229,8 @@ final class LLMCleaner {
     /// Resolves the endpoint and fires a tiny completion so the model loads and both prompt
     /// prefixes enter the KV cache at launch instead of on the first dictation.
     func warmUp() async {
+        // Build the English word list now rather than inside the first dictation's deadline.
+        _ = Self.englishWords
         if resolutionIsStale { resolved = nil }
         if resolved == nil { resolved = await resolveEndpoint() }
         guard let (endpoint, model, _) = resolved else { return }
@@ -493,6 +479,22 @@ final class LLMCleaner {
         // instruction line's own canonical examples, so the demo is consistent for every user.
         ("App: Notes (general)\nTranscript: did the cooper netties deploy work",
          "Did the Kubernetes deploy work?"),
+        // This one is last on purpose, and it has to stay a short `(general)` imperative.
+        //
+        // At 0.6b the nearest same-category demonstration is copied, not generalised from, and for
+        // a while the last two demos were both `(general)` questions. Every short general
+        // imperative came back as one: "send the invoice to finance" and "add a note about the
+        // pricing change" both shipped the literal string "Did the Kubernetes deploy work?", and
+        // "cancel the meeting" became "did the meeting cancel?". No guard catches it — every guard
+        // is floored at 12 content words, and a short dictation has none — so it went straight to
+        // the cursor. Kaleb has six of these in his history. Questions were fine, long dictations
+        // were fine, and coding and chat were fine, because each had its own nearest demo; it was
+        // specifically the shape with no demonstration that got swallowed by the nearest one.
+        //
+        // Keep an imperative here, keep it short, and do not let the vocabulary demo above drift
+        // back to being last.
+        ("App: Notes (general)\nTranscript: um cancel the the meeting and uh let finance know",
+         "Cancel the meeting and let finance know."),
     ]
 
     /// The coding path's own demonstrations. A low-touch *rule* paired with the polish few-shot
@@ -675,6 +677,26 @@ final class LLMCleaner {
     /// putting "main" in the dictionary is not the fix: at four letters the `near` tier would
     /// then rewrite "mail", "rain", "pain" and "gain" into "main" as well. An exact whole-word
     /// swap is the only form that corrects the mishear without endangering its neighbours.
+    /// Ordinary English, so the dictionary cannot "respell" a word the recognizer got right. macOS
+    /// ships Webster's Second at `/usr/share/dict/words`; filtered to the lengths `near` can fire
+    /// on, and every entry short enough to live inline in a Swift `String`, so it costs a few MB
+    /// rather than a per-word allocation. Loaded once and touched by `warmUp`, because building it
+    /// inside the first dictation would spend that dictation's deadline on it.
+    ///
+    /// Empty when the file is missing, which restores the previous behaviour exactly rather than
+    /// disabling the dictionary — a machine without the word list gets the old false positives,
+    /// not a broken respeller.
+    static let englishWords: Set<String> = {
+        guard let text = try? String(contentsOfFile: "/usr/share/dict/words", encoding: .utf8)
+        else {
+            logLine("vocabulary guard: /usr/share/dict/words missing, respelling unguarded")
+            return []
+        }
+        return Set(text.split(separator: "\n").lazy
+            .filter { $0.count >= 4 }
+            .map { $0.lowercased() })
+    }()
+
     static func applyVocabulary(_ text: String, vocabulary: [String]) -> String {
         let terms = vocabulary.filter { !$0.isEmpty && !$0.contains(" ") }
 
@@ -708,7 +730,21 @@ final class LLMCleaner {
             let w = b.lowercased(), t = term.lowercased()
             if w == t { return .exact }
             guard w.count >= 3, t.count >= 3 else { return .none }
-            if w.count >= 4, levenshtein(w, t) <= (max(w.count, t.count) >= 8 ? 2 : 1) { return .near }
+            // `near` fires without the matched-neighbour evidence `loose` demands, so the one thing
+            // it must never do is overwrite a word the recognizer already got right. Measured:
+            // "just put a code fix for it" shipped as "just put a Xcode Vite for it", because
+            // levenshtein("code", "xcode") is 1 — and correcting it then licensed `loose` on its
+            // neighbour, which is how "fix" became "Vite". Scanning the shipped dictionary against
+            // the system word list, "git" ate gift/gist/grit/gilt/gait, "Vite" ate site/cite/bite/
+            // kite/rite, "Swift" ate shift and sift, "linter" ate liner/linger/linker, "Claude" ate
+            // clause, "doc" ate dock and "CLI" ate clip. This is the trap the note above describes
+            // for "main", and it was live.
+            //
+            // A length floor is the obvious fix and the wrong one: "Parik" → "Parikh" is five
+            // letters and is exactly what the dictionary is for. Being real English is the
+            // discriminator, not being long.
+            if w.count >= 4, !englishWords.contains(w),
+               levenshtein(w, t) <= (max(w.count, t.count) >= 8 ? 2 : 1) { return .near }
             if abs(w.count - t.count) <= 3, levenshtein(phoneticKey(w), phoneticKey(t)) <= 1 { return .loose }
             return .none
         }
@@ -872,6 +908,76 @@ final class LLMCleaner {
         guard spoken.count >= 12 else { return false }
         let kept = spoken.intersection(content(cleaned)).count
         return Double(kept) < Double(spoken.count) * contentRecallFloor
+    }
+
+    /// Did the last thing the speaker said survive?
+    ///
+    /// The failure this exists for is "stopped early", and both ratios above are structurally blind
+    /// to it. Verbatim, and it reproduces every run: a dictation ending "It should be really easy to
+    /// do that." comes back without that sentence — 50 words of 57, which is 88% against a 55%
+    /// floor, and ~90% content recall against 0.8, because the dropped sentence repeats nothing and
+    /// contributes almost nothing. *Position* is the information a ratio throws away. A cleanup that
+    /// compressed the middle still lands on the last thing said; one that gave up halfway does not.
+    ///
+    /// The very last content word, not the last few. On the case above the dropped sentence
+    /// contributes exactly one ("really" is a common word), so "one of the last two survived" passes
+    /// it — there is no slack to spend here, which is why the two looseners below are load-bearing
+    /// rather than defensive:
+    ///
+    ///   - The floor. A dropped trailing sentence is a long-dictation failure, and on a short one
+    ///     the final word is as likely to be a discarded "yeah" as a real one. Same reason
+    ///     `losesContent` has one, and it is also what keeps this off the one-word dictations.
+    ///   - Substring, not equality. A respelling is not a deletion: "work tree" → "worktree" leaves
+    ///     the word plainly there, and so does a plural fix. This guard runs on the polish path too,
+    ///     where rewriting is the whole job, so it has to recognise the word rather than match it.
+    ///     The 4-character floor on the prefix direction is what stops "a" matching everything.
+    ///
+    /// Measured over bench/cases.json, both shipped models, 3 reps: this fires on **0 of 27** real
+    /// model outputs, while catching the repro above and 2 of the 5 multi-sentence cases when their
+    /// last sentence is deleted synthetically — 2 that no other guard catches. It misses
+    /// `snap_regions`, and the loosener is exactly why: its final word is "picked" and the
+    /// transcript already said "pick", so the prefix match accepts a tail that is gone. That is the
+    /// trade taken deliberately. A rejection ships `ruleClean`, which keeps every word and leaves
+    /// every filler in, so a guard that fires on correct output makes the app worse rather than
+    /// better — the false-positive rate is the number that decides this one, not the catch rate.
+    static func dropsTail(_ cleaned: String, raw: String) -> Bool {
+        let words = { (text: String) in
+            text.lowercased()
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+                .map(String.init)
+        }
+        let spoken = words(raw).filter { $0.count >= 3 && !AppContext.commonWords.contains($0) }
+        guard spoken.count >= 12, let last = spoken.last else { return false }
+        return !words(cleaned).contains { $0.contains(last) || ($0.count >= 4 && last.hasPrefix($0)) }
+    }
+
+    /// Every guard, in one place. Returns why the reply cannot ship, or nil to ship it.
+    ///
+    /// One place because they had already drifted: `--finish`, the seam `bench/bench.py` scores
+    /// through, never ran `losesContent` — so the content-recall guard's false-positive rate had
+    /// never once been measured on the set that exists to measure exactly that, and the bench was
+    /// quietly reporting a different app than the one that ships.
+    enum Rejection: String {
+        case truncated = "dropped content"
+        case lostContent = "lost content words"
+        case droppedTail = "dropped the last thing said"
+        case reworded = "reworded content on the coding path"
+    }
+
+    static func rejection(_ cleaned: String, raw: String, lowTouch: Bool,
+                          allowed: Set<String>) -> Rejection? {
+        // Small models summarize long dictations or stop mid-sentence with an ellipsis. Losing the
+        // speaker's words is worse than leaving fillers in, so keep everything.
+        if looksTruncated(cleaned, raw: raw) { return .truncated }
+        // Both paths: the words that carry the meaning have to still be there. This is the one that
+        // catches a model stopping halfway while landing on a word count the ratio is happy with.
+        if losesContent(cleaned, raw: raw) { return .lostContent }
+        // And the one that catches it stopping at the very end, where neither ratio can see it.
+        if dropsTail(cleaned, raw: raw) { return .droppedTail }
+        // On the low-touch path the model was told it may only delete, repunctuate and respell.
+        // Check it rather than trust it: a swapped word leaves the length untouched.
+        if lowTouch, rewordsContent(cleaned, raw: raw, allowed: allowed) { return .reworded }
+        return nil
     }
 
     /// The low-touch invariant, checked instead of trusted: every word in the output has to be

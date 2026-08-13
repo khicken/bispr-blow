@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds, signs, and installs Bluejay Wispr to /Applications, then relaunches it.
+# Builds, signs, and installs BisprBlow to /Applications, then relaunches it.
 # Run ./setup-signing.sh once for a stable identity, or TCC grants reset every build.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -20,7 +20,7 @@ if [ ! -f "$METALLIB" ] || [ -n "$(find "$KERNELS" -name '*.metal' -newer "$META
 fi
 
 # Staged in .build: a second launchable copy means two fn event taps fighting.
-APP=.build/BluejayWispr.app
+APP=.build/BisprBlow.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/BluejayWispr "$APP/Contents/MacOS/"
@@ -49,8 +49,9 @@ else
 fi
 codesign --force -s "$SIGN_ID" "$APP/Contents/Frameworks/llama.framework"
 codesign --force -s "$SIGN_ID" --identifier ai.getbluejay.wispr "$APP"
-DEST=/Applications/BluejayWispr.app
+DEST=/Applications/BisprBlow.app
 pkill -x BluejayWispr 2>/dev/null || true
+rm -rf /Applications/BluejayWispr.app  # pre-rename copy: two bundles means two fn event taps fighting
 sleep 1
 rm -rf "$DEST"
 cp -R "$APP" "$DEST"

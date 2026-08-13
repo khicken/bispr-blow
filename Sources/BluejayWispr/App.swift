@@ -24,6 +24,36 @@ enum Main {
             SelfCheck.run()
             return
         }
+        // Drives the real `AudioRecorder` for two seconds and reports what arrived, because the
+        // alternative is finding out at the cursor. A dictation cannot be triggered without the
+        // keyboard, so before this the capture path was the one part of the app that could only be
+        // tested by asking Kaleb — which is how an input-only mic capturing nothing shipped twice.
+        // Exercises the selected device, so run it after changing the mic in Settings.
+        if CommandLine.arguments.contains("--mic-check") {
+            let recorder = AudioRecorder()
+            print("device: \(AudioRecorder.currentInputDeviceName())")
+            do {
+                let started = Date()
+                try recorder.start()
+                print("startup: \(Int(Date().timeIntervalSince(started) * 1000))ms")
+            } catch {
+                print("FAIL — start threw: \(error.localizedDescription)")
+                exit(1)
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(2))
+            let frames = recorder.capturedFrames
+            recorder.stop()
+            print("frames: \(frames)")
+            print(frames > 0 ? "PASS — see the `audio` line in the log for level"
+                             : "FAIL — no audio captured")
+            exit(frames > 0 ? 0 : 1)
+        }
+        // Replays a release transition and measures the pill's drawn position every 8ms, because
+        // the alternative is asking Kaleb what he saw — which is how two attempts at this animation
+        // shipped a regression. Same idea as `--mic-check`: make the thing observable first.
+        if CommandLine.arguments.contains("--pill-demo") {
+            PillDemo.run()
+        }
         // bench/bench.py reads the real prompts from here so they can never drift from the app.
         // Both variants, keyed the way the bench selects them: {"default": [...], "lowTouch": [...]}.
         if CommandLine.arguments.contains("--print-prompt") {
@@ -46,13 +76,17 @@ enum Main {
             let result = LLMCleaner.sanitize(input["cleaned"] as? String ?? "",
                                             fallback: LLMCleaner.ruleClean(raw))
             let lowTouch = input["lowTouch"] as? Bool ?? false
-            let reworded = lowTouch && LLMCleaner.rewordsContent(
-                result, raw: raw,
+            // The same guard set the app runs, from the same function, because these two lists had
+            // drifted: this one never ran `losesContent`, so the bench was scoring a laxer app than
+            // the one that ships. `reason` is reported so a bench run says which guard fired.
+            let why = LLMCleaner.rejection(
+                result, raw: raw, lowTouch: lowTouch,
                 allowed: LLMCleaner.allowedTerms(vocabulary: AppSettings.shared.vocabulary,
                                                  draftTerms: input["draftTerms"] as? [String] ?? []))
-            let lossy = LLMCleaner.looksTruncated(result, raw: raw) || reworded
-            let out: [String: Any] = ["lossy": lossy, "reworded": reworded,
-                                      "text": lossy ? LLMCleaner.ruleClean(raw) : LLMCleaner.stripFillers(result)]
+            let out: [String: Any] = ["lossy": why != nil, "reworded": why == .reworded,
+                                      "reason": why?.rawValue ?? NSNull(),
+                                      "text": why != nil ? LLMCleaner.ruleClean(raw)
+                                                         : LLMCleaner.stripFillers(result)]
             print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!)
             return
         }
@@ -186,13 +220,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 logo.isTemplate = true  // adapts to menu bar light/dark
                 button.image = logo
             } else {
-                button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Bluejay Wispr")
+                button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "BisprBlow")
             }
         }
 
         // Left-click opens the app; right-click is the one place Quit lives.
         quitMenu = NSMenu()
-        quitMenu.addItem(withTitle: "Quit Bluejay Wispr",
+        quitMenu.addItem(withTitle: "Quit BisprBlow",
                          action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
 
         statusItem.button?.target = self
@@ -201,7 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = AppSettings.shared
         let hint = settings.holdHint
         let lock = settings.shortcuts(for: .pushToTalk).isEmpty ? "" : ", double-tap to lock"
-        statusItem.button?.toolTip = "Bluejay Wispr · \(hint.prefix(1).lowercased())\(hint.dropFirst())"
+        statusItem.button?.toolTip = "BisprBlow · \(hint.prefix(1).lowercased())\(hint.dropFirst())"
             + "\(lock).\nRight-click to quit."
     }
 
@@ -220,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// an accessory app gets no main menu, and therefore no key equivalent, unless one is set.
     private func setupQuitShortcut() {
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Bluejay Wispr",
+        appMenu.addItem(withTitle: "Quit BisprBlow",
                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let item = NSMenuItem()
         item.submenu = appMenu
@@ -233,7 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboard.show()
     }
 
-    /// `open BluejayWispr.app` while running (or Dock/Launchpad click) reopens the dashboard.
+    /// `open BisprBlow.app` while running (or Dock/Launchpad click) reopens the dashboard.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         dashboard.show()
         return true

@@ -83,6 +83,10 @@ final class DictationController: ObservableObject {
         return false
     }
 
+    /// `--pill-demo` only: replays a release transition with no mic, no model and no event tap, so
+    /// the pill's animation can be measured instead of described.
+    func demoState(_ state: State) { self.state = state }
+
     /// Reflect lock state in UI when the monitor transitions hold → locked.
     func noteLocked() {
         if case .recording = state { state = .recording(locked: true) }
@@ -112,7 +116,7 @@ final class DictationController: ObservableObject {
         sessionGeneration += 1
         self.sendEnter = sendEnter
         capturedContext = ContextDetector.current()
-        let device = AudioRecorder.defaultInputDeviceName()
+        let device = AudioRecorder.currentInputDeviceName()
         if device != UserDefaults.standard.string(forKey: "lastMicName") {
             UserDefaults.standard.set(device, forKey: "lastMicName")
             micFlash = device
@@ -171,6 +175,22 @@ final class DictationController: ObservableObject {
         recorder.stop()
         level = 0
         state = .processing
+
+        // Nothing was captured, so there is nothing to finalise — and finalising anyway is not
+        // merely pointless, it hangs: `finalizeAndFinishThroughEndOfInput` never returns on an
+        // analyzer that was never fed, which left the pill spinning on the dots until the app was
+        // force-quit. A capture that produced no audio is a failure the user has to be told about,
+        // because the alternative is dictating into nothing and not finding out.
+        guard recorder.capturedFrames > 0 else {
+            logLine("dictation discarded: no audio captured")
+            sessionGeneration += 1
+            Task { await transcriber.cancelSession() }
+            showNotice("No audio from \(AudioRecorder.currentInputDeviceName())")
+            state = .idle
+            partialText = ""
+            sendEnter = false
+            return
+        }
 
         let context = capturedContext ?? ContextDetector.current()
         let generation = sessionGeneration
