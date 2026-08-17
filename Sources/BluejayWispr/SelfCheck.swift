@@ -58,6 +58,75 @@ enum SelfCheck {
                      == "I like it, and it looks like a bug, something like that.")
         precondition(LLMCleaner.stripFillers("Do you know the answer?") == "Do you know the answer?")
         precondition(LLMCleaner.stripFillers("Ship it and like the post.") == "Ship it and like the post.")
+
+        // Dictionary respelling is code, not the model: at 0.6B the prompt's vocabulary line went
+        // unapplied on every real dictation ("Christian Parik" shipped as-is with both names in
+        // the prompt), so the substitution runs after the model, where it cannot be ignored.
+        let vocab = ["Krishin", "Parikh", "Claude", "worktree", "Kubernetes"]
+        // One edit away respells; exact letters in the wrong case take the dictionary casing.
+        precondition(LLMCleaner.applyVocabulary("Ask Parik about it.", vocabulary: vocab)
+                     == "Ask Parikh about it.")
+        precondition(LLMCleaner.applyVocabulary("ask claude to fix it", vocabulary: vocab)
+                     == "ask Claude to fix it")
+        // A sound-alike is corrected only beside another dictionary hit — a misheard name arrives
+        // as a misheard pair, and the pair is the evidence...
+        precondition(LLMCleaner.applyVocabulary("My name is Christian Parik.", vocabulary: vocab)
+                     == "My name is Krishin Parikh.")
+        // ...and the evidence must be a word the pass itself respelled. An exact dictionary hit
+        // is a word the recognizer got RIGHT, and with a dictionary of common dev terms it fires
+        // on nearly every dictation: "per api key" shipped as "Vite API git" on a real one when
+        // exact matches licensed their neighbors. The case fix on "api" still applies.
+        precondition(LLMCleaner.applyVocabulary("a token bucket per api key",
+                                                vocabulary: ["Vite", "API", "git"])
+                     == "a token bucket per API key")
+        // ...so the same sound-alikes alone are never touched: not every christian is Krishin and
+        // not every cloud is Claude.
+        precondition(LLMCleaner.applyVocabulary("the christian church", vocabulary: vocab)
+                     == "the christian church")
+        precondition(LLMCleaner.applyVocabulary("push it to cloud storage", vocabulary: vocab)
+                     == "push it to cloud storage")
+        // A word the recognizer got RIGHT is never respelled, however close it sits to a term.
+        // "just put a code fix for it" shipped as "just put a Xcode Vite for it" on a real
+        // dictation: levenshtein("code", "xcode") is 1, and correcting it licensed the phonetic
+        // tier on its neighbour. Being real English is what disqualifies it — not being long,
+        // because "Parik" above is five letters and must still respell.
+        precondition(LLMCleaner.applyVocabulary("just put a code fix for it",
+                                                vocabulary: ["Xcode", "Vite"])
+                     == "just put a code fix for it")
+        precondition(LLMCleaner.applyVocabulary("i sent you a gift",
+                                                vocabulary: ["git"]) == "i sent you a gift")
+        precondition(LLMCleaner.applyVocabulary("hold shift and click",
+                                                vocabulary: ["Swift"]) == "hold shift and click")
+        // The guard is the word list, so its absence must not be silent.
+        precondition(!LLMCleaner.englishWords.isEmpty,
+                     "/usr/share/dict/words is missing — vocabulary respelling is unguarded")
+        // Two words that concatenate into a term join.
+        precondition(LLMCleaner.applyVocabulary("commit the work tree changes", vocabulary: vocab)
+                     == "commit the worktree changes")
+        // Short words never respell: "def" in a terminal is a Python keyword, not a mishearing
+        // of "dev". Identifiers and anything with an inner capital are likewise untouchable.
+        precondition(LLMCleaner.applyVocabulary("def main", vocabulary: ["dev"]) == "def main")
+        precondition(LLMCleaner.applyVocabulary("run FLAG_RETRY_V2 now", vocabulary: ["flagRetry"])
+                     == "run FLAG_RETRY_V2 now")
+
+        // Recognizer homophones. The real transcript: "branches that all need to be merged into
+        // Maine". The swap is whole-word and runs with an empty dictionary too, since it is not
+        // a dictionary entry — and it must not drag the rhymes along with it, which is exactly
+        // what putting "main" in the dictionary would have done at edit distance 1.
+        precondition(LLMCleaner.applyVocabulary("merge it into Maine.", vocabulary: [])
+                     == "merge it into main.")
+        precondition(LLMCleaner.applyVocabulary("rebase onto Maine", vocabulary: vocab)
+                     == "rebase onto main")
+        precondition(LLMCleaner.applyVocabulary("check the mail in the rain", vocabulary: vocab)
+                     == "check the mail in the rain")
+
+        // The trailing period comes off when "End with a period" is off — but only a lone final
+        // full stop. Question marks carry meaning, inner sentence periods stay, and a trailing
+        // identifier keeps its dots.
+        precondition(LLMCleaner.droppingTrailingPeriod("Blue Jays.") == "Blue Jays")
+        precondition(LLMCleaner.droppingTrailingPeriod("Did the deploy work?") == "Did the deploy work?")
+        precondition(LLMCleaner.droppingTrailingPeriod("Ship it. Then tag it") == "Ship it. Then tag it")
+        precondition(LLMCleaner.droppingTrailingPeriod("tail app.log") == "tail app.log")
         // Bare "like" mid-sentence is deliberately left in. "or like the task bar" is filler and
         // "and like the post" is a verb, and only what sits before the conjunction tells them
         // apart, so this one goes to the prompt rather than to a regex.
@@ -150,6 +219,31 @@ enum SelfCheck {
             + "session. We should fix those before Friday.", raw: raw))
         // Too short to judge — one dropped word would swing the ratio past any threshold.
         precondition(!LLMCleaner.losesContent("Does it work?", raw: "um does it uh does it work"))
+
+        // Verbatim, and it reproduced every run: the last sentence simply gone, at 88% of the words
+        // and ~90% content recall, so both ratios above pass it. Position is what sees it.
+        let tailLost = "Date filtering is very limited, and there is some redundant types at the "
+            + "bottom. The custom line should be a, should show a modal that will show, like, a date "
+            + "selection and time selection. So not only it'll be days, but also time. Like, let's "
+            + "say I want to see the past 12 hours. It should be really easy to do that."
+        let withoutTail = "Date filtering is very limited, and there are some redundant types at the "
+            + "bottom. The custom line should show a modal with a date and time selection, so not "
+            + "only days but also time. Let's say I want to see the past 12 hours."
+        precondition(!LLMCleaner.looksTruncated(withoutTail, raw: tailLost), "88% of the words")
+        precondition(!LLMCleaner.losesContent(withoutTail, raw: tailLost), "~90% content recall")
+        precondition(LLMCleaner.dropsTail(withoutTail, raw: tailLost), "the last sentence is gone")
+        // The same cleanup with that sentence kept is correct and must ship.
+        precondition(!LLMCleaner.dropsTail(withoutTail + " It should be really easy to do that.",
+                                           raw: tailLost))
+        // A respelling of the final word is not a deletion, in either direction.
+        let respelled = "check the work tree before you rebase, and then run the whole suite again "
+            + "against the staging database and the local work tree"
+        precondition(!LLMCleaner.dropsTail(
+            "Check the worktree before you rebase, then run the whole suite again against the "
+            + "staging database and the local worktree.", raw: respelled))
+        // Short dictations are not judged: the last word is as likely to be a discarded "yeah".
+        precondition(!LLMCleaner.dropsTail("Ship it today.", raw: "um so i think we should just ship "
+                                           + "it um today yeah"))
 
         checkLowTouchInvariant()
 
@@ -283,7 +377,11 @@ enum SelfCheck {
         func lower(_ s: String) -> String { LLMCleaner.lowercaseSentenceStarts(s, keeping: vocab) }
 
         precondition(lower("Run the tests. Then commit.") == "run the tests. then commit.")
-        precondition(lower("I think it works") == "i think it works")
+        // "I" keeps its capital wherever it lands. This case used to assert the opposite, which
+        // is how "i thought I did that" reached a real dictation looking like a typo.
+        precondition(lower("I think it works") == "I think it works")
+        precondition(lower("I thought I did that.") == "I thought I did that.")
+        precondition(lower("I'm on it. I'll check.") == "I'm on it. I'll check.")
         // Dictionary terms, acronyms, and internal capitals all keep theirs.
         precondition(lower("Kubernetes crashed again") == "Kubernetes crashed again")
         precondition(lower("Ship it. Kubernetes is fine.") == "ship it. Kubernetes is fine.")
@@ -414,6 +512,63 @@ enum SelfCheck {
         precondition(Shortcut.fn.usesFn && !combo.usesFn)
         precondition(Shortcut(trigger: .key(kVK_ANSI_D),
                               flags: CGEventFlags.maskSecondaryFn.rawValue).usesFn)
+
+        // Recording a binding: hold the combination, let go, and what was down is what is saved.
+        // Both halves are from real reports — ⌃⇧G recorded as ⇧G, and ⌃⇧ not recording at all.
+        //
+        // The flags on these keyDowns are deliberately wrong, because that is the bug: the
+        // recorder swallows each modifier's flagsChanged, so the window server never learns the
+        // modifier went down and the flags it stamps on the following keyDown are missing it —
+        // the modifier held *first* being the one that vanishes.
+        func record(_ steps: [(CGEventType, Int?, CGEventFlags)]) -> Shortcut? {
+            var state = ShortcutMonitor.CaptureState()
+            for (type, code, flags) in steps {
+                if case .record(let shortcut) = ShortcutMonitor.captureStep(
+                    type: type, keyCode: code, mouseButton: nil, flags: flags, state: &state) {
+                    return shortcut
+                }
+            }
+            return nil
+        }
+        // ⌃⇧G, with the keyDown carrying only shift, then everything released.
+        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
+                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
+                             (.keyDown, kVK_ANSI_G, [.maskShift]),
+                             (.keyUp, kVK_ANSI_G, [.maskShift]),
+                             (.flagsChanged, kVK_Shift, [.maskControl]),
+                             (.flagsChanged, kVK_Control, [])])?.display == "⌃⇧G")
+        // Nothing is recorded until the last key is up: the same sequence, stopped early.
+        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
+                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
+                             (.keyDown, kVK_ANSI_G, [.maskShift]),
+                             (.keyUp, kVK_ANSI_G, [.maskShift])]) == nil)
+        // Modifiers with no key at all is a binding in its own right — hold ⌃⇧ to talk. It has
+        // no keycode, so it can only be recorded on release, which is why the model is release-
+        // to-finalize rather than first-key-wins.
+        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
+                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
+                             (.flagsChanged, kVK_Shift, [.maskControl]),
+                             (.flagsChanged, kVK_Control, [])])?.display == "⌃⇧")
+        // A lone modifier stays a keycode, so left ⌃ and right ⌃ remain different bindings.
+        precondition(record([(.flagsChanged, kVK_Function, [.maskSecondaryFn]),
+                             (.flagsChanged, kVK_Function, [])]) == Shortcut.fn)
+        precondition(record([(.flagsChanged, kVK_RightControl, [.maskControl]),
+                             (.flagsChanged, kVK_RightControl, [])])?.display == "Right ⌃")
+        // A plain key with no modifiers at all.
+        precondition(record([(.keyDown, kVK_ANSI_G, []), (.keyUp, kVK_ANSI_G, [])])?.display == "G")
+
+        // A modifiers-only binding fires when its set completes and stops when it breaks — the
+        // set is the whole gesture, so it matches exactly rather than as a subset.
+        let ctrlShift = Shortcut(trigger: .modifiers,
+                                 flags: CGEventFlags([.maskControl, .maskShift]).rawValue)
+        precondition(ctrlShift.matches(modifiers: [.maskControl, .maskShift]))
+        precondition(!ctrlShift.matches(modifiers: [.maskControl]))
+        precondition(!ctrlShift.matches(modifiers: [.maskControl, .maskShift, .maskCommand]))
+        precondition(!ctrlShift.matches(modifiers: []))
+        // It carries no keycode, so the key path must never claim it as well.
+        precondition(!ctrlShift.matches(keyCode: kVK_Control, flags: [.maskControl, .maskShift]))
+        precondition(Shortcut(trigger: .modifiers,
+                              flags: CGEventFlags([.maskSecondaryFn, .maskShift]).rawValue).usesFn)
 
         // Round trip: bindings live in UserDefaults as JSON.
         let saved = ["pushToTalk": [Shortcut.fn, combo], "handsFree": [mouse4]]

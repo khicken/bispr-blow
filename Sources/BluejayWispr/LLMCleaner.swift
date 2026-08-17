@@ -13,20 +13,15 @@ final class LLMCleaner {
         var isInProcess: Bool { baseURL.isEmpty }
     }
 
-    /// In-process, so no separate app and nothing for the user to start. Ordered **last** for now,
-    /// and the reason is a fixable bug rather than a verdict on the runtime: LocalLLMClient trims its
-    /// KV cache inside a Swift `assert`, which `-O` compiles out, so the static prefix is re-prefilled
-    /// every call and the context grows until it overflows (see CLAUDE.md). Measured that way it looks
-    /// 2.6x slower than LM Studio; decode alone is ~200ms at ~110 tok/s, so with the trim working a
-    /// dictation should land around 250-350ms and beat the HTTP path. Promote this to first only after
-    /// that fix and a bench run — never on the strength of the integration merely existing.
+    /// In-process, so no separate app and nothing for the user to start. First — and it earned the
+    /// spot on a bench run, not on the integration existing: MLX weights through the forked
+    /// LocalLLMClient with prompt-prefix caching read 96%/85% recall/quality at 0.19s median over
+    /// the 26 cases, against LM Studio's 96%/85% at 0.33s. LM Studio itself was retired on that
+    /// result. The HTTP entry stays as an escape hatch for any OpenAI-compatible server someone
+    /// happens to run; nothing starts or keeps such a server alive anymore.
     static let onDevice = Endpoint(baseURL: "", name: "On-device")
-    static let lmStudio = Endpoint(baseURL: "http://localhost:1234/v1", name: "LM Studio")
-    static let ollama = Endpoint(baseURL: "http://localhost:11434/v1", name: "Ollama")
-    /// Every server we know how to reach, tried in order. Deliberately not a setting: which local
-    /// server is installed is something we can find out by asking it, and asking the user instead
-    /// only gives them a way to get it wrong.
-    private static let endpoints = [lmStudio, ollama, onDevice]
+    static let localServer = Endpoint(baseURL: "http://localhost:1234/v1", name: "Local server")
+    private static let endpoints = [onDevice, localServer]
 
     private let settings: AppSettings
     /// Resolved once per app launch, re-resolved when the mode changes or the endpoint fails.
@@ -56,8 +51,14 @@ final class LLMCleaner {
     /// ends in text that goes to the cursor and there are six of them.
     func clean(_ raw: String, context: AppContext) async -> (text: String, provider: String) {
         let result = await cleaned(raw, context: context)
-        guard settings.lowercaseSentences else { return result }
-        return (Self.lowercaseSentenceStarts(result.text, keeping: settings.vocabulary), result.provider)
+        var text = Self.applyVocabulary(result.text, vocabulary: settings.vocabulary)
+        if settings.lowercaseSentences {
+            text = Self.lowercaseSentenceStarts(text, keeping: settings.vocabulary)
+        }
+        if !settings.endWithPeriod {
+            text = Self.droppingTrailingPeriod(text)
+        }
+        return (text, result.provider)
     }
 
     private func cleaned(_ raw: String, context: AppContext) async -> (text: String, provider: String) {
@@ -104,17 +105,17 @@ final class LLMCleaner {
                 return (Self.ruleClean(trimmed), "rules")
             }
             logLine("cleanup escalating to \(careful)")
-            // The careful budget plus a cold-prefill allowance: LM Studio's MLX prompt cache holds
-            // one prefix globally, so the escalation model is always cold (measured 5.5-8s for the
-            // prefill on qwen3-1.7b). The wait is bounded and only paid by dictations that were
-            // about to ship as barely-cleaned rules anyway — for the long rambles that trip the
-            // guards, seconds after a minute of speaking beats losing the punctuation.
+            // The careful budget plus a cold-load allowance: LocalEngine holds one resident model,
+            // so escalating swaps it out and pays the careful model's load plus a full prefill.
+            // Bounded, and only paid by dictations that were about to ship as barely-cleaned rules
+            // anyway — for the long rambles that trip the guards, seconds after a minute of
+            // speaking beats losing the punctuation.
             let outcome = await attempt(endpoint: endpoint, model: careful, trimmed: trimmed,
                                         context: context, lowTouch: lowTouch,
                                         deadline: Self.deadlineMs(words: words, careful: true) + 6000)
-            // Whatever happened, the fast model's prefix cache was just evicted by the model
-            // switch — without this, the next ordinary dictation pays ~4.5s and misses its
-            // deadline, turning one bad dictation into two.
+            // Whatever happened, the fast model was just swapped out by the escalation — without
+            // this, the next ordinary dictation pays the reload and misses its deadline, turning
+            // one bad dictation into two.
             Task { await self.warmUp() }
             switch outcome {
             case .ok(let text):
@@ -151,26 +152,10 @@ final class LLMCleaner {
             // Empty output falls back to rule-cleaned text, not the bare transcript — a model
             // that returns nothing shouldn't leave the fillers in too.
             let result = Self.sanitize(cleaned, fallback: Self.ruleClean(trimmed))
-            // Small models summarize long dictations or stop mid-sentence with an ellipsis.
-            // Losing the speaker's words is worse than leaving fillers in, so keep everything.
-            if Self.looksTruncated(result, raw: trimmed) {
-                logLine("cleanup dropped content (\(result.count) of \(trimmed.count) chars)")
-                return .rejected
-            }
-            // Both paths: the words that carry the meaning have to still be there. This is the one
-            // that catches a model stopping halfway through a long dictation while landing on a
-            // word count the length ratio above is happy with.
-            if Self.losesContent(result, raw: trimmed) {
-                logLine("cleanup lost content words")
-                return .rejected
-            }
-            // On the low-touch path the model was told it may only delete, repunctuate and respell.
-            // Check it rather than trust it: this is the one that catches a swapped word, which
-            // leaves the length untouched and so is invisible to looksTruncated.
-            if lowTouch, Self.rewordsContent(result, raw: trimmed,
-                                             allowed: Self.allowedTerms(vocabulary: settings.vocabulary,
-                                                                        draftTerms: context.draftTerms)) {
-                logLine("cleanup reworded content on the coding path")
+            if let why = Self.rejection(result, raw: trimmed, lowTouch: lowTouch,
+                                        allowed: Self.allowedTerms(vocabulary: settings.vocabulary,
+                                                                   draftTerms: context.draftTerms)) {
+                logLine("cleanup \(why.rawValue) (\(result.count) of \(trimmed.count) chars)")
                 return .rejected
             }
             // Whatever fillers the model left in, take out deterministically.
@@ -241,44 +226,21 @@ final class LLMCleaner {
         }
     }
 
-    /// Boots the LM Studio headless server if it isn't already up (it tends to stop on
-    /// its own). Fire-and-forget at app launch; no-op if lms isn't installed.
-    static func bootLMStudioIfNeeded() async {
-        if let url = URL(string: lmStudio.baseURL + "/models") {
-            var request = URLRequest(url: url, timeoutInterval: 2)
-            request.httpMethod = "GET"
-            if (try? await URLSession.shared.data(for: request)) != nil { return }  // already up
-        }
-        let lms = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".lmstudio/bin/lms")
-        guard FileManager.default.isExecutableFile(atPath: lms.path) else { return }
-        let process = Process()
-        process.executableURL = lms
-        process.arguments = ["server", "start"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            logLine("started LM Studio server")
-        } catch {
-            logLine("failed to start LM Studio server: \(error)")
-        }
-    }
-
-    /// Resolves the endpoint and fires a tiny completion so LM Studio JIT-loads the model
-    /// at launch instead of on the first dictation (~20s cold for gpt-oss-20b).
+    /// Resolves the endpoint and fires a tiny completion so the model loads and both prompt
+    /// prefixes enter the KV cache at launch instead of on the first dictation.
     func warmUp() async {
+        // Build the English word list now rather than inside the first dictation's deadline.
+        _ = Self.englishWords
         if resolutionIsStale { resolved = nil }
         if resolved == nil { resolved = await resolveEndpoint() }
         guard let (endpoint, model, _) = resolved else { return }
-        // Both prefixes, because there are two of them now and each has its own cache entry. Miss
-        // one and the first dictation on that path pays full prefill (~3.5s measured warm on
-        // qwen3-4b) — which, with a 450ms deadline, means it silently falls back to rules.
-        // No deadline here on purpose: this call is the one that JIT-loads the model (~20s cold).
-        // Only the resolved model — do NOT warm the escalation model too. LM Studio's MLX prompt
-        // cache holds one prefix globally: serving any model evicts every other model's cache
-        // (measured: 0.12s → 4.5s on the very next call after touching the other model). Warming
-        // the careful model after the fast one would hand the first real dictation a cold cache.
+        // No deadline here on purpose: this call is the one that loads the model.
+        // Only the resolved model — do NOT warm the escalation model too: LocalEngine holds one
+        // resident model, so warming the careful one would swap the fast one back out and hand
+        // the first real dictation a cold load.
+        // The engine keeps ONE cached prompt sequence, so of these two warms only the second
+        // survives — lowTouch last, because coding is the dominant context and a category switch
+        // only costs a prefix re-prefill (~0.3-0.9s, inside every deadline), not a model load.
         for lowTouch in [false, true] {
             var messages = Self.staticPrefix(vocabulary: settings.vocabulary, lowTouch: lowTouch)
             messages.append(["role": "user", "content": "App: Notes (general)\nTranscript: ok"])
@@ -470,7 +432,7 @@ final class LLMCleaner {
     Cleanup rules — this is a LOW-TOUCH pass. This text is going into a terminal, a code editor, or a prompt for an AI coding agent. A machine reads it, nobody is judging the grammar, and a reworded identifier or a dropped option breaks it. Deleting a filler is safe. Changing a word is not.
     - Remove fillers (um, uh, er, "like" and "you know" when used as filler), stutters, and a word accidentally doubled back-to-back ("the the tests"). A phrase repeated on purpose, usually with punctuation between the repeats ("really, really slow", "Blue Jays, Blue Jays, Blue Jays"), is emphasis — keep every repeat.
     - Add punctuation, capitalization, and sentence breaks.
-    - Render spoken symbols as symbols: "dash dash force" → "--force", "dot env" → ".env", "dot ts" → ".ts", "open paren" → "(".
+    - Render spoken symbols as symbols: "dash dash force" → "--force", "dot env" → ".env", "dot ts" → ".ts", "open paren" → "(", "X underscore audio" → "X_audio", "re hyphen run" → "re-run".
     - A digit standing where a word belongs is the recognizer mishearing, not the speaker: "best 4 a sentence" → "best for a sentence", "push 2 dev" → "push to dev", "we 8 lunch" → "we ate lunch". Only when the numeral plainly is not a number — "retry 3 times" stays "3".
     - Change nothing else. Do not reorder words. Do not merge, split, or rephrase clauses. Do not fix grammar or awkward phrasing. Do not swap a word for a better one. Every word the speaker said, other than a filler or a stutter, appears in the output, in the order they said it.
     - Do NOT resolve self-corrections, and do not delete anything that looks like one. "We could do X, or actually Y, or maybe Z" is a speaker listing three options — all three stay, and so does "actually". Keep "sorry", "no", "I mean" and the phrases around them. If the speaker really did replace something, leaving both in is the correct outcome here.
@@ -512,6 +474,27 @@ final class LLMCleaner {
          "The tooltip needs to sit above the row, and let's do it this sprint."),
         ("App: Notes (general)\nTranscript: okay so um i tested the new build and uh the login flow it's it's mostly working but i found like two issues one is the the spinner never goes away on slow connections and two um when you when you log out it doesn't actually clear the session so so yeah we should probably fix those before before friday",
          "I tested the new build and the login flow is mostly working, but I found two issues. First, the spinner never goes away on slow connections. Second, when you log out it doesn't actually clear the session. We should fix those before Friday."),
+        // The custom-vocabulary line went unapplied on every real dictation (misheard names passed
+        // straight through) until it had a demonstration; the corrected term is one of the
+        // instruction line's own canonical examples, so the demo is consistent for every user.
+        ("App: Notes (general)\nTranscript: did the cooper netties deploy work",
+         "Did the Kubernetes deploy work?"),
+        // This one is last on purpose, and it has to stay a short `(general)` imperative.
+        //
+        // At 0.6b the nearest same-category demonstration is copied, not generalised from, and for
+        // a while the last two demos were both `(general)` questions. Every short general
+        // imperative came back as one: "send the invoice to finance" and "add a note about the
+        // pricing change" both shipped the literal string "Did the Kubernetes deploy work?", and
+        // "cancel the meeting" became "did the meeting cancel?". No guard catches it — every guard
+        // is floored at 12 content words, and a short dictation has none — so it went straight to
+        // the cursor. Kaleb has six of these in his history. Questions were fine, long dictations
+        // were fine, and coding and chat were fine, because each had its own nearest demo; it was
+        // specifically the shape with no demonstration that got swallowed by the nearest one.
+        //
+        // Keep an imperative here, keep it short, and do not let the vocabulary demo above drift
+        // back to being last.
+        ("App: Notes (general)\nTranscript: um cancel the the meeting and uh let finance know",
+         "Cancel the meeting and let finance know."),
     ]
 
     /// The coding path's own demonstrations. A low-touch *rule* paired with the polish few-shot
@@ -535,10 +518,16 @@ final class LLMCleaner {
         // "4 now" is the second half of the digit lesson, and it is the harder half: "push 2 dev"
         // has no reading where 2 is a quantity, but "the best 4" does, so the rule alone left it
         // as a numeral on both 0.6b and 1.7b. Two demonstrations is what moved it.
-        ("App: Claude (coding)\nTranscript: we could um cache it in redis or actually maybe just in memory or or like a plain dict would probably be fine 4 now",
-         "We could cache it in Redis, or actually maybe just in memory, or a plain dict would probably be fine for now."),
+        ("App: Claude (coding)\nTranscript: we could um cache it in redis keyed on user underscore id or actually maybe just in memory or or like a plain dict would probably be fine 4 now",
+         "We could cache it in Redis keyed on user_id, or actually maybe just in memory, or a plain dict would probably be fine for now."),
         ("App: Claude (coding)\nTranscript: okay so um i want you to look at the the way we're doing the retry logic in the webhook sender because right now uh it retries three times with a fixed backoff and i don't think that's right um so what i want is exponential backoff starting at like two hundred milliseconds and capping at uh thirty seconds and then also we should we should only retry on five hundreds and timeouts not on four hundreds because a four hundred is never going to succeed on a retry um and then the other thing is the the dead letter queue we don't have one right now so anything that fails all its retries just uh just disappears which is bad so i want a dead letter table with the original payload and the error and the the attempt count and then um a way to replay from it maybe a cli command or or actually a button in the dashboard or maybe both i don't know what you think is easier um and then last thing is uh make sure the retry state is in postgres not in memory because we we lost a bunch of retries last time the pod restarted and uh yeah write tests for the backoff calculation specifically the the cap because that's the part i got wrong last time",
          "Okay, so I want you to look at the way we're doing the retry logic in the webhook sender, because right now it retries three times with a fixed backoff and I don't think that's right. So what I want is exponential backoff starting at 200 milliseconds and capping at 30 seconds. And then also, we should only retry on 500s and timeouts, not on 400s, because a 400 is never going to succeed on a retry. And then the other thing is the dead letter queue. We don't have one right now, so anything that fails all its retries just disappears, which is bad. So I want a dead letter table with the original payload and the error and the attempt count, and then a way to replay from it. Maybe a CLI command, or actually a button in the dashboard, or maybe both, I don't know what you think is easier. And then last thing is, make sure the retry state is in Postgres, not in memory, because we lost a bunch of retries last time the pod restarted. And yeah, write tests for the backoff calculation, specifically the cap, because that's the part I got wrong last time."),
+        // "Do not swap a word for a better one" above directly contradicts the custom-vocabulary
+        // instruction, and on this path the contradiction always resolved against the vocabulary —
+        // misheard terms passed through uncorrected. The demo settles it: a respelling toward the
+        // vocabulary is a spelling fix, not a swap (and `rewordsContent` exempts it as such).
+        ("App: Terminal (coding)\nTranscript: commit the work tree changes",
+         "Commit the worktree changes."),
     ]
 
     /// The identical leading messages of every cleanup call (cache-friendly). Two variants, so the
@@ -624,7 +613,12 @@ final class LLMCleaner {
             // the rest of the punctuation comes off to compare the word against the dictionary.
             let quoted = word.trimmingCharacters(in: CharacterSet(charactersIn: "\"')]}”’"))
             let bare = quoted.trimmingCharacters(in: CharacterSet(charactersIn: ".,!?;:"))
-            if opensSentence, word.first?.isUppercase == true,
+            // "I" is a word that is always capitalised, not a sentence's opening capital, and
+            // lowercasing it is the one case where this pass reads as wrong rather than casual:
+            // "I thought I did that." shipped as "i thought I did that", the second one untouched
+            // because only the first word opens a sentence. Contractions count — "I'm", "I'll".
+            let pronounI = bare == "I" || bare.hasPrefix("I'") || bare.hasPrefix("I’")
+            if opensSentence, word.first?.isUppercase == true, !pronounI,
                !protected.contains(bare), !bare.dropFirst().contains(where: \.isUppercase) {
                 out += word.prefix(1).lowercased() + word.dropFirst()
             } else {
@@ -644,6 +638,208 @@ final class LLMCleaner {
         }
         flush()
         return out
+    }
+
+    /// The period the model puts on the very end is its habit, not something the speaker said,
+    /// and on a one-or-two-word dictation it reads as noise ("Blue Jays."). Off by default via
+    /// `AppSettings.endWithPeriod`. Only a lone final "." comes off: question marks and
+    /// exclamations carry meaning, sentence periods inside the text stay, and a trailing "app.log"
+    /// or "v2.0" never ends in a bare period to begin with.
+    static func droppingTrailingPeriod(_ text: String) -> String {
+        text.hasSuffix(".") && !text.hasSuffix("..") ? String(text.dropLast()) : text
+    }
+
+    /// Homophones the recognizer picks the wrong side of, keyed lowercase. Only words whose
+    /// other meaning a dictation into this app essentially never wants belong here: the swap is
+    /// unconditional, so "the coast of Maine" becomes "the coast of main" too. Keep it short.
+    static let misheard: [String: String] = ["maine": "main"]
+
+    /// Deterministic dictionary respelling, after the model. The prompt asks the model to correct
+    /// sound-alikes to the vocabulary, and at 0.6B–1.7B it simply does not: "Christian Parik"
+    /// shipped uncorrected on every real dictation even with both names in the prompt. Code cannot
+    /// fail the way a small model does, and it also covers the rules fallback, which has no model
+    /// at all. Substitution is deliberately tiered, because a wrong swap corrupts the user's words:
+    ///
+    /// - exact: same letters, wrong case → take the dictionary casing ("claude" → "Claude").
+    /// - near: edit distance ≤1 (≤2 from eight letters), four letters minimum — "Parik" → "Parikh"
+    ///   but never "def" → "dev", which would rewrite a Python keyword in a terminal.
+    /// - loose: sound-alike by phonetic key ("Christian" ~ "Krishin") — accepted ONLY next to a
+    ///   word this pass itself just respelled, because alone this tier would turn every "cloud"
+    ///   into "Claude". A misheard name usually arrives as a misheard *pair*, and the correction
+    ///   is the evidence. An exact match is NOT evidence: it means the recognizer got that word
+    ///   right, and with a dictionary full of common terms it fires constantly — "per api key"
+    ///   shipped as "Vite API git" on a real dictation when exact matches counted.
+    /// - joined: two words that concatenate into a term ("work tree" → "worktree").
+    ///
+    /// Ahead of all four tiers is `misheard`: whole words the recognizer reliably hears as the
+    /// wrong homophone, which the dictionary cannot express safely. "Maine" for "main" is the
+    /// live case — the raw transcript really does say Maine, cleanup faithfully keeps it, and
+    /// putting "main" in the dictionary is not the fix: at four letters the `near` tier would
+    /// then rewrite "mail", "rain", "pain" and "gain" into "main" as well. An exact whole-word
+    /// swap is the only form that corrects the mishear without endangering its neighbours.
+    /// Ordinary English, so the dictionary cannot "respell" a word the recognizer got right. macOS
+    /// ships Webster's Second at `/usr/share/dict/words`; filtered to the lengths `near` can fire
+    /// on, and every entry short enough to live inline in a Swift `String`, so it costs a few MB
+    /// rather than a per-word allocation. Loaded once and touched by `warmUp`, because building it
+    /// inside the first dictation would spend that dictation's deadline on it.
+    ///
+    /// Empty when the file is missing, which restores the previous behaviour exactly rather than
+    /// disabling the dictionary — a machine without the word list gets the old false positives,
+    /// not a broken respeller.
+    static let englishWords: Set<String> = {
+        guard let text = try? String(contentsOfFile: "/usr/share/dict/words", encoding: .utf8)
+        else {
+            logLine("vocabulary guard: /usr/share/dict/words missing, respelling unguarded")
+            return []
+        }
+        return Set(text.split(separator: "\n").lazy
+            .filter { $0.count >= 4 }
+            .map { $0.lowercased() })
+    }()
+
+    static func applyVocabulary(_ text: String, vocabulary: [String]) -> String {
+        let terms = vocabulary.filter { !$0.isEmpty && !$0.contains(" ") }
+
+        // Words and the separators between them, so reassembly preserves the original spacing.
+        var words: [String] = []
+        var seps: [String] = [""]
+        for ch in text {
+            if ch.isWhitespace {
+                if words.count == seps.count { seps.append(String(ch)) } else { seps[seps.count - 1].append(ch) }
+            } else {
+                if words.count < seps.count { words.append(String(ch)) } else { words[words.count - 1].append(ch) }
+            }
+        }
+        if words.count == seps.count { seps.append("") }
+
+        func bare(_ w: String) -> String {
+            w.trimmingCharacters(in: CharacterSet(charactersIn: "\"')]}”’([{“‘.,!?;:"))
+        }
+        // Identifiers, paths, numbers: not the recognizer mishearing a name, leave them alone.
+        func plainWord(_ b: String) -> Bool {
+            !b.isEmpty && b.allSatisfy(\.isLetter) && !b.dropFirst().contains(where: \.isUppercase)
+        }
+        func replace(_ i: Int, with term: String) {
+            let w = words[i], b = bare(w)
+            guard let r = w.range(of: b) else { return }
+            words[i] = w.replacingCharacters(in: r, with: term)
+        }
+
+        enum Tier: Int { case none, loose, near, exact }
+        func tier(_ b: String, _ term: String) -> Tier {
+            let w = b.lowercased(), t = term.lowercased()
+            if w == t { return .exact }
+            guard w.count >= 3, t.count >= 3 else { return .none }
+            // `near` fires without the matched-neighbour evidence `loose` demands, so the one thing
+            // it must never do is overwrite a word the recognizer already got right. Measured:
+            // "just put a code fix for it" shipped as "just put a Xcode Vite for it", because
+            // levenshtein("code", "xcode") is 1 — and correcting it then licensed `loose` on its
+            // neighbour, which is how "fix" became "Vite". Scanning the shipped dictionary against
+            // the system word list, "git" ate gift/gist/grit/gilt/gait, "Vite" ate site/cite/bite/
+            // kite/rite, "Swift" ate shift and sift, "linter" ate liner/linger/linker, "Claude" ate
+            // clause, "doc" ate dock and "CLI" ate clip. This is the trap the note above describes
+            // for "main", and it was live.
+            //
+            // A length floor is the obvious fix and the wrong one: "Parik" → "Parikh" is five
+            // letters and is exactly what the dictionary is for. Being real English is the
+            // discriminator, not being long.
+            if w.count >= 4, !englishWords.contains(w),
+               levenshtein(w, t) <= (max(w.count, t.count) >= 8 ? 2 : 1) { return .near }
+            if abs(w.count - t.count) <= 3, levenshtein(phoneticKey(w), phoneticKey(t)) <= 1 { return .loose }
+            return .none
+        }
+
+        var corrected = Set<Int>()
+        var looseCandidates: [(index: Int, term: String)] = []
+        var i = 0
+        while i < words.count {
+            let b = bare(words[i])
+            guard plainWord(b) else { i += 1; continue }
+            if let fix = Self.misheard[b.lowercased()] {
+                replace(i, with: fix)
+                corrected.insert(i)
+                i += 1
+                continue
+            }
+            // Two words that join into one term: "work tree" → "worktree".
+            if i + 1 < words.count, words[i].hasSuffix(bare(words[i])) {
+                let b2 = bare(words[i + 1])
+                if plainWord(b2), let term = terms.first(where: { tier(b + b2, $0) == .exact }) {
+                    let tail = String(words[i + 1].dropFirst(b2.count))
+                    replace(i, with: term)
+                    words[i] += tail
+                    words.remove(at: i + 1)
+                    seps.remove(at: i + 1)
+                    corrected.insert(i)
+                    i += 1
+                    continue
+                }
+            }
+            var best: (Tier, String)? = nil
+            for term in terms {
+                let t = tier(b, term)
+                if t.rawValue > (best?.0.rawValue ?? 0) { best = (t, term) }
+            }
+            switch best {
+            case let (.exact, term)? where term.contains(where: \.isUppercase) && b != term:
+                replace(i, with: term)
+            case (.exact, _)?:
+                break
+            case let (.near, term)?:
+                replace(i, with: term)
+                corrected.insert(i)
+            case let (.loose, term)?:
+                looseCandidates.append((i, term))
+            default:
+                break
+            }
+            i += 1
+        }
+        for (index, term) in looseCandidates where corrected.contains(index - 1) || corrected.contains(index + 1) {
+            replace(index, with: term)
+        }
+
+        return zip(seps, words + [""]).map { $0 + $1 }.joined()
+    }
+
+    /// Soundex-style consonant classes, first letter included (so C and K agree), vowels reset
+    /// the run. "christian" and "krishin" land one edit apart; "clot", "cloud" and "claude" all
+    /// collapse to the same key — which is exactly why `loose` needs a matched neighbor.
+    private static func phoneticKey(_ s: String) -> String {
+        var out = ""
+        var last: Character? = nil
+        for ch in s {
+            var code: Character? = nil
+            switch ch {
+            case "b", "f", "p", "v": code = "1"
+            case "c", "g", "j", "k", "q", "s", "x", "z": code = "2"
+            case "d", "t": code = "3"
+            case "l": code = "4"
+            case "m", "n": code = "5"
+            case "r": code = "6"
+            case "h", "w": continue
+            default: last = nil; continue
+            }
+            if code != last { out.append(code!) }
+            last = code
+        }
+        return out
+    }
+
+    private static func levenshtein(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        if x.isEmpty || y.isEmpty { return max(x.count, y.count) }
+        var row = Array(0...y.count)
+        for (i, cx) in x.enumerated() {
+            var prev = row[0]
+            row[0] = i + 1
+            for (j, cy) in y.enumerated() {
+                let cost = cx == cy ? prev : min(prev, row[j], row[j + 1]) + 1
+                prev = row[j + 1]
+                row[j + 1] = cost
+            }
+        }
+        return row[y.count]
     }
 
     /// True when cleanup clearly lost content: it elided part of the transcript, or came back
@@ -712,6 +908,76 @@ final class LLMCleaner {
         guard spoken.count >= 12 else { return false }
         let kept = spoken.intersection(content(cleaned)).count
         return Double(kept) < Double(spoken.count) * contentRecallFloor
+    }
+
+    /// Did the last thing the speaker said survive?
+    ///
+    /// The failure this exists for is "stopped early", and both ratios above are structurally blind
+    /// to it. Verbatim, and it reproduces every run: a dictation ending "It should be really easy to
+    /// do that." comes back without that sentence — 50 words of 57, which is 88% against a 55%
+    /// floor, and ~90% content recall against 0.8, because the dropped sentence repeats nothing and
+    /// contributes almost nothing. *Position* is the information a ratio throws away. A cleanup that
+    /// compressed the middle still lands on the last thing said; one that gave up halfway does not.
+    ///
+    /// The very last content word, not the last few. On the case above the dropped sentence
+    /// contributes exactly one ("really" is a common word), so "one of the last two survived" passes
+    /// it — there is no slack to spend here, which is why the two looseners below are load-bearing
+    /// rather than defensive:
+    ///
+    ///   - The floor. A dropped trailing sentence is a long-dictation failure, and on a short one
+    ///     the final word is as likely to be a discarded "yeah" as a real one. Same reason
+    ///     `losesContent` has one, and it is also what keeps this off the one-word dictations.
+    ///   - Substring, not equality. A respelling is not a deletion: "work tree" → "worktree" leaves
+    ///     the word plainly there, and so does a plural fix. This guard runs on the polish path too,
+    ///     where rewriting is the whole job, so it has to recognise the word rather than match it.
+    ///     The 4-character floor on the prefix direction is what stops "a" matching everything.
+    ///
+    /// Measured over bench/cases.json, both shipped models, 3 reps: this fires on **0 of 27** real
+    /// model outputs, while catching the repro above and 2 of the 5 multi-sentence cases when their
+    /// last sentence is deleted synthetically — 2 that no other guard catches. It misses
+    /// `snap_regions`, and the loosener is exactly why: its final word is "picked" and the
+    /// transcript already said "pick", so the prefix match accepts a tail that is gone. That is the
+    /// trade taken deliberately. A rejection ships `ruleClean`, which keeps every word and leaves
+    /// every filler in, so a guard that fires on correct output makes the app worse rather than
+    /// better — the false-positive rate is the number that decides this one, not the catch rate.
+    static func dropsTail(_ cleaned: String, raw: String) -> Bool {
+        let words = { (text: String) in
+            text.lowercased()
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+                .map(String.init)
+        }
+        let spoken = words(raw).filter { $0.count >= 3 && !AppContext.commonWords.contains($0) }
+        guard spoken.count >= 12, let last = spoken.last else { return false }
+        return !words(cleaned).contains { $0.contains(last) || ($0.count >= 4 && last.hasPrefix($0)) }
+    }
+
+    /// Every guard, in one place. Returns why the reply cannot ship, or nil to ship it.
+    ///
+    /// One place because they had already drifted: `--finish`, the seam `bench/bench.py` scores
+    /// through, never ran `losesContent` — so the content-recall guard's false-positive rate had
+    /// never once been measured on the set that exists to measure exactly that, and the bench was
+    /// quietly reporting a different app than the one that ships.
+    enum Rejection: String {
+        case truncated = "dropped content"
+        case lostContent = "lost content words"
+        case droppedTail = "dropped the last thing said"
+        case reworded = "reworded content on the coding path"
+    }
+
+    static func rejection(_ cleaned: String, raw: String, lowTouch: Bool,
+                          allowed: Set<String>) -> Rejection? {
+        // Small models summarize long dictations or stop mid-sentence with an ellipsis. Losing the
+        // speaker's words is worse than leaving fillers in, so keep everything.
+        if looksTruncated(cleaned, raw: raw) { return .truncated }
+        // Both paths: the words that carry the meaning have to still be there. This is the one that
+        // catches a model stopping halfway while landing on a word count the ratio is happy with.
+        if losesContent(cleaned, raw: raw) { return .lostContent }
+        // And the one that catches it stopping at the very end, where neither ratio can see it.
+        if dropsTail(cleaned, raw: raw) { return .droppedTail }
+        // On the low-touch path the model was told it may only delete, repunctuate and respell.
+        // Check it rather than trust it: a swapped word leaves the length untouched.
+        if lowTouch, rewordsContent(cleaned, raw: raw, allowed: allowed) { return .reworded }
+        return nil
     }
 
     /// The low-touch invariant, checked instead of trusted: every word in the output has to be

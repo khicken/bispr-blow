@@ -1,4 +1,4 @@
-# Bluejay Wispr
+# BisprBlow
 
 A local, free Wispr Flow-style dictation app for macOS, Bluejay-themed. Hold **fn** to speak, release to have cleaned-up text typed into whatever app you're in. Everything runs on your machine: Apple's on-device speech engine for transcription, a local LLM for cleanup.
 
@@ -32,10 +32,29 @@ hold fn / double-tap fn
 
 Requires macOS 26+ and Swift 6.2+ (Xcode CLT).
 
+## Installing it on another Mac
+
+`./package.sh` builds `.build/BisprBlow.pkg` — the app plus the model weights it needs, since the
+weights live outside the bundle and an app without them quietly falls back to rule-based cleanup.
+The installer asks which weights to install: the fast model always goes in, and "Accurate writing"
+is an optional 1.7 GB on top. The package is ~1.9 GB either way, because it carries both and the
+choice only decides what lands on disk.
+
+**Opening it takes an extra step.** BisprBlow is not notarized — that needs a paid Apple Developer
+Program membership — so macOS refuses the installer on a double-click. Right-click it, choose
+**Open**, then **Open** again at the warning. Same for the app's first launch. If Gatekeeper is
+stubborn:
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/BisprBlow.pkg
+```
+
+Installing to `/Library` needs an admin password, which the installer will ask for.
+
 ## First-run setup
 
 1. **Microphone** — allow when prompted.
-2. **Accessibility** (and **Input Monitoring** if prompted) — System Settings → Privacy & Security → enable Bluejay Wispr. Needed for the fn event tap and synthetic paste. With the `setup-signing.sh` identity this is a **one-time** grant; it survives rebuilds. Until granted, dictations are still copied to the clipboard and the pill says "Copied — press ⌘V to paste".
+2. **Accessibility** (and **Input Monitoring** if prompted) — System Settings → Privacy & Security → enable BisprBlow. Needed for the fn event tap and synthetic paste. With the `setup-signing.sh` identity this is a **one-time** grant; it survives rebuilds. Until granted, dictations are still copied to the clipboard and the pill says "Copied — press ⌘V to paste".
 3. **Quit Wispr Flow** if it's running — both apps grab the fn key.
 4. **LLM cleanup** — works out of the box if LM Studio's server is running (`lms server start`) with any chat model downloaded (e.g. `lms get llama-3.2-3b-instruct`). Ollama is picked up automatically too. Or point Settings → Custom at any OpenAI-compatible endpoint (e.g. Groq free tier). With no provider available, a rule-based filler-stripper keeps dictation working.
 

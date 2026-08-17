@@ -1,7 +1,13 @@
-# Bluejay Wispr
+# BisprBlow
 
 A local dictation app for macOS. Hold your shortcut, speak, release, and
 cleaned-up text lands at your cursor. Everything runs on the machine.
+
+BisprBlow is the name the user sees. Everything else is still `BluejayWispr`:
+the SwiftPM package, target and binary, `Sources/BluejayWispr/`, the bundle id
+`ai.getbluejay.wispr` and the UserDefaults suite of that name. Renaming the
+suite wipes the user's dictionary, bindings, theme and pill anchor, so the two
+names are load-bearing separately — rename the copy, never the identifiers.
 
 Shortcuts are configurable per action — push to talk, hands-free, dictate and
 send, cancel — bound to a key plus modifiers or to a mouse button, and stored in
@@ -113,10 +119,76 @@ turn it on and leave it on. A theme nobody can read is not funny, it is a bug.
 mic glyph, links. Text stays ink. Do not put gradients on the logo or the
 wordmark, and do not bake shadows into the app icon since macOS draws its own.
 
+**Measure the pill before theorising about it — `--pill-demo <anchor>`.** It replays a real
+release (recording → processing → idle, with the measured 476ms insertion gap) with no mic, model
+or event tap, and prints the pill's drawn top, bottom and centre in screen points every 8ms. It
+measures pixels plus the panel's own origin, because `rotationEffect` leaves the layout size
+unrotated and the panel is resized by AppKit on a clock of its own, so a layout probe misses
+whichever is at fault. Screen capture is not an option: `CGWindowListCreateImage` is gone in
+macOS 26 and ScreenCaptureKit wants a permission this app deliberately does not hold. Take the
+anchor as an argument — the CLI binary is not the installed bundle, so it has its own defaults
+domain and never sees the real `pillAnchor`. Three sessions tried to fix "the pill jumps" by
+reading code and asking Kaleb what he saw, and two shipped a regression; the first run of this
+found the cause in minutes.
+
+**The pill's outer frame moves on the same spring as the capsule, and the panel is not involved.**
+The capsule is centred in that frame, so any point by which the two disagree lands as *half* that
+much displacement on screen — and on a side anchor a width disagreement is vertical travel.
+Measured on `leftCentre`: sizing the frame from the incoming state snapped it ahead of the spring
+and threw the pill 19pt up, exactly (106−68)/2, where it sat for 400ms. Two plausible fixes are
+both wrong and both were measured: sizing the frame from the *panel* reproduces the same 19pt
+(the panel is not what the capsule is positioned against), and filling the panel outright does
+too. Only `.animation(Self.grow, value: targetSize)` on the frame holds — centre travel 22pt →
+2.75pt on both side anchors.
+
+**`NSHostingView.sizingOptions` must stay empty, or the panel resizes itself.** By default the
+hosting view pushes SwiftUI's ideal size up to the window as its content min/max, and AppKit
+applies it the instant the state changes — keeping the *top-left* corner, and without the
+`reposition()` a deliberate resize carries. That made `resize`'s deferred shrink a fiction: the
+panel shrank in 10ms anyway, and the 0.4s deferral only delayed the origin correction, which then
+landed as a discrete 19pt drop. It is also why the deferral looked innocent in code review — it
+was deferring the wrong half.
+
 **Reach for the plainest control that works.** SwiftUI has sharp edges on
 macOS: `DisclosureGroup` with a custom label has almost no hit target, so a
 Button plus a rotating chevron beats it. When a native control misbehaves, drop
 to AppKit rather than layering workarounds.
+
+## Packaging rules
+
+`./package.sh` builds `.build/BisprBlow.pkg`. `./build.sh` is still the local iteration path and
+package.sh calls it, so the bundle is assembled in exactly one place.
+
+**It is a .pkg because the weights are a question, and a .dmg cannot ask one.** A disk image is
+drag-and-drop with no UI. `customize="always"` in the distribution XML is what makes Installer show
+the choice pane instead of a bare Install button; without it the choices exist but nobody sees them.
+A literal drop-down needs a custom Installer plugin, which is an ObjC bundle for one question.
+
+**The Fast weights are not deselectable, and that is not timidity.** Fast means the smallest model
+installed, so a machine holding only the 1.7B resolves *Fast* to it as well — the Writing setting
+becomes a label with one model behind both sides. Shipping the 335M always is what keeps that
+setting honest, and it is also what keeps the app from launching into silent `ruleClean`.
+
+**Weights install to `/Library/Application Support/BluejayWispr/models`, not `~/Library`.** A .pkg
+cannot write to a home directory without moving the whole install to the user domain, which drags
+the app out of /Applications with it. `LocalEngine.searchRoots` scans both, home first, so a
+hand-placed model still wins over the installed one.
+
+**The choice saves disk, not download.** Both payloads are inside the one package, so it is ~1.9 GB
+whichever way the box is ticked. Making the download smaller means either two separate packages (no
+choice) or fetching over the network at first run (no code for it exists — `LocalEngine`'s comment
+about "the download-on-setup step" describes something that was never written).
+
+**package.sh fails the build when the bundle has no metallib**, because MLX aborts the process
+rather than throwing and there is no degraded mode to notice later. Verify payloads with
+`lsbom -s` on the extracted component BOMs; the weights are worth diffing against the source, since
+a truncated safetensors is invisible until first dictation.
+
+**Nothing is notarized: the Apple account is free, so there is no Developer ID cert.** The app is
+signed with the self-signed `Bluejay Wispr Dev` identity and installs behind a right-click > Open.
+Moving to a paid membership and a Developer ID is the only thing that makes it open cleanly on a
+stranger's Mac — and it will re-prompt Accessibility, Microphone and Speech Recognition on every
+machine including Kaleb's, because TCC keys grants to the signing identity.
 
 ## Cleanup rules
 
@@ -150,6 +222,29 @@ array: a low-touch *rule* paired with rewriting *demonstrations* loses, because 
 a 4B model the demonstrations win. Both prefixes stay static so each keeps its own
 KV cache entry, and `warmUp()` primes both — miss one and the first dictation on
 that path pays full prefill (~3.5s) and silently falls back to rules.
+
+**The LAST few-shot demonstration in a category is copied, not generalised from.** At 0.6b the
+nearest same-category demo dominates, and for a while the final `(general)` demo was a question —
+so every short general *imperative*, a shape with no demo of its own, came back as that question.
+"send the invoice to finance" and "add a note about the pricing change" both shipped the literal
+string "Did the Kubernetes deploy work?"; "cancel the meeting" became "did the meeting cancel?".
+Six of these reached Kaleb's history. Questions, long dictations, coding and chat were all fine,
+because each had its own nearest demo. Nothing caught it: every guard is floored at 12 content
+words, so a short dictation has none at all — the floors are right for their own false-positive
+rates, and the fix belongs in the prompt. `fewShot` therefore ends with a short `(general)`
+imperative, and the vocabulary demo must not drift back to being last. When you add a demo, ask
+what shape is now nearest to the shapes that have none.
+
+**The dictionary must never respell a word the recognizer got right.** `near` matches at one edit
+and, unlike `loose`, fires without neighbour evidence — so `levenshtein("code", "xcode") == 1` put
+"just put a Xcode Vite for it" at the cursor, the corrected "code" then licensing the phonetic tier
+on "fix". Across the shipped dictionary: "git" ate gift/gist/grit, "Vite" ate site/cite/bite,
+"Swift" ate shift, "linter" ate liner/linger/linker, "Claude" ate clause. The gate is
+`LLMCleaner.englishWords`, macOS's own `/usr/share/dict/words` — being real English is the
+discriminator. A length floor is the obvious fix and the wrong one: "Parik" → "Parikh" is five
+letters and is the case the dictionary exists for. The set is empty when the file is missing, which
+restores the old behaviour rather than disabling respelling, and `warmUp` builds it so the first
+dictation does not spend its deadline on it.
 
 **Low touch means delete, repunctuate, respell — and it is checked, not trusted.**
 `rewordsContent` requires every output word to be a subsequence of the transcript,
@@ -218,14 +313,18 @@ when the careful order resolves to a genuinely different model. Exercise it with
 `--clean` (stdin `{"raw"}` → the full resolution/guards/escalation path against the
 live endpoint); the long agent-prompt bench cases trip it reliably.
 
-**LM Studio's MLX prompt cache holds ONE prefix globally.** Serving any model evicts
-every other model's cached prefix — measured 0.12s → 4.5s on the next call after
-touching a second model, in both directions. Consequences, all load-bearing: warmUp
-must warm only the resolved model (warming a second one last would hand the first
-real dictation a cold cache); every escalation is a cold prefill (~5.5-8s on
-qwen3-1.7b), which is why its deadline carries a +6s allowance; and after an
-escalation the fast prefix must be re-warmed in the background or the next ordinary
-dictation pays ~4.5s and misses its deadline, turning one bad dictation into two.
+**The in-process engine holds ONE resident model and ONE cached prompt sequence.**
+Consequences, all load-bearing: warmUp warms only the resolved model (warming the
+careful one too would swap the fast one back out and hand the first real dictation a
+cold load); of warmUp's two prefix warms only the LAST survives, so lowTouch goes
+last on purpose — coding is the dominant context, and a category switch costs a
+prefix re-prefill (~0.3-0.9s, inside every deadline) rather than a model load; every
+escalation swaps models and pays the careful model's load plus a full prefill, which
+is why its deadline carries a +6s allowance; and after an escalation the fast model
+is re-warmed in the background or the next ordinary dictation pays the reload and
+misses its deadline, turning one bad dictation into two. (LM Studio, retired, had
+the same shape for a different reason: its MLX prompt cache held one prefix
+globally across models.)
 
 Qwen3 models are hybrid reasoners and LM Studio's MLX runtime ignores both
 `reasoning_effort` and `chat_template_kwargs`. The `/no_think` switch on the
@@ -250,21 +349,63 @@ of unused headroom, which is the likeliest remaining source of proper-noun mishe
 ("pork tree", "blue jet bottles"). Check `osascript -e 'input volume of (get volume
 settings)'` before touching recognition code.
 
-**The mic opens ~78ms after the shortcut, and that is not a bug.** The pill shows
-"recording" the instant the gesture fires but `beginRecording` awaits
-`transcriber.startSession` before `recorder.start()`, so speech in that window is
-captured by nothing. It looked like the cause of "text just doesn't appear" — it is
-not: measured 77-80ms on every dictation. Do not add a pending-buffer queue for it
-without re-measuring first.
+**Capture is AVCaptureSession, and going back to AVAudioEngine breaks every ordinary
+mic.** AVAudioEngine wants one device supplying both input *and* output. Point its
+input node at an input-only device — which is the built-in mic, and every USB mic
+that is not also a speaker — and the graph gets a 0ch/0Hz output format and fails to
+initialise with `-10868`; `installTap` then *raises* on the dead chain and SIGABRTs
+the app, because Swift cannot catch an ObjC exception. `setDeviceID` does not fix it
+and neither does anything else: the node latches its format when it is created and
+never renegotiates, so a selected device is simply never heard. Measured across
+twelve variants (tap-before-start, tap-after-start, `format: nil`, `reset`,
+`deallocateRenderResources`, the raw `kAudioOutputUnitProperty_CurrentDevice`,
+waiting out the configuration change, a fresh engine): the USB PnP mic and the
+built-in mic captured 0 frames on all of them, and the EarPods captured only because
+they carry speakers. `AVCaptureDeviceInput` takes an arbitrary device by design —
+95744 frames from the same USB mic, same ~150ms startup.
 
-**Build the audio converter from the buffer, never from a format read earlier.**
+This is what the device picker was silently doing for its whole life, and it is why
+"the model can't understand me" was worth checking against the signal first.
+
+**Run `--mic-check` after touching capture.** It drives the real `AudioRecorder` for
+two seconds against the *selected* device and prints the frame count, so the capture
+path is testable without the keyboard — before it existed, an input-only mic
+capturing nothing could only be caught by asking Kaleb, and it shipped twice. It also
+caught a `frameLength`-set-after-copy bug that the standalone harness did not have.
+
+**The mic opens ~150ms after the shortcut, and `AudioRecorder.start` is where it
+goes.** The pill shows "recording" the instant the gesture fires, but speech before
+the mic opens is captured by nothing. Measured with `ActivationTrace` (see
+`Log.swift`) over warm dictations: `onStart=0ms pill=4-10ms session=13-21ms
+mic=165-177ms`, and ~270ms on the first dictation after launch. `startSession` is the
+small half — about 15ms; the rest is the capture session starting, 145-152ms measured
+directly by `--mic-check`. Reordering around `startSession` would buy 15ms, not 150.
+
+The 30s warm window is what skips that cost across a burst, and it is a product
+decision rather than a free win: a running session holds the microphone, so the macOS
+mic indicator stays lit between dictations. `isRunning` gates delivery, so a warm
+session's buffers are dropped rather than fed. Still no pending-buffer queue without
+re-measuring.
+
+**Build the audio converter from the buffer, never from a format read earlier** —
+and more generally, never from any format read before the samples exist.
 `beginRecording` used to read `recorder.inputFormat` and hand it to the transcriber
 *before* `AudioRecorder.start` applied the selected input device, so on any
 non-default mic at a different sample rate the `AVAudioConverter` was constructed
 for a format the buffers never had — and AVAudioConverter does not recover, it
 silently yields nothing for the whole dictation. `Transcriber.feed` now builds it
 lazily, keyed on `buffer.format`, which also survives a device change mid-session.
-That is why `startSession` takes no `inputFormat`.
+That is why `startSession` takes no `inputFormat`. The same mistake one call later is
+what aborted the app: a `format:` handed to `installTap` that the hardware no longer
+had.
+
+**A capture that produced nothing must never reach the recognizer.**
+`finalizeAndFinishThroughEndOfInput()` does not return on an analyzer that was never
+fed, so `finishRecording` hung in `.processing` and the pill spun on the dots until
+the app was force-quit — the user-visible face of the bug above. It now checks
+`recorder.capturedFrames` first and shows which mic produced nothing. Silence is a
+failure the user has to be told about; the alternative is dictating into nothing and
+not finding out.
 
 **`Result.alternatives` IS populated.** Measured from real dictations: N ranges 1
 to 5, usually 2-3 on short spans. n-best rescoring against the dictionary has real
@@ -296,11 +437,38 @@ binary keeps sitting in `.build/release`, silently passing self-check. Check
 `strings .build/release/BluejayWispr` for something you just added if a change seems
 to have no effect.
 
-`LLMCleaner.endpoints` lists `onDevice` **last**, now on quality rather than latency
-grounds: same-day bench, Q4_K_M in-process vs MLX 4-bit via LM Studio, reads 94%/77%
-recall/quality with 12/25 lossy against 96%/85% with 7/25 — the GGUF quantization is
-measurably worse while the latency is better (0.20s vs 0.33s median, p95 1.01 vs
-1.48). Promote it when a better GGUF (Q8_0 is ~640MB) benches at parity, not before.
+`LLMCleaner.endpoints` lists `onDevice` **first**, earned on a bench run: the MLX
+backend running the same Qwen3-0.6B-MLX-4bit weights LM Studio served reads 96%/85%
+recall/quality at 0.19s median over the 26 cases, against LM Studio's 96%/85% at
+0.33s — parity by construction, since it is the same runtime and the same weights.
+LM Studio was uninstalled on that result; the weights moved to
+`Application Support/BluejayWispr/models`. GGUF quants were tried first and lost on
+quality, not speed (Q4_K_M 77%, Q8_0 78-81% — the quantization itself, not sampling;
+repeat-penalty was tested and ruled out). The llama.cpp backend still reads any GGUF on
+disk, and is what a machine without the metallib falls back to — but no GGUF ships in the
+installer and none is left on this machine, so that path is code without weights behind it.
+A machine that loses its metallib gets `ruleClean`, not a slower model.
+
+**MLX aborts the process — no throw, no fallback — without `mlx.metallib` beside the
+executable.** The name is `mlx.metallib`, NOT `default.metallib`: the first path
+`load_colocated_library` tries is `<binary dir>/mlx.metallib` (device.cpp:140); the
+"default" name only resolves inside a SwiftPM resource bundle. SwiftPM cannot compile
+.metal sources, so build.sh compiles mlx-swift's eight JIT kernels with `xcrun metal`
+(needs the Metal Toolchain component, ~700MB one-time download) and copies the result
+beside the binary in both .build/release and the app bundle. `LocalEngine.mlxAvailable`
+gates MLX model discovery on that file existing.
+
+**Never cancel an MLX generation.** Metal asserts — and aborts the whole app — when a
+generation is cancelled mid command-buffer commit; the deadline race used to do
+exactly that on every miss (reproduced ~1 in 3). `LocalEngine.complete` drains the
+MLX stream in a detached task that outer cancellation cannot reach, so a deadline
+miss returns rules while the abandoned generation finishes quietly and is discarded.
+The cost is that the actor stays busy until it settles, which the 16k-char runaway
+ceiling bounds.
+
+The fork carries prompt-prefix KV caches for BOTH backends now (token-level diff,
+trim at divergence, prefill only the tail): llama.cpp got it first, MLX measured
+363ms → 39ms on identical calls and ~70-100ms on varied transcripts.
 
 **mlx-swift cannot be built by `swift build`.** Its own README says SwiftPM on the
 command line cannot compile the Metal shaders. Worse, a missing `default.metallib`

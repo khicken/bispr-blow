@@ -23,7 +23,6 @@ final class DictationController: ObservableObject {
     @Published private(set) var micFlash: String?
 
     private var axPollTimer: Timer?
-    private var keepAliveTimer: Timer?
 
     private let monitor = ShortcutMonitor.shared
     private let recorder = AudioRecorder()
@@ -74,18 +73,8 @@ final class DictationController: ObservableObject {
             await Transcriber.prepareAssets()
         }
         Task.detached(priority: .utility) { [cleaner] in
-            await LLMCleaner.bootLMStudioIfNeeded()
-            try? await Task.sleep(nanoseconds: 2_000_000_000)  // give the server a moment
             await cleaner.warmUp()
             logLine("cleanup using \(cleaner.activeDescription)")
-        }
-        // Keepalive: LM Studio idle-unloads models after ~60 min; a periodic warm call
-        // keeps the model and the prompt-prefix cache hot so dictations never hit a
-        // ~20s cold reload.
-        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 20 * 60, repeats: true) { [cleaner] _ in
-            Task.detached(priority: .utility) {
-                await cleaner.warmUp()
-            }
         }
     }
 
@@ -93,6 +82,10 @@ final class DictationController: ObservableObject {
         if case .recording(let locked) = state { return locked }
         return false
     }
+
+    /// `--pill-demo` only: replays a release transition with no mic, no model and no event tap, so
+    /// the pill's animation can be measured instead of described.
+    func demoState(_ state: State) { self.state = state }
 
     /// Reflect lock state in UI when the monitor transitions hold → locked.
     func noteLocked() {
@@ -119,10 +112,11 @@ final class DictationController: ObservableObject {
 
     private func beginRecording(sendEnter: Bool) {
         guard state == .idle else { return }
+        ActivationTrace.mark("onStart")
         sessionGeneration += 1
         self.sendEnter = sendEnter
         capturedContext = ContextDetector.current()
-        let device = AudioRecorder.defaultInputDeviceName()
+        let device = AudioRecorder.currentInputDeviceName()
         if device != UserDefaults.standard.string(forKey: "lastMicName") {
             UserDefaults.standard.set(device, forKey: "lastMicName")
             micFlash = device
@@ -158,6 +152,7 @@ final class DictationController: ObservableObject {
         let generation = sessionGeneration
         Task {
             await transcriber.startSession(contextTerms: capturedContext?.draftTerms ?? [])
+            ActivationTrace.mark("session")
             guard self.sessionGeneration == generation, case .recording = self.state else { return }
             do {
                 try recorder.start()
@@ -168,9 +163,9 @@ final class DictationController: ObservableObject {
             }
             // The pill says "recording" from the moment the shortcut fires, but the mic only opens
             // here — everything spoken while the analyzer was spinning up was never captured by
-            // anything. Whether that window is 30ms or a second decides whether it is a bug, and
-            // it has never been measured. Log it before changing the ordering.
-            logLine("audio mic open \(Int(Date().timeIntervalSince(self.recordingStartedAt) * 1000))ms after shortcut")
+            // anything. Reported against the gesture edge alongside the other activation stages,
+            // so the old "ms after shortcut" number is still there as `mic` minus `onStart`.
+            ActivationTrace.mark("mic")
         }
     }
 
@@ -180,6 +175,22 @@ final class DictationController: ObservableObject {
         recorder.stop()
         level = 0
         state = .processing
+
+        // Nothing was captured, so there is nothing to finalise — and finalising anyway is not
+        // merely pointless, it hangs: `finalizeAndFinishThroughEndOfInput` never returns on an
+        // analyzer that was never fed, which left the pill spinning on the dots until the app was
+        // force-quit. A capture that produced no audio is a failure the user has to be told about,
+        // because the alternative is dictating into nothing and not finding out.
+        guard recorder.capturedFrames > 0 else {
+            logLine("dictation discarded: no audio captured")
+            sessionGeneration += 1
+            Task { await transcriber.cancelSession() }
+            showNotice("No audio from \(AudioRecorder.currentInputDeviceName())")
+            state = .idle
+            partialText = ""
+            sendEnter = false
+            return
+        }
 
         let context = capturedContext ?? ContextDetector.current()
         let generation = sessionGeneration

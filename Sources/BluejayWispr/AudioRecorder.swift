@@ -1,9 +1,20 @@
 import AVFoundation
 import CoreAudio
 
-/// Mic capture via AVAudioEngine. Streams buffers to a consumer and publishes a
+/// Mic capture via AVCaptureSession. Streams buffers to a consumer and publishes a
 /// smoothed level (0...1) for the waveform UI.
-final class AudioRecorder {
+///
+/// **Not AVAudioEngine, and this is the whole reason the device picker works.** AVAudioEngine
+/// wants one device providing both input *and* output. Point its input node at an input-only
+/// microphone — which is every ordinary USB mic, and the built-in one — and the graph is handed a
+/// 0ch/0Hz output format and fails to initialise with `-10868`, after which `installTap` *raises*
+/// and aborts the whole app. `setDeviceID` is not the fix; nothing is, because the node latches
+/// its format when it is created and never renegotiates. Measured on this machine over twelve
+/// runs: through AVAudioEngine the USB PnP mic and the built-in mic both yield 0 frames, while the
+/// EarPods yield audio only because they carry speakers too. Through `AVCaptureDeviceInput`, which
+/// takes an arbitrary device by design, all three capture — 72192 frames from the USB mic at the
+/// same ~150ms startup the engine cost. Do not "simplify" this back to AVAudioEngine.
+final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private static func defaultInputDeviceID() -> AudioDeviceID? {
         var deviceID = AudioDeviceID(0)
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
@@ -88,15 +99,36 @@ final class AudioRecorder {
         }
     }
 
-    private let engine = AVAudioEngine()
+    /// Name of the device actually being recorded from — the selection if there is one, otherwise
+    /// the system default. The mic flash and the no-audio notice both name this rather than the
+    /// default, which is a different device whenever a selection is in force.
+    static func currentInputDeviceName() -> String {
+        let uid = AppSettings.shared.inputDeviceUID
+        if !uid.isEmpty, let device = AVCaptureDevice(uniqueID: uid) { return device.localizedName }
+        return defaultInputDeviceName()
+    }
+
+    enum CaptureError: LocalizedError {
+        case noDevice
+        case rejected
+
+        var errorDescription: String? {
+            switch self {
+            case .noDevice: "no input device available"
+            case .rejected: "the input device could not be opened"
+            }
+        }
+    }
+
+    private let session = AVCaptureSession()
+    private let output = AVCaptureAudioDataOutput()
+    /// Buffers arrive here, and the signal accumulators are only ever touched on it. `stop` syncs
+    /// against it before reading them, which is what `removeTap` used to give us for free.
+    private let queue = DispatchQueue(label: "ai.getbluejay.wispr.capture")
     private(set) var isRunning = false
 
     var onBuffer: ((AVAudioPCMBuffer) -> Void)?
     var onLevel: ((Float) -> Void)?
-
-    var inputFormat: AVAudioFormat {
-        engine.inputNode.outputFormat(forBus: 0)
-    }
 
     // Signal quality for the dictation in progress. Accumulated in the tap because that is the only
     // place the samples exist — nothing downstream can recover gain or clipping from a transcript.
@@ -104,43 +136,142 @@ final class AudioRecorder {
     private var sumSquares: Double = 0
     private var peak: Float = 0
     private var clipped = 0
+    private var capturedFormat: AVAudioFormat?
+
+    /// Frames captured during the dictation that just ended. Zero means the words went nowhere, and
+    /// the caller must not go on to finalise a recognizer that was never fed — see `finishRecording`.
+    var capturedFrames: Int { queue.sync { frames } }
+
+    /// How long the session keeps running after a dictation ends. `startRunning()` is ~150ms of
+    /// cold CoreAudio setup and was the bulk of the gap between the pill saying "recording"
+    /// and the mic actually capturing (see `ActivationTrace` in `Log.swift`). Staying up across a
+    /// burst of dictations skips it. Not forever, though: a running session holds the microphone,
+    /// and macOS keeps its recording indicator lit for exactly as long as it does.
+    private static let warmWindow: TimeInterval = 30
+    private var coolDown: DispatchWorkItem?
+    /// The device the warm session is configured for. A changed selection has to be rebuilt rather
+    /// than record the wrong mic.
+    private var warmDeviceUID: String?
+
+    override init() {
+        super.init()
+        output.setSampleBufferDelegate(self, queue: queue)
+        // Pin the delivered format rather than take the device's. `measure` and `Transcriber.feed`
+        // both reach for `floatChannelData`, which is nil for anything but non-interleaved float —
+        // so a device that happened to hand us int16 would read as silence, which is the one
+        // failure mode this file exists to make impossible.
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsNonInterleaved: true,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        // The mic being yanked mid-warm, or changing format under us, arrives here. Drop the warm
+        // session so the next dictation rebuilds from scratch rather than finding out the hard way.
+        NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            let error = note.userInfo?[AVCaptureSessionErrorKey] as? Error
+            logLine("audio session runtime error: \(error?.localizedDescription ?? "unknown")")
+            isRunning = false
+            session.stopRunning()
+            warmDeviceUID = nil
+        }
+    }
 
     func start() throws {
         guard !isRunning else { return }
-        let input = engine.inputNode
+        coolDown?.cancel()
+        coolDown = nil
 
         // Empty UID = follow the system default input.
         let uid = AppSettings.shared.inputDeviceUID
-        let deviceID = uid.isEmpty ? Self.defaultInputDeviceID() : Self.deviceID(forUID: uid)
-        if !uid.isEmpty, let deviceID {
-            try? input.auAudioUnit.setDeviceID(deviceID)
-        }
-        if AppSettings.shared.restoreMicVolume, let deviceID {
+        guard let device = (uid.isEmpty ? nil : AVCaptureDevice(uniqueID: uid))
+            ?? AVCaptureDevice.default(for: .audio)
+        else { throw CaptureError.noDevice }
+
+        if AppSettings.shared.restoreMicVolume,
+           let deviceID = uid.isEmpty ? Self.defaultInputDeviceID() : Self.deviceID(forUID: uid) {
             Self.restoreInputVolume(deviceID)
         }
 
-        frames = 0
-        sumSquares = 0
-        peak = 0
-        clipped = 0
-
-        let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
-            guard let self else { return }
-            self.onBuffer?(buffer)
-            self.onLevel?(self.measure(buffer))
+        if warmDeviceUID != device.uniqueID {
+            session.beginConfiguration()
+            for existing in session.inputs { session.removeInput(existing) }
+            let input = try AVCaptureDeviceInput(device: device)
+            guard session.canAddInput(input) else {
+                session.commitConfiguration()
+                throw CaptureError.rejected
+            }
+            session.addInput(input)
+            if !session.outputs.contains(output) {
+                guard session.canAddOutput(output) else {
+                    session.commitConfiguration()
+                    throw CaptureError.rejected
+                }
+                session.addOutput(output)
+            }
+            session.commitConfiguration()
         }
-        engine.prepare()
-        try engine.start()
+
+        queue.sync {
+            frames = 0
+            sumSquares = 0
+            peak = 0
+            clipped = 0
+            capturedFormat = nil
+        }
+
+        // `isRunning` gates delivery, so it has to be true before the first buffer can arrive —
+        // a warm session is already producing them and they are dropped on the floor until here.
         isRunning = true
+        if !session.isRunning { session.startRunning() }
+        warmDeviceUID = device.uniqueID
     }
 
+    /// Ends capture but leaves the session warm — see `warmWindow`. `isRunning` is what stops audio
+    /// reaching the consumer, so nothing is captured in the meantime.
     func stop() {
         guard isRunning else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
         isRunning = false
+        // Let any in-flight buffer finish before the accumulators are read.
+        queue.sync {}
         logSignal()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.isRunning else { return }
+            self.session.stopRunning()
+            self.warmDeviceUID = nil
+        }
+        coolDown = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.warmWindow, execute: work)
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        guard isRunning,
+              let description = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description),
+              let format = AVAudioFormat(streamDescription: asbd)
+        else { return }
+
+        let count = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard count > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count)
+        else { return }
+        // Before the copy, not after: the buffer list reports its size from `frameLength`, so a
+        // buffer still at zero advertises no room and the copy fails rather than filling it.
+        buffer.frameLength = count
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer, at: 0, frameCount: Int32(count),
+            into: buffer.mutableAudioBufferList) == noErr
+        else { return }
+
+        capturedFormat = format
+        let level = measure(buffer)
+        onBuffer?(buffer)
+        onLevel?(level)
     }
 
     /// RMS level for the waveform, folded together with the per-dictation quality accumulators so
@@ -177,7 +308,7 @@ final class AudioRecorder {
             logLine("audio no frames captured")
             return
         }
-        let format = engine.inputNode.outputFormat(forBus: 0)
+        guard let format = capturedFormat else { return }
         let rms = sqrt(sumSquares / Double(frames))
         let dB = { (x: Double) in x > 0 ? String(format: "%.1f", 20 * log10(x)) : "-inf" }
         logLine("""

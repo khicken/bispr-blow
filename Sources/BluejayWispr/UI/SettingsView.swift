@@ -79,6 +79,9 @@ struct SettingsView: View {
                 ToggleRow("Start sentences in lowercase",
                           help: "Names, acronyms, and your dictionary keep their capitals.",
                           isOn: $settings.lowercaseSentences)
+                ToggleRow("End with a period",
+                          help: "Off, the period on the very end is dropped, so a dictated word or two lands bare. Question marks and sentences inside keep their punctuation.",
+                          isOn: $settings.endWithPeriod)
             }
 
             settingsGroup("Microphone", padding: 5) {

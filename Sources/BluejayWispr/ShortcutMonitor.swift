@@ -40,6 +40,8 @@ final class ShortcutMonitor {
     private var heldAction: ShortcutAction?
     /// Set when we swallowed a cancel key-down, so its key-up gets swallowed to match.
     private var swallowedCancelDown = false
+    /// The modifiers-only binding currently held, so the release edge knows what broke.
+    private var heldCombo: (action: ShortcutAction, shortcut: Shortcut)?
 
     private var bindings: [(ShortcutAction, Shortcut)] = []
     private var started = false
@@ -73,6 +75,9 @@ final class ShortcutMonitor {
     /// Pick up edited bindings, and suppress the macOS fn action only while fn is actually bound.
     func reload() {
         bindings = AppSettings.shared.allBindings
+        // The combo that was held may not exist anymore; without this its release edge never
+        // comes and the next press is read as a release.
+        heldCombo = nil
         guard started else { return }  // --self-check must never touch the user's HIToolbox prefs
         SystemFnKey.sync(suppress: AppSettings.shared.fnIsBound)
     }
@@ -112,22 +117,116 @@ final class ShortcutMonitor {
     // MARK: - Recording a new binding
 
     private var captureHandler: ((Shortcut) -> Void)?
-    /// First modifier pressed while armed, held until we know whether it is a standalone
-    /// binding (released on its own) or the start of a combo (a real key followed).
-    private var capturePending: Int?
+    private var capturePreview: ((Shortcut?) -> Void)?
+    private var captureState = CaptureState()
+
+    /// The recorder's bookkeeping, kept apart from the monitor so `--self-check` can drive the
+    /// whole state machine with no event tap in the way.
+    ///
+    /// The shape is press-and-release, not first-key-wins: what you are holding shows as you
+    /// hold it and the binding is whatever was down at the moment you let go. That is the only
+    /// model in which ⌃⇧ can be recorded at all — it has no ordinary key to end it — and it is
+    /// also what makes ⌃⇧G one shortcut rather than a race between ⌃, ⇧ and G.
+    ///
+    /// It tracks the modifiers itself rather than reading them off the key event, and that part
+    /// is load-bearing: while armed the tap *swallows* each modifier's `flagsChanged`, so the
+    /// window server never learns the modifier went down and the flags it stamps on a following
+    /// keyDown can be missing it — ⌃⇧G arriving as ⇧G, the modifier held first being the one
+    /// that vanishes. What we watched go down is the truth; the event's own flags are a floor.
+    struct CaptureState: Equatable {
+        /// Modifiers physically down right now.
+        var held: CGEventFlags = []
+        /// Every modifier this combination has contained, so releasing them in any order still
+        /// records what was pressed.
+        var peak: CGEventFlags = []
+        /// The first modifier down. A single modifier records as `.key` so left ⌃ stays distinct
+        /// from right ⌃; two or more can only be `.modifiers`, which has no keycode.
+        var firstModifier: Int?
+        /// The ordinary key or mouse button, once one joins.
+        var trigger: Shortcut.Trigger?
+        var triggerIsDown = false
+
+        /// The binding as it stands — what the sheet draws while you hold the keys down.
+        var preview: Shortcut? {
+            if let trigger { return Shortcut(trigger: trigger, flags: peak.rawValue) }
+            guard !peak.isEmpty else { return nil }
+            if peak.rawValue.nonzeroBitCount == 1, let code = firstModifier {
+                return Shortcut(trigger: .key(code))
+            }
+            return Shortcut(trigger: .modifiers, flags: peak.rawValue)
+        }
+
+        var everythingReleased: Bool { held.isEmpty && !triggerIsDown }
+    }
+
+    /// What the recorder does with one event while armed.
+    enum CaptureStep: Equatable {
+        /// Consumed; `state.preview` is what to show meanwhile.
+        case wait
+        case record(Shortcut)
+    }
 
     var isCapturing: Bool { captureHandler != nil }
 
-    /// Arm the recorder: the next key or mouse combination goes to `handler` instead of firing
-    /// any binding, and never reaches the app underneath.
-    func beginCapture(_ handler: @escaping (Shortcut) -> Void) {
-        capturePending = nil
+    /// Arm the recorder: keys and mouse buttons go to the recorder instead of firing any binding,
+    /// and never reach the app underneath. `preview` fires as the combination is held, `handler`
+    /// once when it is released.
+    func beginCapture(preview: @escaping (Shortcut?) -> Void,
+                      _ handler: @escaping (Shortcut) -> Void) {
+        captureState = CaptureState()
+        capturePreview = preview
         captureHandler = handler
     }
 
     func endCapture() {
         captureHandler = nil
-        capturePending = nil
+        capturePreview = nil
+        captureState = CaptureState()
+    }
+
+    /// One armed event, as a pure function of the state. Every branch returns — a modifier that
+    /// is not bindable, a stray key-up, a flag we do not track — because while armed the event is
+    /// consumed either way and only a `record` ends the capture.
+    static func captureStep(type: CGEventType, keyCode: Int?, mouseButton: Int?,
+                            flags: CGEventFlags, state: inout CaptureState) -> CaptureStep {
+        func finish() -> CaptureStep {
+            guard state.everythingReleased, let shortcut = state.preview else { return .wait }
+            state = CaptureState()
+            return .record(shortcut)
+        }
+        switch type {
+        case .flagsChanged:
+            guard let code = keyCode, let flag = Shortcut.modifierFlags[code] else { return .wait }
+            if flags.contains(flag) {
+                if state.firstModifier == nil { state.firstModifier = code }
+                state.held.insert(flag)
+                state.peak.insert(flag)
+                return .wait
+            }
+            state.held.remove(flag)
+            return finish()
+        case .keyDown:
+            guard let code = keyCode else { return .wait }
+            state.trigger = .key(code)
+            state.triggerIsDown = true
+            state.peak.formUnion(flags.intersection(Shortcut.tracked))
+            return .wait
+        case .keyUp:
+            guard let code = keyCode, state.trigger == .key(code) else { return .wait }
+            state.triggerIsDown = false
+            return finish()
+        case .otherMouseDown:
+            guard let button = mouseButton else { return .wait }
+            state.trigger = .mouse(button)
+            state.triggerIsDown = true
+            return .wait
+        case .otherMouseUp:
+            guard let button = mouseButton, state.trigger == .mouse(button) else { return .wait }
+            state.triggerIsDown = false
+            return finish()
+        default:
+            return .wait
+        }
     }
 
     // MARK: - CGEventTap path
@@ -173,6 +272,14 @@ final class ShortcutMonitor {
         case .flagsChanged, .keyDown, .keyUp:
             let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
             if capture(type: type, keyCode: code, mouseButton: nil, flags: event.flags) { return nil }
+            if type == .flagsChanged, let (action, down) = comboEdge(flags: event.flags) {
+                _ = dispatch(action, down: down)
+                // Passed through even though the binding claimed it. A modifiers-only combo is
+                // only recognised once its *last* modifier arrives, so the earlier ones already
+                // reached the system — swallowing the rest would leave them stuck down in every
+                // other app. ⌃⇧ held alone does nothing anywhere, so there is nothing to eat.
+                return pass
+            }
             guard let (action, down) = keyMatch(
                 keyCode: code, flags: event.flags,
                 isFlagsChanged: type == .flagsChanged, isKeyDown: type == .keyDown
@@ -192,35 +299,37 @@ final class ShortcutMonitor {
         bindings.first { predicate($0.1) }?.0
     }
 
-    /// Feeds the Settings recorder. Returns true when the event was consumed by it.
-    private func capture(type: CGEventType, keyCode: Int?, mouseButton: Int?, flags: CGEventFlags) -> Bool {
-        guard let handler = captureHandler else { return false }
+    /// Press and release edges for a modifiers-only binding (⌃⇧ held on its own). It has no
+    /// keycode, so there is no key event whose up/down is the gesture: the press is the flag set
+    /// completing and the release is it breaking, which only the previous state can tell us.
+    private func comboEdge(flags: CGEventFlags) -> (ShortcutAction, Bool)? {
         let tracked = flags.intersection(Shortcut.tracked)
-        switch type {
-        case .flagsChanged:
-            guard let code = keyCode, let flag = Shortcut.modifierFlags[code] else { return true }
-            if flags.contains(flag) {
-                if capturePending == nil { capturePending = code }
-            } else if tracked.isEmpty, let pending = capturePending {
-                commit(Shortcut(trigger: .key(pending)), to: handler)
-            }
-        case .keyDown:
-            guard let code = keyCode else { return true }
-            commit(Shortcut(trigger: .key(code), flags: tracked.rawValue), to: handler)
-        case .otherMouseDown:
-            guard let button = mouseButton else { return true }
-            commit(Shortcut(trigger: .mouse(button)), to: handler)
-        default:
-            break  // key-up / mouse-up while armed: swallow, don't record
+        if let held = heldCombo {
+            guard !held.shortcut.matches(modifiers: tracked) else { return nil }
+            heldCombo = nil
+            return (held.action, false)
         }
-        return true
+        guard let match = bindings.first(where: { $0.1.matches(modifiers: tracked) }) else { return nil }
+        heldCombo = (match.0, match.1)
+        return (match.0, true)
     }
 
-    private func commit(_ shortcut: Shortcut, to handler: @escaping (Shortcut) -> Void) {
-        endCapture()
-        // Off the tap callback: the handler persists settings and re-reads the HIToolbox prefs,
-        // and macOS disables a tap that takes too long to answer.
-        DispatchQueue.main.async { handler(shortcut) }
+    /// Feeds the Settings recorder. Returns true when the event was consumed by it.
+    private func capture(type: CGEventType, keyCode: Int?, mouseButton: Int?, flags: CGEventFlags) -> Bool {
+        guard let handler = captureHandler, let preview = capturePreview else { return false }
+        let step = Self.captureStep(type: type, keyCode: keyCode, mouseButton: mouseButton,
+                                    flags: flags, state: &captureState)
+        // Both hops go off the tap callback: they touch SwiftUI state and persist settings, and
+        // macOS disables a tap that takes too long to answer.
+        switch step {
+        case .wait:
+            let inProgress = captureState.preview
+            DispatchQueue.main.async { preview(inProgress) }
+        case .record(let shortcut):
+            endCapture()
+            DispatchQueue.main.async { handler(shortcut) }
+        }
+        return true
     }
 
     // MARK: - Dispatch
@@ -282,6 +391,10 @@ final class ShortcutMonitor {
                 // NSEvent.ModifierFlags shares CGEventFlags' bit layout, so no translation
                 // table — and unlike `event.cgEvent` it is never nil.
                 let flags = CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))
+                if event.type == .flagsChanged, let (action, down) = self.comboEdge(flags: flags) {
+                    _ = self.dispatch(action, down: down)
+                    return
+                }
                 guard let (action, down) = self.keyMatch(
                     keyCode: Int(event.keyCode), flags: flags,
                     isFlagsChanged: event.type == .flagsChanged, isKeyDown: event.type == .keyDown
@@ -339,6 +452,7 @@ final class ShortcutMonitor {
                 onLock?()
                 return
             }
+            ActivationTrace.begin()
             onStart?(action == .pressEnter)
         } else if !down, triggerIsDown, heldAction == action {
             triggerIsDown = false

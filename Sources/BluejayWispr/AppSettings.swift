@@ -62,6 +62,12 @@ final class AppSettings: ObservableObject {
     @Published var lowercaseSentences: Bool {
         didSet { defaults.set(lowercaseSentences, forKey: "lowercaseSentences") }
     }
+    /// Keep the period cleanup puts on the very end of a dictation. Off by default: dictating a
+    /// word or two kept landing as "word." — the period is the model's habit, not the speaker's.
+    /// A post-pass like the lowercasing, so it holds on the rule-based path too.
+    @Published var endWithPeriod: Bool {
+        didSet { defaults.set(endWithPeriod, forKey: "endWithPeriod") }
+    }
     /// Raise the system input volume back to a healthy level before each dictation. Off by
     /// default: it writes a system setting, so the user opts in rather than discovers it.
     @Published var restoreMicVolume: Bool {
@@ -182,12 +188,16 @@ final class AppSettings: ObservableObject {
     }
 
     func addDictionaryWords(_ words: [String]) {
-        let existing = Set(dictionary.map { $0.lowercased() })
-        let fresh = words
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && !existing.contains($0.lowercased()) }
-        var seen = Set<String>()
-        dictionary.append(contentsOf: fresh.filter { seen.insert($0.lowercased()).inserted })
+        var seen = Set(dictionary.map { $0.lowercased() })
+        for word in words.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !word.isEmpty {
+            // Re-adding a stored word with different casing is the user fixing the casing
+            // ("claude" → "Claude"), not a duplicate to drop silently.
+            if let existing = dictionary.firstIndex(where: { $0.lowercased() == word.lowercased() }) {
+                if dictionary[existing] != word { dictionary[existing] = word }
+            } else if seen.insert(word.lowercased()).inserted {
+                dictionary.append(word)
+            }
+        }
     }
 
     private init() {
@@ -206,6 +216,7 @@ final class AppSettings: ObservableObject {
         cloudURL = defaults.string(forKey: "cloudURL") ?? ""
         cloudAnonKey = defaults.string(forKey: "cloudAnonKey") ?? ""
         lowercaseSentences = defaults.bool(forKey: "lowercaseSentences")
+        endWithPeriod = defaults.bool(forKey: "endWithPeriod")
         restoreMicVolume = defaults.bool(forKey: "restoreMicVolume")
         appearance = Self.appearance(stored: defaults.string(forKey: "appearance"))
         if let data = defaults.data(forKey: "bindings"),

@@ -77,7 +77,9 @@ def is_low_touch(case):
 
 # Fillers belong here alongside the function words: cleanup is *supposed* to delete them, and
 # counting them as lost content marks a correct cleanup down by the transcript's filler share.
+# Spoken symbol names likewise: "underscore" rendered as "_" is correct, not a lost word.
 STOPWORDS = set("""
+underscore hyphen dash dot paren parens period colon semicolon slash
 um umm uh uhh er erm ah like know okay so yeah just really actually maybe
 the a an and or but if then that this these those there here it its it's is are was were be been
 being have has had do does did doing done will would should could can cannot may might must
@@ -109,16 +111,16 @@ def loaded_models():
 def app_tail(model_output, case):
     """The text the app would actually insert. Runs in the binary (`--finish`) instead of being
     reimplemented here, so unwrapping, the guards and the deterministic filler pass cannot drift
-    from LLMCleaner. Returns (text, lossy, reworded)."""
+    from LLMCleaner. Returns (text, lossy, reworded, reason)."""
     done = subprocess.run([str(BINARY), "--finish"], capture_output=True, text=True,
                           input=json.dumps({"raw": case["raw"], "cleaned": model_output,
                                             "lowTouch": is_low_touch(case),
                                             "draftTerms": case.get("draft", "").split()}))
     result = json.loads(done.stdout)
-    return result["text"], result["lossy"], result["reworded"]
+    return result["text"], result["lossy"], result["reworded"], result.get("reason")
 
 
-def score(case, cleaned, lossy, reworded):
+def score(case, cleaned, lossy, reworded, reason=None):
     """Fraction of the case's checks that passed, plus what failed."""
     checks, failures = [], []
     low = cleaned.lower()
@@ -141,7 +143,7 @@ def score(case, cleaned, lossy, reworded):
         failures.append(f"retained {ratio:.0%} < {case['retain']:.0%}")
     if lossy:
         checks.append(False)
-        failures.append("LOSSY: guard rejected it, rules ran instead")
+        failures.append(f"LOSSY ({reason}): guard rejected it, rules ran instead")
     return (sum(checks) / len(checks) if checks else 0.0), failures
 
 
@@ -172,12 +174,13 @@ def run_case(model, prompts, case, nothink, timeout, engine=None):
         text = message.get("content") or message.get("reasoning_content") or ""
         usage = data.get("usage", {}).get("completion_tokens_details", {})
     elapsed = time.monotonic() - started
-    cleaned, lossy, reworded = app_tail(text, case)
+    cleaned, lossy, reworded, reason = app_tail(text, case)
     return {
         "seconds": elapsed,
         "cleaned": cleaned,
         "lossy": lossy,
         "reworded": reworded,
+        "reason": reason,
         "recall": recall(case["raw"], cleaned),
         "reasoning_tokens": usage.get("reasoning_tokens", 0),
     }
@@ -230,7 +233,7 @@ def main():
                 # Every rep is scored: these models are not deterministic at temperature 0.2,
                 # and scoring one sample per case made quality swing 30 points between runs.
                 rep_score, rep_failures = score(case, result["cleaned"], result["lossy"],
-                                               result["reworded"])
+                                               result["reworded"], result["reason"])
                 rep_scores.append(rep_score)
                 rep_recalls.append(result["recall"])
                 failures = rep_failures or failures

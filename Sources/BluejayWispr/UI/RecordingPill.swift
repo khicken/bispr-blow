@@ -6,8 +6,10 @@ import SwiftUI
 /// hover with a hint), recording (waveform bars; stop button when hands-free), processing
 /// (pulsing dots).
 final class RecordingPillController {
-    private let panel: NSPanel
-    private let model: PillModel
+    /// Readable so `--pill-demo` can measure the composited window rather than the layout.
+    let panel: NSPanel
+    /// Shared with the toast, which has to sit against the same edge the pill is parked on.
+    let model: PillModel
     private let placement = PlacementModel()
     private var overlay: PlacementOverlayController?
 
@@ -45,6 +47,14 @@ final class RecordingPillController {
         model.onSize = { [weak self] size in self?.resize(to: size) }
 
         let host = NSHostingView(rootView: PillView(model: model))
+        // The panel's size is `resize`'s alone. By default the hosting view pushes SwiftUI's ideal
+        // size onto the window as its content min/max, and AppKit applies that the instant the
+        // state changes — keeping the *top-left* corner, and without the `reposition()` that a
+        // deliberate resize carries. Measured on `leftCentre` with `--pill-demo`: on release the
+        // panel went 106pt to 68pt in 10ms with its top edge pinned, carrying the pill 22pt up the
+        // screen, where it sat until the deferred shrink 400ms later ran the first `reposition()`
+        // and dropped it 19pt back. That is the "jumps up and then goes back down".
+        host.sizingOptions = []
         host.frame = panel.contentRect(forFrameRect: panel.frame)
         panel.contentView = host
 
@@ -107,6 +117,22 @@ final class RecordingPillController {
         /// size, floating off the bezel with nothing anchoring the expansion.
         var contentAlignment: Alignment {
             self == .bottomCentre ? .bottom : .top
+        }
+
+        /// The same parked edge, stated in screen space: the edge `origin(size:in:)` pins, so a view
+        /// aligned here keeps the edge the panel keeps.
+        ///
+        /// For the toast, which is not rotated. NOT for anything inside `PillView`, however much it
+        /// looks like the right answer there — the pill's frame sits after a `rotationEffect`, which
+        /// leaves the child's layout size unrotated, so on a side anchor that frame is the transpose
+        /// of its own child and only centring lands the turned bar on the panel. Using this there
+        /// moved the pill 37pt off itself.
+        var panelAlignment: Alignment {
+            switch self {
+            case .bottomCentre: .bottom
+            case .leftCentre: .leading
+            case .rightCentre: .trailing
+            }
         }
 
         /// Bottom-left origin for a panel of `size`, within the frame the pill lays out in.
@@ -194,8 +220,29 @@ final class RecordingPillController {
 
     /// Follow the pill's declared size so the panel never claims mouse events the pill cannot use.
     /// Called once per state transition, not per animation frame — see the note in `init`.
+    ///
+    /// Grows immediately, shrinks only once the morph has settled. A borderless panel hard-clips
+    /// everything outside its frame, and the capsule spends the whole 0.32s spring at the *outgoing*
+    /// state's size — so shrinking up front cut the ends flat off the bar that was still on screen:
+    /// 13pt each side leaving recording for processing, 25pt from the hands-free bar, on release,
+    /// which is exactly when the user is looking at it.
     private func resize(to size: CGSize) {
+        pendingSize = size
         guard panel.frame.size != size else { return }
+        guard size.width > panel.frame.width || size.height > panel.frame.height else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + PillView.growSettled) { [weak self] in
+                // Stale if another state landed in the meantime; that transition owns the size now.
+                guard let self, pendingSize == size else { return }
+                apply(size)
+            }
+            return
+        }
+        apply(size)
+    }
+
+    private var pendingSize: CGSize?
+
+    private func apply(_ size: CGSize) {
         panel.setContentSize(size)
         panel.contentView?.frame = NSRect(origin: .zero, size: size)
         reposition()
@@ -377,7 +424,25 @@ struct PillView: View {
             // Rotation keeps the unrotated layout size, so the transposed frame below is exactly
             // what the turned bar occupies, and the panel matches it.
             .rotationEffect(.degrees(model.anchor.rotation))
+            // Centred, and it has to be: `rotationEffect` above does not change the layout size, so
+            // on a side anchor this frame is the *transpose* of the child's natural size — a 122x48
+            // bar inside a 48x122 frame. Rotation turns the child about its own centre, so only a
+            // centred frame puts the turned bar where the panel is. Aligning this to the parked edge
+            // (`panelAlignment`, which is right for the panel's origin and for the toast) shoved the
+            // bar (122-48)/2 = 37pt off the pill on both side anchors.
+            // Sized from the state but moved on the same spring as the capsule, because the two
+            // are one movement. The capsule is centred in this frame, so any point by which the
+            // frame is ahead of the capsule lands as half that much displacement: snapping it to
+            // the incoming state threw the pill 19pt up the side anchors the instant the state
+            // changed — exactly (106-68)/2 — where it sat for 400ms before walking back. Matching
+            // the panel instead is not the fix and reproduces it, because the panel is not what
+            // the capsule is positioned against.
+            //
+            // `targetSize` is deliberately not a function of `hovering`, so this animates only on
+            // a real state change and the hover region still never moves under a stationary
+            // pointer, which is what the note above is protecting.
             .frame(width: targetSize.width, height: targetSize.height)
+            .animation(Self.grow, value: targetSize)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             // `simultaneousGesture` so the hover buttons keep working: a real click never travels
@@ -388,33 +453,80 @@ struct PillView: View {
                     .onEnded { _ in model.onDragEnded?(NSEvent.mouseLocation) }
             )
             .contextMenu {
-                Button("Open Bluejay Wispr") { model.onOpenDashboard(.home) }
+                Button("Open BisprBlow") { model.onOpenDashboard(.home) }
                 Divider()
                 Button("Quit") { NSApp.terminate(nil) }
             }
-            .onChange(of: targetSize, initial: true) { _, size in model.onSize?(size) }
+            .onChange(of: targetSize, initial: true) { _, size in
+                model.onSize?(size)
+                // The panel is now the recording bar's size — the frame the reveal animates from.
+                if case .recording = controller.state { ActivationTrace.mark("pill") }
+            }
+            // Fast attack, slow release, the way a meter needle behaves. The raw per-buffer level
+            // is spiky — speech is mostly gaps, so consecutive buffers swing between a vowel and
+            // near-silence, and drawing that directly is the jitter. Rising is taken instantly so a
+            // syllable still lands on the beat; falling is floored at 82% of the previous sample,
+            // which is what turns the gaps into a decaying tail instead of a dropout.
             .onReceive(controller.$level) { level in
                 guard case .recording = controller.state else { return }
+                let previous = waveSamples.last ?? 0
                 waveSamples.removeFirst()
-                waveSamples.append(level)
+                waveSamples.append(max(level, previous * 0.82))
             }
     }
 
     static let grow = Animation.spring(response: 0.32, dampingFraction: 0.82)
+    /// Long enough for `grow` to have visually settled. The panel waits this out before shrinking.
+    static let growSettled: TimeInterval = 0.4
 
-    @ViewBuilder
-    private var pill: some View {
-        Group {
-            switch controller.state {
-            case .idle:
-                idlePill
-            case .recording(let locked):
-                capsule(recordingPill(locked: locked))
-            case .processing:
-                capsule(processingPill)
-            }
+    /// The visible capsule's own size: the `size(for:)` numbers without the shadow margin, plus the
+    /// one thing that table deliberately ignores — hover, which changes what is drawn and not what
+    /// the panel claims.
+    private var capsuleSize: CGSize {
+        switch controller.state {
+        case .idle: hovering ? CGSize(width: 110, height: 36) : CGSize(width: 42, height: 9)
+        case .recording, .processing: box
         }
-        .padding(Self.margin)
+    }
+
+    /// The box the capsule is positioned inside — the panel minus the margin its shadow needs.
+    private var box: CGSize {
+        let panel = Self.size(for: controller.state)
+        return CGSize(width: panel.width - Self.margin * 2, height: panel.height - Self.margin * 2)
+    }
+
+    /// One capsule for every state, resized per state, rather than a `switch` handing back a
+    /// different view for each. A switch changes the view's *identity*, and SwiftUI cannot morph
+    /// between identities — only dissolve — which is why this used to cross-fade instead of grow.
+    /// The same identity change also relaid the outgoing state into the incoming state's smaller
+    /// box, so the fade came with a visible sideways nudge. Both are the one bug.
+    ///
+    /// The capsule hugs `contentAlignment` — the same parked edge in every state, and the edge the
+    /// panel's own origin is pinned to — so that edge stays put while the rest of it grows.
+    private var pill: some View {
+        capsule(Color.clear.frame(width: capsuleSize.width, height: capsuleSize.height))
+            .animation(Self.grow, value: capsuleSize)
+            .frame(width: box.width, height: box.height, alignment: model.anchor.contentAlignment)
+            .overlay { contents }
+            .contentShape(Capsule())
+            .padding(Self.margin)
+    }
+
+    /// What rides on the capsule. Only this cross-fades; the shape underneath it morphs.
+    @ViewBuilder
+    private var contents: some View {
+        switch controller.state {
+        case .idle:
+            hoverButtons
+                .opacity(hovering ? 1 : 0)
+                .scaleEffect(hovering ? 1 : 0.86)
+                .animation(Self.grow, value: hovering)
+                .allowsHitTesting(hovering)
+        case .recording(let locked):
+            recordingPill(locked: locked)
+        case .processing:
+            processingPill
+        }
     }
 
     /// The dark capsule a state sits on. Applied to whatever actually carries that state's size,
@@ -427,32 +539,6 @@ struct PillView: View {
                 // edge, and a clipped gaussian reads as a translucent rectangle around the pill.
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
         )
-    }
-
-    /// Idle: a sliver on the parked edge that grows into three circular action buttons on hover.
-    ///
-    /// Exactly one thing animates — the capsule's own frame — and it is pinned to the edge the pill
-    /// is parked on, so the expansion has a single fixed anchor. Everything else is a constant: the
-    /// outer box is always the expanded size, and the buttons are centred in *that*, so they fade in
-    /// where they will end up rather than travelling with a capsule that is still growing.
-    ///
-    /// The animation modifier stays inside the outer frame. Outside it, the fixed box interpolates
-    /// too, and a hit region that slides under a stationary pointer makes the pill flap open and
-    /// shut.
-    private var idlePill: some View {
-        capsule(
-            Color.clear.frame(width: hovering ? 110 : 42, height: hovering ? 36 : 9)
-        )
-        .animation(Self.grow, value: hovering)
-        .frame(width: 110, height: 36, alignment: model.anchor.contentAlignment)
-        .overlay {
-            hoverButtons
-                .opacity(hovering ? 1 : 0)
-                .scaleEffect(hovering ? 1 : 0.86)
-                .animation(Self.grow, value: hovering)
-                .allowsHitTesting(hovering)
-        }
-        .contentShape(Capsule())
     }
 
     /// The glyphs counter-rotate: the bar turns 90° on a side edge, but an icon lying on its side
@@ -470,7 +556,7 @@ struct PillView: View {
                     .font(.bj(11, weight: .medium))
                     .foregroundStyle(.white)
             }
-            PillCircleButton(help: "Open Bluejay Wispr", counterRotation: upright) {
+            PillCircleButton(help: "Open BisprBlow", counterRotation: upright) {
                 model.tapped { model.onOpenDashboard(.home) }
             } label: {
                 if let logo = Theme.logo("Symbol_White") {
@@ -522,16 +608,24 @@ struct PillView: View {
         .frame(height: 28)
     }
 
+    /// Bars top out at 16pt inside a 28pt capsule, so there is always 6pt of clear pill above and
+    /// below them. They used to reach 23pt, which left 2.5pt — close enough to the edge that a loud
+    /// syllable read as the waveform filling the whole rectangle and straining against it. A meter
+    /// wants headroom it visibly never uses; that is what makes the peaks look like peaks.
+    ///
+    /// `easeOut` rather than `linear`: each bar's value changes on every tick as the history
+    /// shifts, and a linear ramp restarted every tick is what read as mechanical. The real
+    /// smoothing is upstream in `waveSamples`, though — no curve here can rescue jittery data.
     private var waveform: some View {
         HStack(spacing: 2.5) {
             ForEach(0..<Self.barCount, id: \.self) { i in
                 Capsule()
                     .fill(Theme.pillWave)
-                    .frame(width: 2.5, height: CGFloat(3 + waveSamples[i] * 20))
-                    .animation(.linear(duration: 0.08), value: waveSamples[i])
+                    .frame(width: 2.5, height: CGFloat(3 + waveSamples[i] * 13))
+                    .animation(.easeOut(duration: 0.12), value: waveSamples[i])
             }
         }
-        .frame(height: 24)
+        .frame(height: 20)
     }
 
     private var processingPill: some View {
@@ -655,7 +749,7 @@ struct PlacementView: View {
 final class ToastController {
     private let panel: NSPanel
 
-    init(controller: DictationController) {
+    init(controller: DictationController, model: PillModel) {
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 34),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -670,7 +764,7 @@ final class ToastController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.ignoresMouseEvents = true
 
-        let host = NSHostingView(rootView: ToastView(controller: controller))
+        let host = NSHostingView(rootView: ToastView(controller: controller, model: model))
         host.frame = panel.contentRect(forFrameRect: panel.frame)
         panel.contentView = host
 
@@ -697,9 +791,15 @@ final class ToastController {
 
     private var timer: Timer?
 
-    /// Sits directly above the pill wherever the user parked it, so the two read as one thing.
-    /// Clamped to the screen, because a 420pt toast centred on an edge-anchored pill would
-    /// otherwise hang off the side.
+    /// Sits against the pill wherever the user parked it, so the two read as one thing: above it
+    /// on the bottom edge, and *beside* it on a side edge.
+    ///
+    /// Beside, not above, because above is what put the message in the middle of nowhere. On a
+    /// side anchor the pill is a tall bar at the screen's vertical centre, so "above the pill"
+    /// is halfway up the screen — and the 420pt panel then clamped to the screen edge, leaving
+    /// the message floating in open space with nothing to attach it to. The panel's own width is
+    /// why clamping was needed at all; `ToastView` now aligns its capsule to the same edge, so
+    /// the visible pill of text lands against the pill instead of 210pt away from it.
     func reposition() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         // The same frame the pill uses, or the toast detaches from it in a fullscreen space.
@@ -710,15 +810,22 @@ final class ToastController {
         ) ?? .bottomCentre
         let pillSize = PillView.size(for: .idle, anchor: anchor)
         let pill = NSRect(origin: anchor.origin(size: pillSize, in: frame), size: pillSize)
-        let x = min(max(pill.midX - size.width / 2, frame.minX), frame.maxX - size.width)
-        let y = min(pill.maxY + 4, frame.maxY - size.height)
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        let spot: NSPoint = switch anchor {
+        case .bottomCentre: NSPoint(x: pill.midX - size.width / 2, y: pill.maxY + 4)
+        case .leftCentre: NSPoint(x: pill.maxX + 4, y: pill.midY - size.height / 2)
+        case .rightCentre: NSPoint(x: pill.minX - size.width - 4, y: pill.midY - size.height / 2)
+        }
+        panel.setFrameOrigin(NSPoint(
+            x: min(max(spot.x, frame.minX), frame.maxX - size.width),
+            y: min(max(spot.y, frame.minY), frame.maxY - size.height)
+        ))
         panel.orderFrontRegardless()
     }
 }
 
 struct ToastView: View {
     @ObservedObject var controller: DictationController
+    @ObservedObject var model: PillModel
     /// Same reason as the pill: it draws the pill's background colour.
     @StateObject private var settings = AppSettings.shared
 
@@ -752,7 +859,9 @@ struct ToastView: View {
                 .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        // The capsule hugs the parked edge, so it lands against the pill rather than centred in a
+        // 420pt panel whose edges nobody can see.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: model.anchor.panelAlignment)
         .animation(.bjSoft, value: message)
     }
 }
