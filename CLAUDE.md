@@ -449,9 +449,10 @@ Measured after the fix: flat 192ms warm on identical prompts, 150ms median on va
 transcripts against the warm static prefix, vs LM Studio's 0.33s. Watch for it
 climbing monotonically across calls; that is the signature of the cache not matching.
 
-The dependency is `.package(path: "../../GitHub/LocalLLMClient")`, branch
-`kk-kv-trim-fix` — fork-vs-vendor is still an open user decision, and an upstream PR
-should carry both fixes. **A fresh clone of that repo needs
+The dependency is the published fork `github.com/khicken/LocalLLMClient`, pinned to revision
+`7741fbcd` (tag 0.5.0 plus both KV-cache fixes) — not the local checkout an earlier version of
+this file described, so a clone needs nothing on disk beside it. No upstream PR yet, at the
+user's request. **If you switch it back to a local path, that clone needs
 `git submodule update --init`**: its C sources are symlinks into a llama.cpp
 submodule, and without it `swift build` fails on `build-info.h` — while the previous
 binary keeps sitting in `.build/release`, silently passing self-check. Check
