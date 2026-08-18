@@ -184,6 +184,11 @@ rather than throwing and there is no degraded mode to notice later. Verify paylo
 `lsbom -s` on the extracted component BOMs; the weights are worth diffing against the source, since
 a truncated safetensors is invisible until first dictation.
 
+**After a .pkg install, `./build.sh` refuses to run until you hand the bundle back.** Installer
+leaves `/Applications/BisprBlow.app` owned by root, and build.sh's `rm -rf` then fails part-way
+through it rather than at the start. The guard prints the `sudo rm -rf` plus `pkgutil --forget` to
+run; testing the installer and then iterating locally is the normal cycle, so expect it.
+
 **Nothing is notarized: the Apple account is free, so there is no Developer ID cert.** The app is
 signed with the self-signed `Bluejay Wispr Dev` identity and installs behind a right-click > Open.
 Moving to a paid membership and a Developer ID is the only thing that makes it open cleanly on a
@@ -283,6 +288,22 @@ qwen3-1.7b over the 25 cases, the careful budget leaves 2/25 over, both of them
 cold-load outliers of the kind `warmUp()` exists to absorb. Fast falls through to
 the careful order when the machine has no small model, because "Fast" still has
 to mean cleanup rather than nothing.
+
+**Selecting Accurate without a careful model on disk does not crash — it silently writes with Fast.**
+Measured: `--clean` returns normally, exit 0, `provider` still "On-device". `firstModel` ends in
+`return chatIDs.first`, and generic `"qwen"` in `carefulFamilies` matches the 0.6b before that, so
+the setting moves and nothing about the writing changes. This became reachable the moment the
+installer made the Accurate weights optional, so `LLMCleaner.accurateNeedsModel` detects the collapse
+(Accurate and Fast resolving to the same id) and Settings offers the download instead of pretending.
+Both sides call `LLMCleaner.pick`, so what is offered and what would be resolved cannot drift apart.
+
+**`ModelDownloader` stages into a dot-prefixed directory, and that is the whole safety mechanism.**
+`installedModels()` enumerates with `.skipsHiddenFiles`, so `.incoming-<name>` is invisible to the
+scanner and a half-written model can never be loaded — MLX aborts the process on a truncated
+safetensors rather than throwing, at first dictation rather than at download time. Files are also
+size-checked against the Hugging Face listing before the directory is moved into place. The repo is
+`lmstudio-community/Qwen3-1.7B-MLX-8bit`, the same weights package.sh installs and bench/results.md
+was measured on; downloading anything else makes those numbers describe a different app.
 
 **Name every model size before the family that contains it.** `carefulFamilies`
 ended in a generic `"qwen"`, and on a machine holding only qwen3-0.6b and
@@ -428,9 +449,10 @@ Measured after the fix: flat 192ms warm on identical prompts, 150ms median on va
 transcripts against the warm static prefix, vs LM Studio's 0.33s. Watch for it
 climbing monotonically across calls; that is the signature of the cache not matching.
 
-The dependency is `.package(path: "../../GitHub/LocalLLMClient")`, branch
-`kk-kv-trim-fix` — fork-vs-vendor is still an open user decision, and an upstream PR
-should carry both fixes. **A fresh clone of that repo needs
+The dependency is the published fork `github.com/khicken/LocalLLMClient`, pinned to revision
+`7741fbcd` (tag 0.5.0 plus both KV-cache fixes) — not the local checkout an earlier version of
+this file described, so a clone needs nothing on disk beside it. No upstream PR yet, at the
+user's request. **If you switch it back to a local path, that clone needs
 `git submodule update --init`**: its C sources are symlinks into a llama.cpp
 submodule, and without it `swift build` fails on `build-info.h` — while the previous
 binary keeps sitting in `.build/release`, silently passing self-check. Check

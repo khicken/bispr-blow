@@ -11,6 +11,9 @@ struct SettingsView: View {
     @State private var micName = AudioRecorder.defaultInputDeviceName()
     @State private var devices = AudioRecorder.inputDevices()
 
+    @ObservedObject private var downloader = ModelDownloader.shared
+    @State private var askToDownload = false
+
     private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     private let cleaner = LLMCleaner()
 
@@ -63,8 +66,23 @@ struct SettingsView: View {
                     ChoiceRow(title: mode.rawValue,
                               detail: mode.detail,
                               selected: settings.cleanup == mode) {
-                        withAnimation(.bjSnap) { settings.cleanup = mode }
+                        // Picking Accurate with nothing behind it used to select it anyway and go on
+                        // writing with Fast, silently. Ask, and stay on Fast until the weights land.
+                        if mode == .accurate, LLMCleaner.accurateNeedsModel, !downloader.isRunning {
+                            askToDownload = true
+                        } else {
+                            withAnimation(.bjSnap) { settings.cleanup = mode }
+                        }
                     }
+                }
+                if let fraction = downloader.fraction {
+                    downloadRow(fraction)
+                } else if let failure = downloader.failure {
+                    Text(failure)
+                        .font(.bj(11))
+                        .foregroundStyle(Theme.inkSubtle)
+                        .padding(.horizontal, 11)
+                        .padding(.bottom, 6)
                 }
                 // Two of the three rows are one choice; the rule says so, so the switch does not
                 // read as a third mode.
@@ -120,6 +138,14 @@ struct SettingsView: View {
                 }
             }
         }
+        .alert("Accurate needs a bigger model", isPresented: $askToDownload) {
+            Button("Download") {
+                downloader.start { withAnimation(.bjSnap) { settings.cleanup = .accurate } }
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("It's a 1.8 GB download, and it keeps going while you work. BisprBlow writes with Fast until it finishes, then switches over.")
+        }
         .onChange(of: settings.cleanup) { _, _ in
             // Load the mode's model and prime the prompt-prefix cache now, server-side, so the
             // next dictation isn't the one that waits for it.
@@ -160,6 +186,26 @@ struct SettingsView: View {
                 .font(.bj(12))
                 .foregroundStyle(Theme.inkSubtle)
         }
+    }
+
+    @ViewBuilder
+    private func downloadRow(_ fraction: Double) -> some View {
+        HStack(spacing: 8) {
+            ProgressView(value: fraction)
+                .progressViewStyle(.linear)
+                .frame(maxWidth: 180)
+            Text("Getting the Accurate model, \(Int(fraction * 100))%")
+                .font(.bj(11))
+                .foregroundStyle(Theme.inkSubtle)
+            Spacer()
+            Button("Stop") { downloader.cancel() }
+                .buttonStyle(.plain)
+                .font(.bj(11))
+                .foregroundStyle(Theme.inkSubtle)
+                .handCursor()
+        }
+        .padding(.horizontal, 11)
+        .padding(.bottom, 6)
     }
 }
 

@@ -50,6 +50,12 @@ fi
 codesign --force -s "$SIGN_ID" "$APP/Contents/Frameworks/llama.framework"
 codesign --force -s "$SIGN_ID" --identifier ai.getbluejay.wispr "$APP"
 DEST=/Applications/BisprBlow.app
+# A .pkg install leaves the bundle root-owned, and the rm below then fails halfway through it.
+if [ -e "$DEST" ] && [ ! -w "$DEST" ]; then
+    echo "$DEST belongs to root — the installer put it there. Hand it back with:" >&2
+    echo "  sudo rm -rf $DEST && sudo pkgutil --forget ai.getbluejay.wispr.app" >&2
+    exit 1
+fi
 pkill -x BluejayWispr 2>/dev/null || true
 rm -rf /Applications/BluejayWispr.app  # pre-rename copy: two bundles means two fn event taps fighting
 sleep 1

@@ -277,6 +277,12 @@ final class LLMCleaner {
     /// mode. This is the whole mechanical content of Fast vs Accurate, together with the deadline.
     private func firstModel(at endpoint: Endpoint, for mode: AppSettings.Cleanup) async -> String? {
         guard let ids = await models(at: endpoint) else { return nil }
+        return Self.pick(from: ids, for: mode)
+    }
+
+    /// Shared with `accurateNeedsModel` so what the app offers to download and what it would then
+    /// resolve to cannot drift apart.
+    static func pick(from ids: [String], for mode: AppSettings.Cleanup) -> String? {
         let chatIDs = ids.filter {
             let id = $0.lowercased()
             // Reasoning variants burn seconds thinking before every dictation. Small models
@@ -289,6 +295,14 @@ final class LLMCleaner {
             if let match = chatIDs.first(where: { $0.lowercased().contains(family) }) { return match }
         }
         return chatIDs.first
+    }
+
+    /// Accurate is on screen with nothing behind it: it would land on the model Fast already uses.
+    /// Not a crash — `pick` falls through to the first installed model, so the user selects Accurate
+    /// and quietly keeps getting Fast, which is the invisible failure this exists to make visible.
+    static var accurateNeedsModel: Bool {
+        let ids = LocalEngine.installedModels().map(\.id)
+        return !ids.isEmpty && pick(from: ids, for: .accurate) == pick(from: ids, for: .fast)
     }
 
     /// Fast, smallest first. Measured on qwen3-0.6b (bench/results.md): 0.38s median and 0/25 over

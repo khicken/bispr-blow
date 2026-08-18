@@ -314,6 +314,7 @@ enum SelfCheck {
         checkShortcuts()
         checkGestures()
         checkCloudSync()
+        checkAccurateResolution()
 
         print("self-check passed")
     }
@@ -372,6 +373,23 @@ enum SelfCheck {
     /// Lowercase sentence starts, and the three kinds of word that must survive it. The failure
     /// that matters is a capital getting eaten off a term the user put in the dictionary
     /// precisely so it would be spelled that way.
+    /// Accurate resolving to the same model as Fast is the whole trigger for offering the download,
+    /// and it is invisible from outside: `pick` falls through to the first installed model rather
+    /// than failing, so the setting moves and the writing does not change.
+    private static func checkAccurateResolution() {
+        let fastOnly = ["Qwen3-0.6B-MLX-4bit"]
+        precondition(LLMCleaner.pick(from: fastOnly, for: .accurate)
+            == LLMCleaner.pick(from: fastOnly, for: .fast), "Accurate should collapse onto Fast here")
+
+        let both = ["Qwen3-0.6B-MLX-4bit", "Qwen3-1.7B-MLX-8bit"]
+        precondition(LLMCleaner.pick(from: both, for: .fast) == "Qwen3-0.6B-MLX-4bit")
+        // The explicit "qwen3-1.7b" entry earning its place: without it the generic "qwen" matches
+        // the 0.6b and the two modes collapse even with both models on disk.
+        precondition(LLMCleaner.pick(from: both, for: .accurate) == "Qwen3-1.7B-MLX-8bit")
+
+        precondition(LLMCleaner.pick(from: [], for: .accurate) == nil)
+    }
+
     private static func checkLowercaseSentences() {
         let vocab = ["Kubernetes", "Bluejay", "Priya"]
         func lower(_ s: String) -> String { LLMCleaner.lowercaseSentenceStarts(s, keeping: vocab) }
