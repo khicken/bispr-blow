@@ -18,6 +18,10 @@ final class DictationController: ObservableObject {
     @Published private(set) var lastError: String?
     /// Transient message shown on the pill (e.g. manual-paste fallback).
     @Published private(set) var notice: String?
+    /// A button on the current notice, when the notice is about something the app just did on its
+    /// own. Only the learned-a-word message uses it: an app that changes your dictionary without
+    /// asking has to offer the way back in the same breath.
+    @Published private(set) var noticeAction: (label: String, run: () -> Void)?
     /// Device name flashed on the pill — only when the input device changed since last time.
     /// The current device is always visible in Settings.
     @Published private(set) var micFlash: String?
@@ -103,10 +107,15 @@ final class DictationController: ObservableObject {
         monitor.beginLockedSession()
     }
 
-    private func showNotice(_ message: String, for seconds: TimeInterval = 4) {
+    private func showNotice(_ message: String, for seconds: TimeInterval = 4,
+                           action: (label: String, run: () -> Void)? = nil) {
         notice = message
+        noticeAction = action
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            if self?.notice == message { self?.notice = nil }
+            if self?.notice == message {
+                self?.notice = nil
+                self?.noticeAction = nil
+            }
         }
     }
 
@@ -214,7 +223,9 @@ final class DictationController: ObservableObject {
                 """)
             guard self.sessionGeneration == generation else { return }
             if !cleaned.isEmpty {
-                if !TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
+                if TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
+                    self.watchForCorrection(to: cleaned)
+                } else {
                     self.showNotice("Copied. Press ⌘V to paste")
                 }
                 self.history.add(DictationEntry(
@@ -235,6 +246,7 @@ final class DictationController: ObservableObject {
     }
 
     private func cancelRecording() {
+        CorrectionWatcher.cancel()
         guard case .recording = state else { return }
         sessionGeneration += 1
         recorder.stop()
@@ -243,6 +255,21 @@ final class DictationController: ObservableObject {
         partialText = ""
         state = .idle
         Task { await transcriber.cancelSession() }
+    }
+
+    /// A word the user fixed by hand goes into the dictionary, so the next dictation spells it
+    /// their way. Said out loud on the pill with the way back attached — this changes a setting the
+    /// user owns, and doing that silently is how a dictionary quietly starts respelling good words.
+    private func watchForCorrection(to inserted: String) {
+        CorrectionWatcher.watch(inserted: inserted) { [weak self] fix in
+            let settings = AppSettings.shared
+            guard !settings.dictionary.contains(fix.corrected) else { return }
+            settings.addDictionaryWords([fix.corrected])
+            self?.showNotice("Added \"\(fix.corrected)\" to your dictionary", for: 6,
+                             action: ("Undo", {
+                                 settings.dictionary.removeAll { $0 == fix.corrected }
+                             }))
+        }
     }
 
     // MARK: - Permissions

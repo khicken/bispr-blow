@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// The floating "flow bar": a small dark pill anchored bottom-center of the active screen.
@@ -744,11 +745,16 @@ struct PlacementView: View {
 // MARK: - Toast
 
 /// Transient message above the pill: the mic that just changed, a paste fallback, a permission
-/// hint. Its own panel rather than a wider pill, so a long message never grows the pill's mouse
-/// footprint, and click-through because it is information the user reads, never a control.
+/// hint, a word just learned. Its own panel rather than a wider pill, so a long message never grows
+/// the pill's mouse footprint.
+///
+/// Click-through while it is only information — a panel that swallowed clicks would eat a 420pt
+/// strip of whatever is underneath it. It takes the mouse only while it carries a button, which is
+/// the learned-a-word Undo and nothing else so far.
 final class ToastController {
     private let panel: NSPanel
 
+    @MainActor
     init(controller: DictationController, model: PillModel) {
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 34),
@@ -767,6 +773,10 @@ final class ToastController {
         let host = NSHostingView(rootView: ToastView(controller: controller, model: model))
         host.frame = panel.contentRect(forFrameRect: panel.frame)
         panel.contentView = host
+
+        actionObserver = controller.$noticeAction.sink { [weak self] action in
+            self?.panel.ignoresMouseEvents = action == nil
+        }
 
         reposition()
         panel.orderFrontRegardless()
@@ -790,6 +800,7 @@ final class ToastController {
     }
 
     private var timer: Timer?
+    private var actionObserver: AnyCancellable?
 
     /// Sits against the pill wherever the user parked it, so the two read as one thing: above it
     /// on the bottom edge, and *beside* it on a side edge.
@@ -849,6 +860,16 @@ struct ToastView: View {
                         .font(.bj(11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
+                    if let action = controller.noticeAction {
+                        Button(action.label) { action.run() }
+                            .buttonStyle(.plain)
+                            .font(.bj(11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(.white.opacity(0.22)))
+                            .handCursor()
+                    }
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 26)
