@@ -153,7 +153,8 @@ enum Main {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)  // menu-bar app, no Dock icon
+        // Menu-bar app with no Dock icon unless the user asked for one.
+        app.setActivationPolicy(AppSettings.shared.showInDock ? .regular : .accessory)
         app.run()
     }
 }

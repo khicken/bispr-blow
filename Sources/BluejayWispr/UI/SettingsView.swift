@@ -102,6 +102,23 @@ struct SettingsView: View {
                           isOn: $settings.endWithPeriod)
             }
 
+            // The things the app does when you are not dictating. Wispr Flow splits these across
+            // System and Notifications; there are four of them, so they are one card.
+            settingsGroup("App", padding: 5) {
+                ToggleRow("Open at login",
+                          help: "Starts BisprBlow when you log in, so the shortcut works without opening anything.",
+                          isOn: $settings.launchAtLogin)
+                ToggleRow("Show the bar at all times",
+                          help: "Off, the floating bar only appears while you are dictating.",
+                          isOn: $settings.alwaysShowPill)
+                ToggleRow("Show in the Dock",
+                          help: "The menu bar icon is always there either way.",
+                          isOn: $settings.showInDock)
+                ToggleRow("Play a sound when dictation starts and ends",
+                          help: "A click when the mic opens and one when the text lands.",
+                          isOn: $settings.soundsEnabled)
+            }
+
             settingsGroup("Microphone", padding: 5) {
                 HStack(spacing: 8) {
                     Image(systemName: "mic")

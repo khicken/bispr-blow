@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import ServiceManagement
 
 struct TeamMember: Codable, Identifiable, Equatable {
     var id = UUID()
@@ -53,8 +55,39 @@ final class AppSettings: ObservableObject {
             }
         }
     }
-    @Published var launchSoundEnabled: Bool {
-        didSet { defaults.set(launchSoundEnabled, forKey: "launchSoundEnabled") }
+    /// A click when the mic opens and one when the text lands. The only feedback that reaches you
+    /// while you are looking at the app you are dictating into rather than at the pill.
+    @Published var soundsEnabled: Bool {
+        didSet { defaults.set(soundsEnabled, forKey: "launchSoundEnabled") }
+    }
+    /// Keep the pill on screen while idle. Off, it only appears once you start dictating — the
+    /// window still opens from the menu bar item, so nothing becomes unreachable.
+    @Published var alwaysShowPill: Bool {
+        didSet { defaults.set(alwaysShowPill, forKey: "alwaysShowPill") }
+    }
+    /// A Dock icon as well as the menu bar item. Off by default: it is a background app that you
+    /// drive from a shortcut, and a Dock icon for it is a second way to do nothing.
+    @Published var showInDock: Bool {
+        didSet {
+            defaults.set(showInDock, forKey: "showInDock")
+            NSApp?.setActivationPolicy(showInDock ? .regular : .accessory)
+        }
+    }
+    /// Start with the machine. The real state lives in the login-item registration, so this is
+    /// read back from `SMAppService` rather than from defaults — a user can revoke it in System
+    /// Settings and never touch us.
+    @Published var launchAtLogin: Bool {
+        didSet {
+            guard launchAtLogin != (SMAppService.mainApp.status == .enabled) else { return }
+            // Throws when there is no bundle to register (the CLI seams), which is exactly the
+            // case where a login item means nothing.
+            do {
+                if launchAtLogin { try SMAppService.mainApp.register() }
+                else { try SMAppService.mainApp.unregister() }
+            } catch {
+                logLine("login item \(launchAtLogin ? "register" : "unregister") failed: \(error)")
+            }
+        }
     }
     /// Lowercase the first word of every sentence in the text that lands at the cursor. Applied
     /// after cleanup rather than asked of the model, so it holds on the rule-based path too and
@@ -196,7 +229,10 @@ final class AppSettings: ObservableObject {
         } else {
             teamMembers = []
         }
-        launchSoundEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
+        soundsEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
+        alwaysShowPill = defaults.object(forKey: "alwaysShowPill") as? Bool ?? true
+        showInDock = defaults.bool(forKey: "showInDock")
+        launchAtLogin = SMAppService.mainApp.status == .enabled
         lowercaseSentences = defaults.bool(forKey: "lowercaseSentences")
         endWithPeriod = defaults.bool(forKey: "endWithPeriod")
         restoreMicVolume = defaults.bool(forKey: "restoreMicVolume")

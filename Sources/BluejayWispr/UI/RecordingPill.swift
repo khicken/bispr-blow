@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// The floating "flow bar": a small dark pill anchored bottom-center of the active screen.
@@ -13,6 +14,7 @@ final class RecordingPillController {
     private let placement = PlacementModel()
     private var overlay: PlacementOverlayController?
 
+    @MainActor
     init(controller: DictationController, onOpenDashboard: @escaping (DashboardView.Section) -> Void) {
         model = PillModel(controller: controller, onOpenDashboard: onOpenDashboard)
         let saved = Anchor(rawValue: UserDefaults.standard.string(forKey: "pillAnchor") ?? "")
@@ -82,9 +84,20 @@ final class RecordingPillController {
         repositionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.reposition()
         }
+
+        // Hiding the idle pill is a visibility setting, not a state: it still has to appear the
+        // moment a dictation starts, or the one piece of feedback the user has while looking at
+        // another app is gone. So both inputs drive it, and idle is the only state that hides.
+        Publishers.CombineLatest(controller.$state, AppSettings.shared.$alwaysShowPill)
+            .sink { [weak self] state, always in
+                self?.setHidden(!always && state == .idle)
+            }
+            .store(in: &visibility)
     }
 
     private var repositionTimer: Timer?
+    private var visibility = Set<AnyCancellable>()
+    private var isHidden = false
 
     /// Where the user parked the pill. The bar is small and the Dock, the menu bar extras and
     /// whatever app is open all compete for the same edges, so this is a preference, not a
@@ -311,10 +324,13 @@ final class RecordingPillController {
         if panel.frame.origin != target {
             panel.setFrameOrigin(target)
         }
-        panel.orderFrontRegardless()
+        // The 2s reposition timer runs whether or not the pill is meant to be on screen, so
+        // without this it would order a hidden pill straight back to the front.
+        if !isHidden { panel.orderFrontRegardless() }
     }
 
     func setHidden(_ hidden: Bool) {
+        isHidden = hidden
         if hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
     }
 }

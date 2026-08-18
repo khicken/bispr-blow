@@ -126,6 +126,7 @@ final class DictationController: ObservableObject {
                 if self?.micFlash == device { self?.micFlash = nil }
             }
         }
+        Self.playSound("Tink")
         recordingStartedAt = Date()
         partialText = ""
         lastError = nil
@@ -214,6 +215,7 @@ final class DictationController: ObservableObject {
                 """)
             guard self.sessionGeneration == generation else { return }
             if !cleaned.isEmpty {
+                Self.playSound("Pop")
                 if !TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
                     self.showNotice("Copied. Press ⌘V to paste")
                 }
@@ -243,6 +245,13 @@ final class DictationController: ObservableObject {
         partialText = ""
         state = .idle
         Task { await transcriber.cancelSession() }
+    }
+
+    /// One click when the mic opens, one when the text lands. Fire and forget: you are looking at
+    /// the app you dictated into, not at the pill, and a sound that waits on anything is late.
+    private static func playSound(_ name: String) {
+        guard AppSettings.shared.soundsEnabled else { return }
+        NSSound(named: name)?.play()
     }
 
     // MARK: - Permissions
