@@ -322,6 +322,16 @@ enum SelfCheck {
     /// The pure halves of cloud sync: queue diffing, the rows that travel, and the state file.
     /// The failure that matters is words leaving the machine on the stats path, or a state file
     /// from another version resetting what has synced.
+    /// True when a redirect is not a session. Used for the shapes that must never become one.
+    private static func rejectsCallback(_ url: URL) -> Bool {
+        do {
+            _ = try CloudClient.tokens(fromCallback: url)
+            return false
+        } catch {
+            return true
+        }
+    }
+
     private static func checkCloudSync() {
         let a = UUID(), b = UUID(), c = UUID()
 
@@ -360,6 +370,44 @@ enum SelfCheck {
         let partial = try! JSONDecoder().decode(SyncEngine.State.self,
                                                 from: Data(#"{"metrics":["\#(a.uuidString)"]}"#.utf8))
         precondition(partial.metrics == [a] && partial.texts.isEmpty)
+
+        // The compiled-in project, which is what every installed copy uses: a typo here switches
+        // accounts off for everyone but the machine that has the defaults override set, which is
+        // exactly the failure the constants replaced.
+        precondition(URL(string: CloudConfig.defaultURL)?.scheme == "https", CloudConfig.defaultURL)
+        precondition(CloudConfig.defaultAnonKey.hasPrefix("sb_publishable_"))
+        precondition(CloudConfig.ready)
+
+        // Google's redirect: the tokens arrive in the URL *fragment*, not the query, and an error
+        // arrives the same way. This is the only part of the Google path that can be checked without
+        // a configured Google client, so it is the part worth pinning.
+        let good = URL(string: "bisprblow://auth-callback#access_token=abc&expires_in=3600"
+                       + "&refresh_token=xyz&token_type=bearer")!
+        let tokens = try! CloudClient.tokens(fromCallback: good)
+        precondition(tokens.accessToken == "abc" && tokens.refreshToken == "xyz")
+        precondition(tokens.expiresIn == 3600)
+
+        // Query-string tokens are not a session: Supabase puts them in the fragment, and accepting
+        // them from the query would accept a link anyone could have built.
+        let query = URL(string: "bisprblow://auth-callback?access_token=abc&refresh_token=xyz")!
+        precondition(rejectsCallback(query))
+
+        // The server's own words survive: a provider that is not configured says so, and that
+        // sentence is the whole diagnosis.
+        let failed = URL(string: "bisprblow://auth-callback#error=invalid_request"
+                         + "&error_description=Unsupported+provider%3A+provider+is+not+enabled")!
+        do {
+            _ = try CloudClient.tokens(fromCallback: failed)
+            preconditionFailure("an error fragment must not read as a session")
+        } catch {
+            precondition(error.localizedDescription == "Unsupported provider: provider is not enabled",
+                         error.localizedDescription)
+        }
+
+        // A fragment with an access token but no refresh token would build a session that cannot
+        // outlive the hour, and the failure would land an hour later looking like something else.
+        let half = URL(string: "bisprblow://auth-callback#access_token=abc")!
+        precondition(rejectsCallback(half))
 
         // Invite codes: fixed length, an alphabet with no 0/O or 1/I/L (someone will read one
         // out loud), and no repeats in any realistic batch.

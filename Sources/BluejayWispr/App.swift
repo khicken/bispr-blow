@@ -111,6 +111,17 @@ enum Main {
             print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!)
             return
         }
+        // Whether accounts are switched on, and where they point. Worth a seam because the answer
+        // used to depend on a per-user `defaults write`: `ready` was true on the machine where
+        // someone had run it and false in every installed copy, and nothing printed either way.
+        if CommandLine.arguments.contains("--cloud-check") {
+            print("ready=\(CloudConfig.ready)")
+            print("url=\(CloudConfig.url?.absoluteString ?? "none")")
+            print("key=\(CloudConfig.anonKey.isEmpty ? "none" : String(CloudConfig.anonKey.prefix(18)) + "…")")
+            print("callback=\(CloudConfig.callbackURL)")
+            print("session=\(CloudClient.storedSessionEmail().map { "signed in as \($0)" } ?? "signed out")")
+            return
+        }
         // Every model on disk, one id per line, so bench/bench.py can enumerate the in-process
         // engine the same way it enumerates LM Studio's /models.
         if CommandLine.arguments.contains("--list-models") {

@@ -97,8 +97,8 @@ final class AppSettings: ObservableObject {
     @Published var syncTexts: Bool {
         didSet { defaults.set(syncTexts, forKey: "syncTexts") }
     }
-    /// The Supabase project cloud accounts live in. Read once at launch; see `CloudConfig` for
-    /// how to set them. Empty means accounts stay off and the app is local-only.
+    /// An override for the compiled-in Supabase project, read once at launch. Empty is the normal
+    /// case and means "use the project in `CloudConfig`" — it is not an off switch.
     let cloudURL: String
     let cloudAnonKey: String
     /// Bindings per action, keyed by `ShortcutAction.rawValue` — a String key so the whole

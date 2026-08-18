@@ -1,27 +1,46 @@
+import AuthenticationServices
 import Foundation
 import Security
 
-/// The Supabase project every cloud feature talks to, named in exactly one place. Both values are
-/// empty until configured:
+/// The Supabase project every cloud feature talks to, named in exactly one place.
+///
+/// The project is compiled in, and it has to be: both values used to live only in the defaults
+/// domain, which is per-user — so accounts worked on the machine where someone had run `defaults
+/// write` and were silently switched off for everyone who installed the .pkg. `ready` was true
+/// for the author and false for every user, which is the worst shape a feature flag can have.
+/// The anon key belongs in the binary by design: it is publishable, and db/policies.sql gives the
+/// anon role nothing at all.
+///
+/// The defaults keys still win when set, which is how you point a build at another project:
 ///
 ///     defaults write ai.getbluejay.wispr cloudURL https://<project>.supabase.co
 ///     defaults write ai.getbluejay.wispr cloudAnonKey <anon key>
 ///
-/// then relaunch. While either is empty the app is exactly what it was before accounts existed:
-/// signed out, local-only, no Account section and no network. The anon key is publishable by
-/// design — db/policies.sql gives the anon role nothing at all.
+/// Setting `cloudURL` to something unparseable is the way to turn accounts off entirely: the app
+/// is then exactly what it was before they existed — signed out, local-only, no network.
 enum CloudConfig {
+    static let defaultURL = "https://qprsavobltijpuhwqrhw.supabase.co"
+    static let defaultAnonKey = "sb_publishable_5gxuMbpd5SWLKPjw4voD4A_Xjzu3ygi"
+
     static var url: URL? {
-        let raw = AppSettings.shared.cloudURL.trimmingCharacters(in: .whitespaces)
-        guard !raw.isEmpty, let url = URL(string: raw), url.scheme == "https" else { return nil }
+        let stored = AppSettings.shared.cloudURL.trimmingCharacters(in: .whitespaces)
+        let raw = stored.isEmpty ? defaultURL : stored
+        guard let url = URL(string: raw), url.scheme == "https" else { return nil }
         return url
     }
 
     static var anonKey: String {
-        AppSettings.shared.cloudAnonKey.trimmingCharacters(in: .whitespaces)
+        let stored = AppSettings.shared.cloudAnonKey.trimmingCharacters(in: .whitespaces)
+        return stored.isEmpty ? defaultAnonKey : stored
     }
 
     static var ready: Bool { url != nil && !anonKey.isEmpty }
+
+    /// The scheme Supabase redirects back to after Google. Declared in Info.plist as a
+    /// CFBundleURLTypes entry, and registered in the project's allowed redirect URLs — the
+    /// redirect is refused by Supabase if it is not on that list.
+    static let callbackScheme = "bisprblow"
+    static var callbackURL: String { "\(callbackScheme)://auth-callback" }
 }
 
 /// Who is signed in, kept in the Keychain — never in UserDefaults, which anything running as the
@@ -112,6 +131,76 @@ final class CloudClient: ObservableObject {
         let data = try await auth("verify", json: ["type": "email", "email": email, "token": code])
         try adopt(tokenData: data, fallbackEmail: email)
         await refreshOrg()
+    }
+
+    /// Google, in a system browser sheet. Supabase answers `authorize` with a redirect to Google
+    /// and, once that is done, to `bisprblow://auth-callback` carrying the tokens in the URL
+    /// fragment — so nothing here posts credentials, and the app never sees the password.
+    ///
+    /// Requires a Google client configured in the project's Google provider and this callback in
+    /// its redirect allow-list. Until that exists Supabase answers with an error, which arrives
+    /// as `CloudError` in its own words and leaves the emailed-code path untouched.
+    func signInWithGoogle() async throws {
+        guard let base = CloudConfig.url else { throw CloudError(message: "Accounts aren't set up.") }
+        var components = URLComponents(
+            url: base.appendingPathComponent("auth/v1/authorize"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            .init(name: "provider", value: "google"),
+            .init(name: "redirect_to", value: CloudConfig.callbackURL),
+        ]
+        // Asked before the sheet opens, because a provider that is not configured answers this URL
+        // with a JSON error *page* rather than a redirect — so without this the user gets a browser
+        // window full of `{"code":400,...}` and closing it looks like they changed their mind.
+        // Measured against the live project while Google was still unconfigured:
+        // "Unsupported provider: provider is not enabled".
+        try await checkProviderEnabled(components.url!)
+        let callback = try await WebAuth.run(url: components.url!,
+                                             scheme: CloudConfig.callbackScheme)
+        let tokens = try Self.tokens(fromCallback: callback)
+        let who = try await user(accessToken: tokens.accessToken)
+        adopt(accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken,
+              expiresIn: tokens.expiresIn,
+              userID: who.id,
+              email: who.email)
+        await refreshOrg()
+    }
+
+    /// Whether `authorize` will redirect rather than refuse. A success here is Google's own consent
+    /// page, which is exactly what the sheet is about to load anyway.
+    private func checkProviderEnabled(_ url: URL) async throws {
+        var request = URLRequest(url: url)
+        request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return }
+        guard (200..<400).contains(http.statusCode) else {
+            throw CloudError.from(data, status: http.statusCode)
+        }
+    }
+
+    /// The redirect's fragment, which is where Supabase puts the tokens — `#access_token=...&
+    /// refresh_token=...&expires_in=3600`. An `error_description` arrives the same way and is the
+    /// server's own wording, so it is shown rather than replaced.
+    ///
+    /// Pure and `nonisolated` so SelfCheck can exercise it; it is a parser, and it is the only part
+    /// of the Google path testable without a configured Google client.
+    nonisolated static func tokens(fromCallback url: URL) throws
+        -> (accessToken: String, refreshToken: String, expiresIn: Double) {
+        let fragment = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment ?? ""
+        var values: [String: String] = [:]
+        for pair in fragment.split(separator: "&") {
+            let halves = pair.split(separator: "=", maxSplits: 1)
+            guard halves.count == 2 else { continue }
+            values[String(halves[0])] = String(halves[1])
+                .replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+        }
+        if let message = values["error_description"] ?? values["error"] {
+            throw CloudError(message: message)
+        }
+        guard let access = values["access_token"], !access.isEmpty,
+              let refresh = values["refresh_token"], !refresh.isEmpty
+        else { throw CloudError(message: "Google didn't send a session back. Try again.") }
+        return (access, refresh, Double(values["expires_in"] ?? "") ?? 3600)
     }
 
     func signOut() async {
@@ -222,6 +311,15 @@ final class CloudClient: ObservableObject {
 
     // MARK: - Plumbing
 
+    /// Who the stored session belongs to, read straight from the Keychain. `nonisolated` so
+    /// `--cloud-check` can ask without hopping to the MainActor: `awaitSync` blocks the main thread,
+    /// so a hop there from a CLI path deadlocks outright and reads as a hang, not an error.
+    nonisolated static func storedSessionEmail() -> String? {
+        Keychain.load()
+            .flatMap { try? JSONDecoder().decode(CloudSession.self, from: $0) }
+            .map(\.email)
+    }
+
     /// 8 characters from an alphabet with no 0/O, 1/I/L — a code someone reads out loud.
     nonisolated static func newInviteCode() -> String {
         let alphabet = Array("23456789ABCDEFGHJKMNPQRSTUVWXYZ")
@@ -309,13 +407,41 @@ final class CloudClient: ObservableObject {
             }
         }
         let token = try JSONDecoder().decode(TokenResponse.self, from: tokenData)
-        let fresh = CloudSession(accessToken: token.accessToken,
-                                 refreshToken: token.refreshToken,
-                                 expiresAt: Date().addingTimeInterval(token.expiresIn),
-                                 userID: token.user.id,
-                                 email: token.user.email ?? fallbackEmail)
+        adopt(accessToken: token.accessToken,
+              refreshToken: token.refreshToken,
+              expiresIn: token.expiresIn,
+              userID: token.user.id,
+              email: token.user.email ?? fallbackEmail)
+    }
+
+    /// The one place a session is built and stored. The OAuth redirect hands back three token
+    /// values in a URL fragment and no user object at all, so the identity arrives separately —
+    /// which is why this takes the pieces rather than a response body.
+    private func adopt(accessToken: String, refreshToken: String, expiresIn: Double,
+                       userID: UUID, email: String) {
+        let fresh = CloudSession(accessToken: accessToken,
+                                 refreshToken: refreshToken,
+                                 expiresAt: Date().addingTimeInterval(expiresIn),
+                                 userID: userID,
+                                 email: email)
         session = fresh
         if let data = try? JSONEncoder().encode(fresh) { Keychain.save(data) }
+    }
+
+    /// Who a bare access token belongs to. Asked of the server rather than decoded out of the JWT:
+    /// the payload does carry `sub` and `email`, but reading identity out of a token this app has
+    /// not verified is trusting a string, and this is one request through the same path as the rest.
+    private func user(accessToken: String) async throws -> (id: UUID, email: String) {
+        guard let base = CloudConfig.url else { throw CloudError(message: "Accounts aren't set up.") }
+        var request = URLRequest(url: base.appendingPathComponent("auth/v1/user"))
+        request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        struct User: Decodable {
+            let id: UUID
+            let email: String?
+        }
+        let decoded = try JSONDecoder().decode(User.self, from: try await send(request))
+        return (decoded.id, decoded.email ?? "")
     }
 }
 
@@ -345,5 +471,57 @@ private enum Keychain {
 
     static func delete() {
         SecItemDelete(query as CFDictionary)
+    }
+}
+
+/// `ASWebAuthenticationSession` as one `await`. The session has to outlive the call that starts it
+/// or the sheet closes immediately, and its delegate is a separate object, so both are held here
+/// until the callback lands.
+///
+/// `prefersEphemeralWebBrowserSession` is false on purpose: a signed-in Google in Safari is the
+/// difference between a click and typing a password, and the point of this button is that it is
+/// faster than the emailed code.
+@MainActor
+private final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private static var live: WebAuth?
+
+    static func run(url: URL, scheme: String) async throws -> URL {
+        let auth = WebAuth()
+        live = auth
+        defer { live = nil }
+        return try await auth.start(url: url, scheme: scheme)
+    }
+
+    private func start(url: URL, scheme: String) async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            let session = ASWebAuthenticationSession(
+                url: url, callbackURLScheme: scheme
+            ) { callback, error in
+                if let callback {
+                    continuation.resume(returning: callback)
+                } else if let error = error as? ASWebAuthenticationSessionError,
+                          error.code == .canceledLogin {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    continuation.resume(throwing: CloudError(
+                        message: error?.localizedDescription ?? "Google sign-in didn't finish."))
+                }
+            }
+            session.presentationContextProvider = self
+            self.session = session
+            guard session.start() else {
+                continuation.resume(throwing: CloudError(
+                    message: "Couldn't open a browser for Google sign-in."))
+                return
+            }
+        }
+    }
+
+    private var session: ASWebAuthenticationSession?
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        // The dashboard window when it is open. An accessory app can have no window at all, and
+        // `ASPresentationAnchor()` is the documented "no particular window" anchor.
+        NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible } ?? ASPresentationAnchor()
     }
 }

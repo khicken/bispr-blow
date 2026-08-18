@@ -39,9 +39,9 @@ struct LeaderboardView: View {
             if !CloudConfig.ready {
                 EmptyHint(text: "Teams aren't switched on in this build.")
             } else if cloud.session == nil {
-                EmptyHint(text: "Sign in from Settings to share a leaderboard with your team.")
+                EmptyHint(text: "Sign in on the Team page to share a leaderboard with your team.")
             } else if cloud.org == nil {
-                EmptyHint(text: "Create or join a team in Settings. Joining is what puts you on the board.")
+                EmptyHint(text: "Create or join a team on the Team page. Joining is what puts you on the board.")
             } else {
                 picker
                 board
