@@ -840,6 +840,40 @@ final class LLMCleaner {
         return out
     }
 
+    /// Whether a word the user retyped by hand is worth keeping in the dictionary.
+    ///
+    /// This is a new way to poison the dictionary, so it answers to the same discriminator the
+    /// respeller does: being real English. A word already in `/usr/share/dict/words` needs no entry
+    /// — and worse, an entry for it licenses `.near` on its neighbours, which is how "code" in the
+    /// dictionary turned "just put a code fix for it" into "just put a Xcode Vite for it".
+    ///
+    /// **Both** words are tested against the word list, not just the new one. A recognizer that
+    /// produced real English got the word right as far as English can tell, and an edit away from
+    /// it is as likely to be the user changing their mind as fixing a mishear: "prod" → "proud" and
+    /// "code" → "Xcode" are the same shape, and the second is the pair that turned "just put a code
+    /// fix for it" into "just put a Xcode Vite for it". So the app learns only from what the
+    /// recognizer plainly invented — "Parik", "kubernetis" — and a real mishear of a real word is
+    /// left to be added by hand. Losing a learn is recoverable; a bad entry respells good words.
+    ///
+    /// The pair also has to be a plausible mishear rather than a change of mind: same rough length,
+    /// and either one edit apart or sharing a phonetic key. "send" → "cancel" is someone rewriting
+    /// their sentence, and no distance test would call it a mishear.
+    static func learnable(misheard: String, corrected: String) -> Bool {
+        let heard = misheard.lowercased(), fixed = corrected.lowercased()
+        guard heard != fixed,
+              corrected.count >= 3, corrected.count <= 30,
+              corrected.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "-" }),
+              misheard.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "-" }),
+              !englishWords.contains(fixed),
+              // Four letters is where `englishWords` starts, so a shorter heard word is one the
+              // list has no opinion about — and an opinion is the whole basis for learning here.
+              heard.count >= 4, !englishWords.contains(heard),
+              abs(heard.count - fixed.count) <= 3
+        else { return false }
+        return levenshtein(heard, fixed) <= 2
+            || levenshtein(phoneticKey(heard), phoneticKey(fixed)) <= 1
+    }
+
     private static func levenshtein(_ a: String, _ b: String) -> Int {
         let x = Array(a), y = Array(b)
         if x.isEmpty || y.isEmpty { return max(x.count, y.count) }

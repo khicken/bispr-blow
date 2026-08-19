@@ -311,6 +311,8 @@ enum SelfCheck {
         precondition(DashboardView.Section.groups.flatMap(\.items) == DashboardView.Section.allCases)
 
         checkAnchors()
+        checkCorrections()
+        checkFieldLabel()
         checkShortcuts()
         checkGestures()
         checkAccurateResolution()
@@ -419,6 +421,64 @@ enum SelfCheck {
 
     /// Where a release lands the pill. Everything here is in screen coordinates, bottom-left
     /// origin, against a `visibleFrame`-shaped rect.
+    /// Learning from a hand-typed fix, which is a new way to write to the dictionary — and the
+    /// dictionary is the one thing in the app that can turn a correct transcript into a wrong one.
+    /// Both halves are checked: what counts as a correction at all, and what is worth keeping.
+    private static func checkCorrections() {
+        func fix(_ before: String, _ after: String) -> CorrectionWatcher.Correction? {
+            CorrectionWatcher.substitution(from: before, to: after)
+        }
+
+        // One word swapped in place is the whole signal.
+        let one = fix("ask Parik about the deploy", "ask Parikh about the deploy")
+        precondition(one?.misheard == "Parik" && one?.corrected == "Parikh")
+
+        // Punctuation belongs to the sentence, not to the word that goes in the dictionary.
+        let punctuated = fix("thanks, Parik.", "thanks, Parikh.")
+        precondition(punctuated?.corrected == "Parikh", "\(punctuated?.corrected ?? "nil")")
+
+        // Everything else is the user writing, and there is no way to tell which half of a rewrite
+        // was a mishear. A second changed word, a word added, a word deleted: all nil.
+        precondition(fix("ask Parik about the deploy", "ask Parikh about the release") == nil)
+        precondition(fix("ask Parik about it", "ask Parik about it today") == nil)
+        precondition(fix("ask Parik about it", "ask about it") == nil)
+        precondition(fix("same text", "same text") == nil)
+
+        // Worth keeping: a name the word list has never heard of, one edit away from what we wrote.
+        precondition(LLMCleaner.learnable(misheard: "Parik", corrected: "Parikh"))
+        precondition(LLMCleaner.learnable(misheard: "Bispr", corrected: "BisprBlow") == false)
+        precondition(LLMCleaner.learnable(misheard: "kubernetis", corrected: "Kubernetes"))
+
+        // Not worth keeping. In all three the recognizer produced real English, so it got the word
+        // right as far as the word list can tell and the edit is as likely to be a change of mind
+        // as a fix. "code" → "Xcode" is the pair that turned "just put a code fix for it" into
+        // "just put a Xcode Vite for it", and it is indistinguishable from "prod" → "proud" without
+        // knowing what the speaker meant.
+        precondition(LLMCleaner.learnable(misheard: "prod", corrected: "proud") == false)
+        precondition(LLMCleaner.learnable(misheard: "code", corrected: "Xcode") == false)
+        precondition(LLMCleaner.learnable(misheard: "shift", corrected: "Swift") == false)
+
+        // Not a mishear at all: someone rewrote the word.
+        precondition(LLMCleaner.learnable(misheard: "send", corrected: "cancel") == false)
+        precondition(LLMCleaner.learnable(misheard: "Parikh", corrected: "Parikh") == false)
+
+        // A word with a digit or an underscore in it is a variable name, not a dictated word — the
+        // recognizer never produced it, so nothing here should be storing it.
+        precondition(LLMCleaner.learnable(misheard: "userId", corrected: "user_id") == false)
+    }
+
+    /// The field's own name is context too, and it leads: in an empty message box it is the only
+    /// thing there is, which is exactly when the draft has nothing to offer.
+    private static func checkFieldLabel() {
+        let terms = AppContext(
+            bundleID: "com.tinyspeck.slackmacgap", appName: "Slack",
+            windowTitle: "Slack", draft: "shipping this today",
+            fieldLabel: "Message #platform-team"
+        ).draftTerms
+        precondition(terms.contains("#platform-team"), "\(terms)")
+        precondition(terms.contains("shipping"), "\(terms)")
+    }
+
     private static func checkAnchors() {
         let screen = CGRect(x: 0, y: 0, width: 1352, height: 878)
         let pill = CGSize(width: 122, height: 48)

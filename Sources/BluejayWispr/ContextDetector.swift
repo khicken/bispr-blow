@@ -8,6 +8,10 @@ struct AppContext {
     /// Text already sitting in the field being dictated into. Steers both the recognizer and
     /// cleanup toward the topic and register the user is mid-way through.
     var draft: String = ""
+    /// What the field calls itself — a placeholder, label or description, like "Message #general"
+    /// or "Search". One phrase, and often the only thing a field exposes when it is still empty,
+    /// which is exactly when `draft` has nothing to give.
+    var fieldLabel: String = ""
 
     enum Category: String {
         case messaging, coding, writing, browser, general
@@ -47,37 +51,91 @@ enum ContextDetector {
             return AppContext(bundleID: "", appName: "", windowTitle: "")
         }
         let title = focusedWindowTitle(pid: app.processIdentifier) ?? ""
+        let field = focusedField(pid: app.processIdentifier)
         return AppContext(
             bundleID: app.bundleIdentifier ?? "",
             appName: app.localizedName ?? "",
             windowTitle: title,
-            draft: focusedText(pid: app.processIdentifier) ?? ""
+            draft: field?.text ?? "",
+            fieldLabel: field?.label ?? ""
         )
     }
 
-    /// Contents of the focused text field, tail-truncated. Never reads a secure field: a
-    /// password must not reach a prompt, a log, or history.
-    private static func focusedText(pid: pid_t, limit: Int = 600) -> String? {
-        let appElement = AXUIElementCreateApplication(pid)
+    /// The focused element, for anyone who needs to come back to it — the correction watcher reads
+    /// the same element after the text lands. nil rather than a guess when Accessibility is not
+    /// trusted, since every AX call then returns an error rather than a value.
+    static func focusedElement() -> (element: AXUIElement, pid: pid_t)? {
+        guard AXIsProcessTrusted(),
+              let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let pid = app.processIdentifier
+        return focused(pid: pid).map { ($0, pid) }
+    }
+
+    private static func focused(pid: pid_t) -> AXUIElement? {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
-            appElement, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+            AXUIElementCreateApplication(pid),
+            kAXFocusedUIElementAttribute as CFString, &focused) == .success,
             CFGetTypeID(focused) == AXUIElementGetTypeID()
         else { return nil }
-        let element = focused as! AXUIElement
+        return (focused as! AXUIElement)
+    }
 
+    /// Whole value of the focused text element, plus what the field calls itself.
+    ///
+    /// Every read here is on the path that opens the microphone, which is already 150ms of the
+    /// user's silence (CLAUDE.md), so the whole thing is bounded: an app that is slow to answer AX
+    /// gives back whatever arrived before the budget ran out rather than delaying the mic.
+    static func focusedText(element: AXUIElement, limit: Int = 4000) -> String? {
         for attribute in [kAXRoleAttribute, kAXSubroleAttribute] {
             var value: CFTypeRef?
             AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
             if value as? String == "AXSecureTextField" { return nil }
         }
-
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success,
               let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty
         else { return nil }
+        // Tail rather than head: the words nearest the cursor are the ones being written about.
         return text.count <= limit ? text : String(text.suffix(limit))
+    }
+
+    /// The focused field's text and its own name. Never reads a secure field: a password must not
+    /// reach a prompt, a log, or history.
+    ///
+    /// Selected text is folded in because a selection is the user pointing at the words they mean —
+    /// and in an editor it is usually the identifier they are about to dictate about. It leads for
+    /// that reason.
+    private static func focusedField(pid: pid_t) -> (text: String, label: String)? {
+        let deadline = Date().addingTimeInterval(0.12)
+        guard let element = focused(pid: pid) else { return nil }
+        guard let text = focusedText(element: element) else { return nil }
+
+        var selection = ""
+        if Date() < deadline {
+            var value: CFTypeRef?
+            if AXUIElementCopyAttributeValue(
+                element, kAXSelectedTextAttribute as CFString, &value) == .success,
+                let selected = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                selected.count > 1, selected.count <= 200 {
+                selection = selected
+            }
+        }
+
+        var label = ""
+        if Date() < deadline {
+            for attribute in [kAXPlaceholderValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+                var value: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+                      let phrase = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !phrase.isEmpty, phrase.count <= 120
+                else { continue }
+                label = phrase
+                break
+            }
+        }
+        return (selection.isEmpty ? text : selection + " " + text, label)
     }
 
     private static func focusedWindowTitle(pid: pid_t) -> String? {
@@ -111,7 +169,7 @@ extension AppContext {
         var seen = Set<String>()
         var identifiers: [String] = []
         var plain: [String] = []
-        for token in draft.split(whereSeparator: { $0.isWhitespace }) {
+        for token in (fieldLabel + " " + draft).split(whereSeparator: { $0.isWhitespace }) {
             let term = token.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?\"'()[]{}"))
             guard term.count >= 3, term.count <= 30,
                   term.contains(where: \.isLetter),
