@@ -57,6 +57,7 @@ struct DashboardView: View {
     enum Section: String, CaseIterable, Identifiable {
         case home = "Home"
         case history = "History"
+        case leaderboard = "Leaderboard"
         case dictionary = "Dictionary"
         case team = "Team"
         case settings = "Settings"
@@ -66,6 +67,7 @@ struct DashboardView: View {
             switch self {
             case .home: return "house"
             case .history: return "clock.arrow.circlepath"
+            case .leaderboard: return "trophy"
             case .dictionary: return "character.book.closed"
             case .team: return "person.2"
             case .settings: return "gearshape"
@@ -77,7 +79,7 @@ struct DashboardView: View {
         /// so the last row reads as the end of a list rather than something left over.
         /// Must cover `allCases` in order; SelfCheck asserts it.
         static let groups: [(title: String, items: [Section])] = [
-            ("Activity", [.home, .history]),
+            ("Activity", [.home, .history, .leaderboard]),
             ("Vocabulary", [.dictionary, .team]),
             ("App", [.settings]),
         ]
@@ -175,8 +177,9 @@ struct DashboardView: View {
             switch section {
             case .home: HomeView(history: history)
             case .history: HistoryView(history: history)
+            case .leaderboard: LeaderboardView(cloud: CloudClient.shared)
             case .dictionary: DictionaryView(settings: settings)
-            case .team: TeamView(settings: settings)
+            case .team: TeamPage(settings: settings, cloud: CloudClient.shared)
             case .settings: SettingsView(settings: settings)
             }
         }
@@ -598,7 +601,7 @@ struct DictionaryView: View {
     }
 
     var body: some View {
-        Page(title: "Dictionary") {
+        Page(title: "Dictionary", subtitle: "These words stay on this Mac.") {
             if !introDismissed {
                 intro
             }
@@ -992,8 +995,35 @@ struct WrapStack: Layout {
 
 // MARK: - Team
 
+/// Team is the cloud page, so it is behind sign-in — Kaleb's call, knowing it puts a door in front
+/// of the local name list, which works offline and has nothing to do with accounts.
+///
+/// The `CloudConfig.ready` branch is what keeps that honest rather than cruel: a build with no
+/// project configured has no sign-in to pass, so gating there would not hide the name list behind a
+/// door, it would delete it. Normal builds never take that path — the project is compiled in.
+struct TeamPage: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject var cloud: CloudClient
+
+    var body: some View {
+        if !CloudConfig.ready {
+            TeamView(settings: settings)
+        } else if cloud.session == nil {
+            Page(title: "Team",
+                 subtitle: "Sign in to share a leaderboard, and to keep your teammates' names spelled right.") {
+                SignInView(cloud: cloud, showsBlurb: false)
+                    .card(padding: 16)
+            }
+        } else {
+            TeamView(settings: settings, cloud: cloud)
+        }
+    }
+}
+
 struct TeamView: View {
     @ObservedObject var settings: AppSettings
+    /// nil in a build with no project configured, where there is no cloud team to show.
+    var cloud: CloudClient?
     @State private var newName = ""
     @State private var newRole = ""
 
@@ -1002,6 +1032,10 @@ struct TeamView: View {
         // own mechanism, and a teammate list is worth having for exactly one reason — a name you
         // say out loud comes back spelled wrong until it is in here.
         Page(title: "Team", subtitle: "Teammate names get spelled right when you dictate them.") {
+            if let cloud {
+                TeamCloudSection(cloud: cloud)
+                    .card(padding: 16)
+            }
             HStack(spacing: 8) {
                 TextField("Name", text: $newName)
                     .textFieldStyle(.plain)
