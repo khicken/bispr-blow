@@ -154,7 +154,7 @@ def run_case(model, prompts, case, nothink, timeout, engine=None):
         user += f"\nAlready typed (context only, do not clean or repeat): {case['draft']}"
     user += f"\nTranscript: {case['raw']}"
     if nothink == "on" or (nothink == "auto" and "qwen3" in model.lower()):
-        user += " /no_think"
+        user += "\n/no_think"  # own line: glued to the transcript the coding path copies it
     payload = {
         "model": model,
         "temperature": 0.2,

@@ -65,6 +65,47 @@ final class LLMCleaner {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return ("", "none") }
 
+        // A short dictation does not go to the model at all. Not a latency optimisation — the model
+        // is measurably worse than the rules at this length, and the way it is worse is the thing
+        // users report as "it cuts off my words".
+        //
+        // The reason is that the recognizer has already done this job. SpeechAnalyzer hands back
+        // "Second is." — capitalized, punctuated, final — so on a fragment there is no run-on to
+        // break, no clause to reorder, and nothing left for a cleanup pass to add beyond stripping
+        // a filler, which `ruleClean` does deterministically. What the model does instead is delete.
+        //
+        // Measured over Kaleb's real history (100 dictations, 45 of them at or under 8 words, replayed
+        // through qwen3-0.6b): at or below 8 words the model and the rules agree on 33 of 45, and of
+        // the 12 disagreements the model loses content in 8 and improves 2 cosmetically (a "front-end"
+        // hyphen, a dangling "So." dropped) with 2 a wash. The losses are the user's own bug reports:
+        // "Second is." → "Second.", "We're currently on Cloud Flare is non-interactive." →
+        // "We're currently on Cloudflare.", "Update the uh, this cookbook, Doc." → "Update the
+        // cookbook, Doc.", "Front end, I think, is fine." → "Front end, is fine." It also flattens
+        // questions the recognizer got right — "Hello?" → "Hello.", "So this will fix Diego's issue?"
+        // → "issue." — because a period is what its demonstrations end on.
+        //
+        // No guard can sort the good deletions from the bad ones here, which is why this is a skip
+        // rather than another check. `looksTruncated`'s short branch needs 3 words and allows a 50%
+        // drop, so "Second is." → "Second." clears it; `losesContent` and `dropsTail` are floored at
+        // 12 content words; and "is" is two letters, so the content-word guards cannot see it go at
+        // any floor. Strict equality would be the only rule that catches it, and that rejects the
+        // legitimate "Yeah, commit push." → "Commit push." too.
+        //
+        // 8 is where this user's data turns over: the model first earns its keep at 9 words and up,
+        // where real self-corrections and stutters start appearing ("we are working on, um, we're
+        // investigating" → "we are investigating", "because it is it keeps cutting" → "because it
+        // keeps cutting", "cloud flare turns tile" → "turnstile"). Above the threshold nothing
+        // changes — a long disfluent ramble still gets the full polish pass, which is the point.
+        // Re-derive the number from `history.json` rather than adjusting it by feel; the bench cannot
+        // help, because only one of its 27 cases is this short (`deliberate_repetition` at 6 words,
+        // which the rules path passes trivially since the de-doubling regex will not cross a comma).
+        //
+        // `applyVocabulary` runs in `clean`, outside this function, so the dictionary still respells
+        // a misheard name on this path — skipping the model costs nothing there.
+        if trimmed.split(whereSeparator: \.isWhitespace).count <= Self.verbatimWords {
+            return (Self.ruleClean(trimmed), "rules")
+        }
+
         if resolutionIsStale { resolved = nil }
         if resolved == nil {
             resolved = await resolveEndpoint()
@@ -169,6 +210,18 @@ final class LLMCleaner {
 
     private struct DeadlineExceeded: Error {}
 
+    /// The `/no_think` switch, on its own line at the end of the last user message. Separate and
+    /// internal so `--self-check` can assert the line placement, which is the part that broke: see
+    /// the comment in `complete`, where the measurements are.
+    static func withThinkingOff(_ messages: [[String: String]], model: String) -> [[String: String]] {
+        guard model.lowercased().contains("qwen3"),
+              let last = messages.indices.last, messages[last]["role"] == "user"
+        else { return messages }
+        var messages = messages
+        messages[last]["content"] = (messages[last]["content"] ?? "") + "\n/no_think"
+        return messages
+    }
+
     /// Cleanup's share of the latency budget. Missing it ships rule-cleaned text instead, the same
     /// fallback a missing model gets, so the budget is a guarantee rather than an average.
     ///
@@ -205,6 +258,10 @@ final class LLMCleaner {
     /// against qwen3-0.6b at ~0.2s), and a bigger model on the fast budget is not more accurate —
     /// it misses the deadline, ships `ruleClean`, and costs the wait for nothing. Roughly 2.5x the
     /// budget for roughly the size ratio, with the cap moved out the same way.
+    /// At or below this many spoken words the model is skipped and the rules ship. See the comment
+    /// at the top of `cleaned`, where the measurements are.
+    static let verbatimWords = 8
+
     static func deadlineMs(words: Int, careful: Bool = false) -> UInt64 {
         careful
             ? min(6000, 2000 + 15 * UInt64(max(0, words)))
@@ -354,15 +411,26 @@ final class LLMCleaner {
         // /no_think switch it burns ~1400 reasoning tokens and 8s per dictation; with it,
         // 1 token and 0.2s. Goes on the last message only, so the cached prefix survives.
         //
+        // On its OWN LINE, and that is not cosmetic. `userMessage` ends with "Transcript: <words>",
+        // so appending the switch with a space put it *inside* the transcript — and the low-touch
+        // rules say every word the speaker said appears in the output, so the coding path dutifully
+        // copied it. Measured over 15 short terminal dictations: 10 of 15 came back wrong with the
+        // space, 0 of 15 on its own line. Two distinct failures, one cause. Five echoed the switch,
+        // sometimes mangled past `sanitize`'s reach ("/no_ideas", "/no_thing", "/no_"), which then
+        // tripped `rewordsContent` and shipped rules. The other five went further and copied the
+        // nearest few-shot demonstration instead of cleaning: "revert the last commit" came back
+        // "Commit the last commit.", "make the build script executable" as "Commit the build script
+        // executable.", and "git checkout dash b kk slash fix pill jump" as the literal string
+        // "Commit the worktree changes." — the same demo-copying failure CLAUDE.md records on the
+        // general path, but caused by a corrupted transcript line rather than by a missing demo.
+        // Adding a short coding demonstration does NOT fix it (9 of 15 still bad, measured); the
+        // newline alone does, and the switch still suppresses reasoning (134ms vs 141ms median).
+        //
         // Applied before the transport split, not inside the HTTP branch: in-process MLX renders the
         // same Qwen3 chat template from the same tokenizer_config.json, so it has the same appetite
         // for thinking tokens. Sending different prompts down the two transports would also make the
         // bench comparison between them meaningless.
-        var messages = messages
-        if model.lowercased().contains("qwen3"),
-           let last = messages.indices.last, messages[last]["role"] == "user" {
-            messages[last]["content"] = (messages[last]["content"] ?? "") + " /no_think"
-        }
+        let messages = Self.withThinkingOff(messages, model: model)
 
         if endpoint.isInProcess {
             return try await LocalEngine.shared.complete(id: model, messages: messages)
@@ -996,7 +1064,23 @@ final class LLMCleaner {
         }
         let spoken = words(raw).filter { $0.count >= 3 && !AppContext.commonWords.contains($0) }
         guard spoken.count >= 12, let last = spoken.last else { return false }
-        return !words(cleaned).contains { $0.contains(last) || ($0.count >= 4 && last.hasPrefix($0)) }
+        // Position, not presence, and that distinction is the whole guard. Searching all of `cleaned`
+        // lets any earlier occurrence of the word satisfy it, which is how a real 157-word dictation
+        // lost its entire closing sentence in silence: the last thing said was "...then that's for the
+        // cleanup too", and "cleanup" also appeared 90 words earlier in "when doing a bunch of intense
+        // cleanup", at index 38 of 128. Every other guard was blind too — a set-based recall metric
+        // does not notice a tail whose words repeat the body. Requiring the match to land in the last
+        // quarter of the output is what makes "compressed the middle" distinguishable from "gave up
+        // halfway", which is what the doc comment above claims this guard does.
+        let out = words(cleaned)
+        let tail = out.suffix(max(8, out.count / 4))
+        // The prefix direction is for morphology, not for a shorter unrelated word: "region" standing
+        // in for "regions" is the same word, "clean" standing in for "cleanup" is not — and that was
+        // the second half of the 157-word miss, since the surviving tail ended "should clean that up".
+        // One character of slack covers the plural and the possessive; more of it re-opens the hole.
+        return !tail.contains {
+            $0.contains(last) || ($0.count >= 4 && last.hasPrefix($0) && last.count - $0.count <= 1)
+        }
     }
 
     /// Every guard, in one place. Returns why the reply cannot ship, or nil to ship it.
@@ -1152,6 +1236,17 @@ final class LLMCleaner {
         text = text.replacingOccurrences(
             of: "(?i)(^|[.!?]\\s+|\u{1})(?:\(hard)),?\\s+", with: "$1\u{1}",
             options: .regularExpression)
+        // A filler carries off the comma that was punctuating it. Without these two, removing the
+        // word leaves the comma stranded against the previous one: "Update the uh, this cookbook,
+        // Doc." came out as "Update the, this cookbook, Doc." — and since a dictation at or under
+        // `verbatimWords` never reaches the model, `ruleClean` is the only pass those get, so a
+        // stranded comma now lands at the cursor rather than being tidied by a rewrite.
+        // One pass, not two: the leading `[\s\u{1}]` also matches the space inside ", um," so a
+        // comma-bracketed filler still collapses to a single comma, which is the behaviour two real
+        // dictations established ("decide,," reached the cursor before it existed). A separate
+        // bracketed rule replacing both commas with a space undoes that, so there isn't one.
+        text = text.replacingOccurrences(
+            of: "(?i)(^|[\\s\u{1}])(?:\(hard))\\s*,\\s*", with: "$1", options: .regularExpression)
         // Anywhere else. `(^|[\s,\u{1}])` keeps "umbrella" and "uh-huh" intact, and counts a marker
         // left by the passes above as a word boundary so "um uh the tests" loses both fillers.
         for filler in hardFillers {
