@@ -169,6 +169,13 @@ enum SelfCheck {
                      == "Basically, we want the script")
         precondition(LLMCleaner.stripFillers("a smaller model decide, oh, this seems incoherent")
                      == "a smaller model decide, this seems incoherent")
+        // A filler that brought its own comma takes it along, or the comma lands against the
+        // previous one: "Update the uh, this cookbook, Doc." shipped as "Update the, this cookbook,
+        // Doc." This matters more than it looks — a dictation at or under `LLMCleaner.verbatimWords`
+        // never reaches the model, so `ruleClean` is the only pass it gets and the stranded comma
+        // goes straight to the cursor with no rewrite to tidy it.
+        precondition(LLMCleaner.stripFillers("Update the uh, this cookbook, Doc.")
+                     == "Update the this cookbook, Doc.")
 
         precondition(LLMCleaner.sanitize("```\nhello\n```", fallback: "x") == "hello")
         precondition(LLMCleaner.sanitize("", fallback: "fallback") == "fallback")
@@ -244,6 +251,60 @@ enum SelfCheck {
         // Short dictations are not judged: the last word is as likely to be a discarded "yeah".
         precondition(!LLMCleaner.dropsTail("Ship it today.", raw: "um so i think we should just ship "
                                            + "it um today yeah"))
+        // Verbatim from history, and it shipped: this 149-word dictation lost its whole closing
+        // sentence — "There's stutters or filler words that aren't needed, then that's for the
+        // cleanup too" — and every guard stayed silent. Real strings rather than a paraphrase, because
+        // a shortened stand-in trips `losesContent` and so stops demonstrating the hole.
+        //
+        // Two separate holes let it through, and both are pinned here. One: presence, not position.
+        // "cleanup" is the last spoken content word and it also appears 90 words earlier, in "when
+        // doing a bunch of intense cleanup", so scanning the whole output found it at index 38 of 128
+        // and called the tail intact. Two: the prefix loosener — even scanning only the tail, "clean"
+        // is a five-character prefix of "cleanup", so the surviving "...should clean that up" passed.
+        let ramble = "Also, yeah, the dedication needs to be really worked on. I don't know why words keep getting "
+            + "cut off. I think it's the LLM being too aggressive. Like, it should be aggressive when doing "
+            + "a bunch of intense cleanup. Like, uh, like, the goal is we're trying to transcribe to real "
+            + "text and identify intent. But if we say some, like, chopped phrase, just to fill in a larger "
+            + "phrase, such as, um, like 2nd is, which makes no sense out of context, but the user actually "
+            + "wants to say 2nd is to fill in a phrase. Like, that should be fine. But if we say, but if "
+            + "the LLM can understand the intent, like, oh, there's a lot of, like, there's a contradiction "
+            + "in the paragraph, then the LLM should clean that up. There's stutters or, like, filler words "
+            + "that aren't needed, then that's for the cleanup too."
+        let rambleCut = "also, the dedication needs to be really worked on. I don't know why words keep getting cut "
+            + "off. I think it's the LLM being too aggressive. it should be aggressive when doing a bunch "
+            + "of intense cleanup. the goal is we're trying to transcribe to real text and identify intent. "
+            + "but if we say some chopped phrase, just to fill in a larger phrase, such as, like 2nd is, "
+            + "which makes no sense out of context, but the user actually wants to say 2nd is to fill in a "
+            + "phrase. that should be fine. but if we say, but if the LLM can understand the intent, "
+            + "there's a lot of there's a contradiction in the paragraph, then the LLM should clean that up"
+        precondition(!LLMCleaner.looksTruncated(rambleCut, raw: ramble), "82% of the words")
+        precondition(!LLMCleaner.losesContent(rambleCut, raw: ramble), "the tail repeats the body")
+        precondition(LLMCleaner.dropsTail(rambleCut, raw: ramble), "the closing sentence is gone")
+        // The morphology the prefix loosener exists for still passes: one character of slack.
+        precondition(!LLMCleaner.dropsTail(
+            "Check the snap region before you rebase, then run the whole suite again against the "
+            + "staging database and the local snap region.",
+            raw: "check the snap regions before you rebase, and then run the whole suite again "
+            + "against the staging database and the local snap regions"))
+
+        // Both dictation cues have to resolve. A misspelled or removed system sound makes
+        // `NSSound(named:)` return nil and `playSound` a no-op, so the app just goes quiet — there is
+        // no error and nothing in the log. `Tink` is asserted absent by name because it is the tick
+        // macOS plays for a rejected keystroke, which is what it was reported as.
+        precondition(NSSound(named: "Purr") != nil, "the start cue is missing")
+        precondition(NSSound(named: "Pop") != nil, "the end cue is missing")
+
+        // A dictation short enough to skip the model (`LLMCleaner.verbatimWords`) ships `ruleClean`,
+        // so `ruleClean` is what has to keep the user's words. "Second is." is the case Kaleb
+        // reported twice: the model returned "Second." and no guard could see a two-letter word go.
+        precondition(LLMCleaner.verbatimWords >= 8, "8 is where this user's history turns over")
+        precondition(LLMCleaner.ruleClean("Second is.") == "Second is.")
+        precondition(LLMCleaner.ruleClean("Hello?") == "Hello?", "a question stays a question")
+        precondition(LLMCleaner.ruleClean("Well, right.") == "Well, right.")
+        // It is still a cleanup, not a pass-through: fillers and doubled words go.
+        precondition(LLMCleaner.ruleClean("Update the uh, this cookbook, Doc.")
+                        .contains("this cookbook"), "the content survives")
+        precondition(!LLMCleaner.ruleClean("um does it uh does it work").contains("uh"))
 
         checkLowTouchInvariant()
 
@@ -315,6 +376,23 @@ enum SelfCheck {
         checkFieldLabel()
         checkShortcuts()
         checkGestures()
+
+        // The /no_think switch goes on its own LINE. Glued to the end of "Transcript: <words>" it
+        // reads as part of the transcript, and the low-touch rules tell the model every spoken word
+        // survives — so the coding path copied it out, sometimes mangled past `sanitize` ("/no_thing",
+        // "/no_ideas"), and sometimes gave up on cleaning and copied the nearest few-shot demo
+        // instead: "revert the last commit" came back "Commit the last commit.". Measured 10 of 15
+        // short terminal dictations wrong glued, 0 of 15 on its own line.
+        let switched = LLMCleaner.withThinkingOff(
+            [["role": "user", "content": "App: Terminal (coding)\nTranscript: revert the last commit"]],
+            model: "Qwen3-0.6B-MLX-4bit")
+        let content = switched[0]["content"]!
+        precondition(content.hasSuffix("\n/no_think"), "the switch must sit on its own line")
+        precondition(content.contains("Transcript: revert the last commit\n"),
+                     "the transcript line must survive the switch untouched")
+        // Not a Qwen3 model, no switch: it would be a literal instruction to anything else.
+        precondition(LLMCleaner.withThinkingOff(
+            [["role": "user", "content": "hi"]], model: "llama-3.2-3b")[0]["content"] == "hi")
         checkCloudSync()
         checkAccurateResolution()
 

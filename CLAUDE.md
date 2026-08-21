@@ -265,6 +265,40 @@ is a speaker listing three options and is indistinguishable from a correction
 without knowing what they meant. Leaving both halves in is recoverable; deleting
 the wrong one is not.
 
+**A dictation of 8 words or fewer never reaches the model** (`LLMCleaner.verbatimWords`). Not a
+latency trick — the model is measurably worse than `ruleClean` at that length, and the way it is
+worse is exactly what users report as "it cuts off my words". The recognizer has already done the
+job: SpeechAnalyzer returns "Second is." capitalized, punctuated and final, so there is no run-on to
+break and nothing to add beyond stripping a filler, which `ruleClean` does deterministically.
+Measured over 100 real dictations from `history.json`, 45 of them at or under 8 words, replayed
+through qwen3-0.6b: model and rules agree on 33 of 45, and of the 12 disagreements the model loses
+content in 8 and improves 2 cosmetically. The losses are the bug reports — "Second is." → "Second.",
+"We're currently on Cloud Flare is non-interactive." → "We're currently on Cloudflare.", "Update the
+uh, this cookbook, Doc." → "Update the cookbook, Doc." — plus it flattens questions the recognizer
+got right ("Hello?" → "Hello.") because its demonstrations all end on a period.
+
+This is a skip rather than another guard because no guard can work here. `looksTruncated`'s short
+branch needs 3 words and allows a 50% drop, so "Second is." → "Second." clears it; `losesContent` and
+`dropsTail` are floored at 12 content words; and "is" is two letters, so the content-word guards
+cannot see it go at any floor. Strict equality is the only rule that would catch it, and it rejects
+the legitimate "Yeah, commit push." → "Commit push." 8 is where this user's data turns over — the
+model first earns its keep at 9 words, where real self-corrections and stutters appear ("we are
+working on, um, we're investigating" → "we are investigating", "cloud flare turns tile" →
+"turnstile"). Re-derive it from `history.json`, not by feel: the bench cannot help, since only one of
+its 27 cases is that short. `applyVocabulary` runs in `clean`, outside `cleaned`, so the dictionary
+still respells a misheard name on this path. Nothing above the threshold changes.
+
+**`dropsTail` checks position, not presence, and the prefix loosener carries one character.** Both
+halves were holes, and one 149-word dictation went through both: it lost its entire closing sentence
+("There's stutters or filler words that aren't needed, then that's for the cleanup too") and every
+guard stayed silent. Scanning all of `cleaned` let an earlier "when doing a bunch of intense cleanup"
+satisfy the check at index 38 of 128, and even scanning only the last quarter, "clean" is a
+five-character prefix of "cleanup" so the surviving "...should clean that up" passed too.
+`losesContent` was blind because the dropped tail repeats words from the body, and `looksTruncated`
+saw 82%. Measured cost: still **0 of 27** bench cases across two full runs, so the false-positive
+rate that decides this guard did not move. The one-character slack keeps the morphology the loosener
+exists for (`regions` → `region`) and drops the coincidences.
+
 **The cleanup deadline scales with the transcript** (`deadlineMs(words:)`,
 400ms + 6ms/word). A flat budget is wrong in both directions: measured on
 qwen3-0.6b, twelve words clean in 0.20s and 240 words in 1.51s, so a flat 450ms
@@ -353,11 +387,37 @@ last user message is what actually works: 8s and 1400 reasoning tokens becomes
 0.2s and 1. Append per-dictation content to the last message only so the
 server's cached prompt prefix survives.
 
+**And the switch goes on its own LINE, never appended to the transcript.** The last user
+message ends `Transcript: <words>`, so ` /no_think` landed *inside* the transcript — and the
+low-touch rules promise every spoken word survives, so the coding path copied it out. Measured
+over 15 short terminal dictations on qwen3-0.6b: 10 of 15 wrong glued, 0 of 15 on its own line,
+same latency (134ms vs 141ms). Five echoed the switch, mangled past `sanitize`'s literal
+`/no_think` strip ("/no_thing", "/no_ideas", "/no_"), which tripped `rewordsContent` and shipped
+rules. The other five stopped cleaning and copied the nearest few-shot demo instead: "revert the
+last commit" → "Commit the last commit.", "make the build script executable" → "Commit the build
+script executable.", and "git checkout dash b kk slash fix pill jump" → the literal "Commit the
+worktree changes." That reads as the demo-copying failure below, so the tempting fix is another
+demonstration — measured, it is not: adding a short coding demo leaves 9 of 15 wrong and costs
+the 1.7b a case it was passing. A corrupted transcript line is the cause. Only qwen3-0.6b was
+affected (1.7b: 0 of 15 either way), so it was Fast-mode only — the default. `--self-check`
+asserts the line placement, and `bench/bench.py` mirrors it.
+
 Cross-platform note: SpeechAnalyzer, Foundation Models, and SwiftUI are all
 Apple-only. Anything aimed at Windows or Linux needs llama.cpp and either
 whisper.cpp or sherpa-onnx instead.
 
 ## Audio capture rules
+
+**Never use `Tink` for a start cue, or any other sound macOS has already assigned a meaning.**
+`Tink` is the tick macOS plays for a keystroke it refuses, so opening a dictation with it told the
+user their shortcut had failed on every single dictation — reported as "the invalid key input sound".
+`Basso`, `Funk`, `Sosumi` and `Frog` are alert sounds and are out for the same reason. The pair is
+`Purr` (start) and `Pop` (end): unclaimed, and audibly different from each other, which is the whole
+job when two sounds are all that tell you whether a dictation began or ended. Both are held as
+instances and touched at launch by `preloadSounds`, because `NSSound(named:)` reads from disk on first
+use and the start cue fires on the pre-mic path. `--self-check` asserts both names still resolve — a
+nil `NSSound` makes `playSound` a silent no-op with nothing in the log. The on/off switch already
+existed (`AppSettings.soundsEnabled`, default on, keyed `launchSoundEnabled` in defaults).
 
 **Measure the signal before blaming the model.** A weak or clipped mic comes back
 as confident wrong words, never as silence, so it is indistinguishable from a

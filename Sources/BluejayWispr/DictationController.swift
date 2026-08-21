@@ -73,6 +73,7 @@ final class DictationController: ObservableObject {
             }
         }
 
+        Self.preloadSounds()
         Task.detached(priority: .utility) {
             await Transcriber.prepareAssets()
         }
@@ -135,7 +136,7 @@ final class DictationController: ObservableObject {
                 if self?.micFlash == device { self?.micFlash = nil }
             }
         }
-        Self.playSound("Tink")
+        Self.playSound(Self.startSound)
         recordingStartedAt = Date()
         partialText = ""
         lastError = nil
@@ -224,7 +225,7 @@ final class DictationController: ObservableObject {
                 """)
             guard self.sessionGeneration == generation else { return }
             if !cleaned.isEmpty {
-                Self.playSound("Pop")
+                Self.playSound(Self.endSound)
                 if TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
                     self.watchForCorrection(to: cleaned)
                 } else {
@@ -259,11 +260,34 @@ final class DictationController: ObservableObject {
         Task { await transcriber.cancelSession() }
     }
 
-    /// One click when the mic opens, one when the text lands. Fire and forget: you are looking at
+    /// One cue when the mic opens, one when the text lands. Fire and forget: you are looking at
     /// the app you dictated into, not at the pill, and a sound that waits on anything is late.
-    private static func playSound(_ name: String) {
+    ///
+    /// Not `Tink`, which is what this used to open with. `Tink` is the tick macOS itself plays for a
+    /// keystroke it will not accept, so using it for "recording started" told the user their shortcut
+    /// had *failed* every single time — Kaleb reported it as "the invalid key input sound". Anything
+    /// the system has already assigned a meaning to is off the table for that reason: `Basso`, `Funk`,
+    /// `Sosumi` and `Frog` are alert sounds. `Purr` is soft, low and unclaimed, and it is audibly
+    /// different from `Pop` rather than a near-twin of it, which matters when the two sounds are the
+    /// only thing telling you whether a dictation just began or just ended.
+    ///
+    /// Held as instances rather than built per call, because `NSSound(named:)` reads the file off disk
+    /// the first time and the start cue fires on the pre-mic path — the ~150ms window where the user
+    /// is already talking and nothing is recording it yet (see `AudioRecorder.start`). `preloadSounds`
+    /// pays that read at launch instead. `stop()` before `play()` because a reused instance ignores
+    /// `play()` while it is still playing, which would silently drop the cue on a fast repeat.
+    private static let startSound = NSSound(named: "Purr")
+    private static let endSound = NSSound(named: "Pop")
+
+    static func preloadSounds() {
+        _ = startSound
+        _ = endSound
+    }
+
+    private static func playSound(_ sound: NSSound?) {
         guard AppSettings.shared.soundsEnabled else { return }
-        NSSound(named: name)?.play()
+        sound?.stop()
+        sound?.play()
     }
 
     /// A word the user fixed by hand goes into the dictionary, so the next dictation spells it
