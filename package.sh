@@ -1,24 +1,24 @@
 #!/bin/bash
-# Builds BisprBlow.pkg: the app, the Fast weights, and the Accurate weights as an installer choice.
+# Builds BisprBlow.pkg: the app and the Fast weights. Nothing else.
 #
-# A .pkg rather than a .dmg because a disk image is drag-and-drop with no UI, and which weights to
-# install has to be asked. `customize="always"` below is what makes Installer show that choice.
+# The Accurate weights are NOT in here — 1.7 GB of the old 2.06 GB package. They are fetched on
+# demand by `ModelDownloader`, from the same repo this used to install, and Settings offers that
+# download exactly when Accurate would collapse onto Fast (`LLMCleaner.accurateNeedsModel`).
+# That removed the installer's only question, so this stays a .pkg only for the /Library write
+# below, not for a choice pane.
 #
 # Weights land in /Library, not ~/Library: a .pkg cannot write to a home directory without moving
 # the whole install to the user domain, which drags the app out of /Applications with it.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-MODELS="$HOME/Library/Application Support/BluejayWispr/models"
+MODELS="$HOME/Library/Application Support/BisprBlow/models"
 FAST=Qwen3-0.6B-MLX-4bit
-ACCURATE=Qwen3-1.7B-MLX-8bit
-INSTALL_TO="/Library/Application Support/BluejayWispr/models"
+INSTALL_TO="/Library/Application Support/BisprBlow/models"
 VERSION=${VERSION:-1.0}
 OUT=.build/pkg
 
-for m in "$FAST" "$ACCURATE"; do
-    [ -d "$MODELS/$m" ] || { echo "Missing weights: $MODELS/$m" >&2; exit 1; }
-done
+[ -d "$MODELS/$FAST" ] || { echo "Missing weights: $MODELS/$FAST" >&2; exit 1; }
 
 ./build.sh
 
@@ -30,47 +30,37 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 pkgbuild --component .build/BisprBlow.app --install-location /Applications \
-    --identifier ai.getbluejay.wispr.app --version "$VERSION" "$OUT/app.pkg" >/dev/null
+    --identifier ai.getbluejay.bisprblow.app --version "$VERSION" "$OUT/app.pkg" >/dev/null
 
-# `--filter` excludes, so naming every other model is how one gets kept — and no payload has to copy
-# gigabytes into a staging tree. GGUF is excluded from both: it is the fallback for the metallib the
-# check above guarantees.
-weights() {  # weights <model-dir> <identifier> <output>
-    local keep=$1 filters=() d
-    for d in "$MODELS"/*; do
-        [ "$(basename "$d")" = "$keep" ] || filters+=(--filter "$(basename "$d")")
-    done
-    pkgbuild --root "$MODELS" --install-location "$INSTALL_TO" \
-        --identifier "$2" --version "$VERSION" "${filters[@]}" "$3" >/dev/null
-}
-weights "$FAST" ai.getbluejay.wispr.model.fast "$OUT/fast.pkg"
-weights "$ACCURATE" ai.getbluejay.wispr.model.accurate "$OUT/accurate.pkg"
+# `--filter` excludes, so naming every other model is how Fast alone gets kept — and no payload has
+# to copy gigabytes into a staging tree. Any GGUF on disk is excluded the same way: it is the
+# fallback for the metallib the check above guarantees.
+filters=()
+for d in "$MODELS"/*; do
+    [ "$(basename "$d")" = "$FAST" ] || filters+=(--filter "$(basename "$d")")
+done
+pkgbuild --root "$MODELS" --install-location "$INSTALL_TO" \
+    --identifier ai.getbluejay.bisprblow.model.fast --version "$VERSION" \
+    "${filters[@]}" "$OUT/fast.pkg" >/dev/null
 
-# Fast ships with the app and cannot be deselected. Installing only Accurate would not give you a
-# careful tier — it would make "Fast" resolve to the 1.7B too, since Fast means the smallest model
-# present. One model installed makes the Writing setting a label with nothing behind it.
+# Fast ships with the app and is not optional: Fast means the smallest model present, so a machine
+# holding only the 1.7B would resolve Fast to it and the Writing setting would become a label with
+# one model behind both sides.
 cat > "$OUT/distribution.xml" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
     <title>BisprBlow</title>
-    <options customize="always" require-scripts="false" hostArchitectures="arm64"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
     <os-version min="26.0"/>
     <choices-outline>
         <line choice="app"/>
-        <line choice="accurate"/>
     </choices-outline>
-    <choice id="app" title="BisprBlow" start_enabled="false"
-            description="The app, and the fast model it cleans up your words with. 335 MB.">
-        <pkg-ref id="ai.getbluejay.wispr.app"/>
-        <pkg-ref id="ai.getbluejay.wispr.model.fast"/>
+    <choice id="app" title="BisprBlow" start_enabled="false">
+        <pkg-ref id="ai.getbluejay.bisprblow.app"/>
+        <pkg-ref id="ai.getbluejay.bisprblow.model.fast"/>
     </choice>
-    <choice id="accurate" title="Accurate writing" start_selected="false"
-            description="A larger model for the Accurate setting, which reads longer dictations more carefully. Leave this off and BisprBlow still works, but Accurate writes the same as Fast. 1.7 GB.">
-        <pkg-ref id="ai.getbluejay.wispr.model.accurate"/>
-    </choice>
-    <pkg-ref id="ai.getbluejay.wispr.app" version="$VERSION">#app.pkg</pkg-ref>
-    <pkg-ref id="ai.getbluejay.wispr.model.fast" version="$VERSION">#fast.pkg</pkg-ref>
-    <pkg-ref id="ai.getbluejay.wispr.model.accurate" version="$VERSION">#accurate.pkg</pkg-ref>
+    <pkg-ref id="ai.getbluejay.bisprblow.app" version="$VERSION">#app.pkg</pkg-ref>
+    <pkg-ref id="ai.getbluejay.bisprblow.model.fast" version="$VERSION">#fast.pkg</pkg-ref>
 </installer-gui-script>
 EOF
 

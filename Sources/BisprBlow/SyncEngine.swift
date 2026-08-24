@@ -37,7 +37,7 @@ final class SyncEngine {
 
     private init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("BluejayWispr", isDirectory: true)
+            .appendingPathComponent("BisprBlow", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("sync-state.json")
         fileURL = url

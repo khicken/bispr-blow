@@ -122,6 +122,23 @@ enum Main {
             print("session=\(CloudClient.storedSessionEmail().map { "signed in as \($0)" } ?? "signed out")")
             return
         }
+        // Drives the real `ModelDownloader` against Hugging Face and prints progress. The installer
+        // no longer ships the Accurate weights, so this is the only way anyone gets them — worth a
+        // seam, because before this existed the whole path had been read and never once run.
+        if CommandLine.arguments.contains("--download-accurate") {
+            let downloader = ModelDownloader.shared
+            print("downloading \(ModelDownloader.modelName)…")
+            downloader.start { print("done"); exit(0) }
+            Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+                if let failure = downloader.failure { print("failed: \(failure)"); exit(1) }
+                if let fraction = downloader.fraction {
+                    print(String(format: "%.1f%%", fraction * 100))
+                    fflush(stdout)
+                }
+            }
+            RunLoop.main.run()
+            return
+        }
         // Every model on disk, one id per line, so bench/bench.py can enumerate the in-process
         // engine the same way it enumerates LM Studio's /models.
         if CommandLine.arguments.contains("--list-models") {

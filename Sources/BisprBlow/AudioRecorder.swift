@@ -124,7 +124,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private let output = AVCaptureAudioDataOutput()
     /// Buffers arrive here, and the signal accumulators are only ever touched on it. `stop` syncs
     /// against it before reading them, which is what `removeTap` used to give us for free.
-    private let queue = DispatchQueue(label: "ai.getbluejay.wispr.capture")
+    private let queue = DispatchQueue(label: "ai.getbluejay.bisprblow.capture")
     private(set) var isRunning = false
 
     var onBuffer: ((AVAudioPCMBuffer) -> Void)?

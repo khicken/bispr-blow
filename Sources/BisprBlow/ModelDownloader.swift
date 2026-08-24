@@ -1,6 +1,7 @@
 import Foundation
 
-/// Fetches the Accurate weights when the installer's optional payload was skipped.
+/// Fetches the Accurate weights, which the installer does not ship — they are 1.7 GB against the
+/// whole rest of the package's 400 MB, and most people never leave Fast.
 ///
 /// Staging is a dot-prefixed directory because `LocalEngine.installedModels` enumerates with
 /// `.skipsHiddenFiles`: a partly-written model stays invisible to the scanner, so MLX can never be
@@ -10,8 +11,8 @@ import Foundation
 final class ModelDownloader: ObservableObject {
     static let shared = ModelDownloader()
 
-    /// The weights `package.sh` installs as "Accurate writing", and the ones bench/results.md was
-    /// measured on. Downloading anything else would make the numbers there describe a different app.
+    /// The weights bench/results.md was measured on, and the ones `package.sh` used to install.
+    /// Downloading anything else would make the numbers there describe a different app.
     static let repo = "lmstudio-community/Qwen3-1.7B-MLX-8bit"
     static var modelName: String { String(repo.split(separator: "/").last!) }
 
@@ -23,7 +24,7 @@ final class ModelDownloader: ObservableObject {
 
     private var root: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/BluejayWispr/models")
+            .appendingPathComponent("Library/Application Support/BisprBlow/models")
     }
 
     func start(then finished: @escaping () -> Void) {
@@ -37,6 +38,11 @@ final class ModelDownloader: ObservableObject {
                 fraction = nil
                 finished()
             } catch is CancellationError {
+                job = nil
+                fraction = nil
+            } catch let error as URLError where error.code == .cancelled {
+                // What `cancel()` looks like once a transfer is in flight — the session's error,
+                // not `CancellationError`. Stopping is a decision, so it leaves no red line behind.
                 job = nil
                 fraction = nil
             } catch {
@@ -118,25 +124,38 @@ final class ModelDownloader: ObservableObject {
     }
 }
 
-/// One file to one path, reporting bytes as they land. `URLSession`'s async `download` gives no
-/// progress on its own, and its `AsyncBytes` only yields one byte at a time, which cannot move 1.8 GB
-/// — so a per-task delegate is the way to see inside the transfer.
+/// One file to one path, reporting bytes as they land.
+///
+/// The task is driven with a *session* delegate and bridged back with a continuation, rather than
+/// with the one-liner `try await URLSession.shared.download(from:delegate:)`. That form's per-task
+/// delegate never receives `didWriteData` — measured, zero callbacks, on `URLSession.shared` and on
+/// a session of our own — so the Accurate download sat at 0.0% for six minutes and then finished.
+/// `AsyncBytes` is not the alternative: it yields one byte at a time, which cannot move 1.8 GB.
 private enum Fetch {
     static func file(_ url: URL, to path: URL,
                      progress: @escaping @Sendable (Int64) -> Void) async throws -> Int64 {
-        let (temp, response) = try await URLSession.shared.download(
-            from: url, delegate: Reporter(progress: progress))
-        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard code == 200 else { throw ModelDownloader.Failure.http(code) }
-        let fm = FileManager.default
-        try? fm.removeItem(at: path)
-        try fm.moveItem(at: temp, to: path)
-        return (try fm.attributesOfItem(atPath: path.path)[.size] as? NSNumber)?.int64Value ?? 0
+        let driver = Driver(destination: path, progress: progress)
+        let session = URLSession(configuration: .default, delegate: driver, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                driver.continuation = continuation
+                session.downloadTask(with: url).resume()
+            }
+        } onCancel: { session.invalidateAndCancel() }
     }
 
-    private final class Reporter: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private final class Driver: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+        private let destination: URL
         private let progress: @Sendable (Int64) -> Void
-        init(progress: @escaping @Sendable (Int64) -> Void) { self.progress = progress }
+        /// Set before `resume()`, read only on the delegate queue afterwards.
+        var continuation: CheckedContinuation<Int64, Error>?
+        private var settled = false
+
+        init(destination: URL, progress: @escaping @Sendable (Int64) -> Void) {
+            self.destination = destination
+            self.progress = progress
+        }
 
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                         didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
@@ -144,8 +163,36 @@ private enum Fetch {
             progress(totalBytesWritten)
         }
 
-        // Required by the protocol; the async `download` moves the file itself.
+        /// The move happens here because the temp file is deleted the moment this returns.
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                        didFinishDownloadingTo location: URL) {}
+                        didFinishDownloadingTo location: URL) {
+            let code = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200 else {
+                return settle(.failure(ModelDownloader.Failure.http(code)))
+            }
+            let fm = FileManager.default
+            do {
+                try? fm.removeItem(at: destination)
+                try fm.moveItem(at: location, to: destination)
+                let size = (try fm.attributesOfItem(atPath: destination.path)[.size]
+                            as? NSNumber)?.int64Value ?? 0
+                settle(.success(size))
+            } catch {
+                settle(.failure(error))
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        didCompleteWithError error: Error?) {
+            if let error { settle(.failure(error)) }
+        }
+
+        /// Both callbacks above can arrive for one task, and a continuation may only be resumed once.
+        private func settle(_ result: Result<Int64, Error>) {
+            guard !settled else { return }
+            settled = true
+            continuation?.resume(with: result)
+            continuation = nil
+        }
     }
 }

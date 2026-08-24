@@ -54,8 +54,8 @@ actor LocalEngine {
     private static var searchRoots: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
-            home.appendingPathComponent("Library/Application Support/BluejayWispr/models"),
-            URL(fileURLWithPath: "/Library/Application Support/BluejayWispr/models"),
+            home.appendingPathComponent("Library/Application Support/BisprBlow/models"),
+            URL(fileURLWithPath: "/Library/Application Support/BisprBlow/models"),
             home.appendingPathComponent(".lmstudio/models"),
         ]
     }

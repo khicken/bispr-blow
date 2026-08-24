@@ -13,8 +13,8 @@ import Security
 ///
 /// The defaults keys still win when set, which is how you point a build at another project:
 ///
-///     defaults write ai.getbluejay.wispr cloudURL https://<project>.supabase.co
-///     defaults write ai.getbluejay.wispr cloudAnonKey <anon key>
+///     defaults write ai.getbluejay.bisprblow cloudURL https://<project>.supabase.co
+///     defaults write ai.getbluejay.bisprblow cloudAnonKey <anon key>
 ///
 /// Setting `cloudURL` to something unparseable is the way to turn accounts off entirely: the app
 /// is then exactly what it was before they existed — signed out, local-only, no network.
@@ -92,7 +92,13 @@ struct CloudError: LocalizedError {
     /// Supabase's own messages ("invite code is not valid") are already the right words to show;
     /// everything else collapses to one generic line, because status codes and endpoint names are
     /// not information a user acts on.
-    static func from(_ data: Data, status: Int) -> CloudError {
+    /// The log line is above the parse, not in the fallthrough: a body that *does* carry a message
+    /// is the case that reaches the user, so it is the case worth having a trace of. "Bad Gateway"
+    /// arrived from Supabase's gateway as a parseable message and logged nothing at all. `endpoint`
+    /// is the URL path only — a query string carries the email address.
+    static func from(_ data: Data, status: Int, endpoint: String) -> CloudError {
+        logLine("cloud request failed endpoint=\(endpoint) status=\(status) "
+            + "body=\(String(data: data, encoding: .utf8) ?? "")")
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             for key in ["message", "msg", "error_description"] {
                 if let text = object[key] as? String, !text.isEmpty {
@@ -100,7 +106,6 @@ struct CloudError: LocalizedError {
                 }
             }
         }
-        logLine("cloud request failed status=\(status) body=\(String(data: data, encoding: .utf8) ?? "")")
         return CloudError(message: "That didn't work. Try again in a moment.")
     }
 }
@@ -120,6 +125,22 @@ final class CloudClient: ObservableObject {
     }
 
     // MARK: - Auth
+
+    /// Whether the project has a Google client configured. The sign-in view hides its Google button
+    /// until this is true, so the button can never be one that cannot succeed. Failing quietly to
+    /// `false` is the right default: a hidden button is a smaller wrong than a broken one.
+    @Published private(set) var googleEnabled = false
+
+    func refreshProviders() async {
+        guard let base = CloudConfig.url else { return }
+        var request = URLRequest(url: base.appendingPathComponent("auth/v1/settings"))
+        request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let external = json["external"] as? [String: Any]
+        else { return }
+        googleEnabled = external["google"] as? Bool ?? false
+    }
 
     /// Step one of signing in: an email with a one-time code.
     func requestCode(email: String) async throws {
@@ -174,7 +195,7 @@ final class CloudClient: ObservableObject {
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse else { return }
         guard (200..<400).contains(http.statusCode) else {
-            throw CloudError.from(data, status: http.statusCode)
+            throw CloudError.from(data, status: http.statusCode, endpoint: url.path)
         }
     }
 
@@ -367,7 +388,8 @@ final class CloudClient: ObservableObject {
             throw CloudError(message: "No answer from the server.")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw CloudError.from(data, status: http.statusCode)
+            throw CloudError.from(data, status: http.statusCode,
+                                  endpoint: request.url?.path ?? "?")
         }
         return data
     }
@@ -449,7 +471,7 @@ final class CloudClient: ObservableObject {
 private enum Keychain {
     private static var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: "ai.getbluejay.wispr",
+         kSecAttrService as String: "ai.getbluejay.bisprblow",
          kSecAttrAccount as String: "cloud-session"]
     }
 

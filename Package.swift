@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "BluejayWispr",
+    name: "BisprBlow",
     platforms: [.macOS("26.0")],
     dependencies: [
         // In-process inference, so cleanup does not need LM Studio running.
@@ -28,13 +28,13 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "BluejayWispr",
+            name: "BisprBlow",
             dependencies: [
                 .product(name: "LocalLLMClient", package: "LocalLLMClient"),
                 .product(name: "LocalLLMClientLlama", package: "LocalLLMClient"),
                 .product(name: "LocalLLMClientMLX", package: "LocalLLMClient"),
             ],
-            path: "Sources/BluejayWispr",
+            path: "Sources/BisprBlow",
             resources: [.copy("Resources")],
             // `.Cxx` is required, not preferred: LocalLLMClientLlamaC's umbrella header hard-errors
             // ("needs to be compiled in C++ interoperability mode") unless the importing target

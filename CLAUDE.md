@@ -3,11 +3,20 @@
 A local dictation app for macOS. Hold your shortcut, speak, release, and
 cleaned-up text lands at your cursor. Everything runs on the machine.
 
-BisprBlow is the name the user sees. Everything else is still `BluejayWispr`:
-the SwiftPM package, target and binary, `Sources/BluejayWispr/`, the bundle id
-`ai.getbluejay.wispr` and the UserDefaults suite of that name. Renaming the
-suite wipes the user's dictionary, bindings, theme and pill anchor, so the two
-names are load-bearing separately — rename the copy, never the identifiers.
+It is `BisprBlow` everywhere now: the SwiftPM package, target and binary,
+`Sources/BisprBlow/`, the bundle id `ai.getbluejay.bisprblow`, the UserDefaults
+suite of that name, and `Application Support/BisprBlow/`. It used to be
+`BluejayWispr` under the hood, and this file used to say never to touch that,
+because the suite holds the user's dictionary, bindings, theme and pill anchor
+and a rename orphans all of it. What actually moves it across is
+`defaults export <old> - | defaults import <new> -`, plus moving the support
+directory by hand — both done on this machine, nothing lost. There is no
+migration code in the app, deliberately: one user, two commands.
+
+The `Bluejay Wispr Dev` signing identity keeps its name, because it is a
+certificate in the login keychain rather than anything in this repo. Changing it
+means a new cert, and TCC keys grants to the signing identity — so Accessibility,
+Microphone and Speech Recognition would all re-prompt for nothing.
 
 Shortcuts are configurable per action — push to talk, hands-free, dictate and
 send, cancel — bound to a key plus modifiers or to a mouse button, and stored in
@@ -17,7 +26,7 @@ copy that names fn; read `AppSettings.holdPhrase` or `holdHint` instead.
 
 Build, install, and relaunch with `./build.sh`. It installs one copy to
 /Applications on purpose: two copies means two fn event taps fighting.
-Run `.build/release/BluejayWispr --self-check` after touching the cleanup or
+Run `.build/release/BisprBlow --self-check` after touching the cleanup or
 dictionary text logic.
 
 ## UI rules
@@ -159,30 +168,41 @@ to AppKit rather than layering workarounds.
 `./package.sh` builds `.build/BisprBlow.pkg`. `./build.sh` is still the local iteration path and
 package.sh calls it, so the bundle is assembled in exactly one place.
 
-**It is a .pkg because the weights are a question, and a .dmg cannot ask one.** A disk image is
-drag-and-drop with no UI. `customize="always"` in the distribution XML is what makes Installer show
-the choice pane instead of a bare Install button; without it the choices exist but nobody sees them.
-A literal drop-down needs a custom Installer plugin, which is an ObjC bundle for one question.
+**It is a .pkg because the weights go to `/Library`, and that is now the only reason.** It used to be
+because the installer had a question to ask — which weights — and a .dmg is drag-and-drop with no UI.
+That question is gone (see below), so `customize` is `never` and Installer shows a bare Install
+button. What still needs a .pkg is the write outside /Applications; a .dmg would have to make the app
+place the weights itself on first launch.
 
 **The Fast weights are not deselectable, and that is not timidity.** Fast means the smallest model
 installed, so a machine holding only the 1.7B resolves *Fast* to it as well — the Writing setting
 becomes a label with one model behind both sides. Shipping the 335M always is what keeps that
 setting honest, and it is also what keeps the app from launching into silent `ruleClean`.
 
-**Weights install to `/Library/Application Support/BluejayWispr/models`, not `~/Library`.** A .pkg
+**Weights install to `/Library/Application Support/BisprBlow/models`, not `~/Library`.** A .pkg
 cannot write to a home directory without moving the whole install to the user domain, which drags
 the app out of /Applications with it. `LocalEngine.searchRoots` scans both, home first, so a
 hand-placed model still wins over the installed one.
 
-**The choice saves disk, not download.** Both payloads are inside the one package, so it is ~1.9 GB
-whichever way the box is ticked. Making the download smaller means either two separate packages (no
-choice) or fetching over the network at first run (no code for it exists — `LocalEngine`'s comment
-about "the download-on-setup step" describes something that was never written).
+**The Accurate weights are NOT in the installer, and dropping them is what took it from 2.06 GB to
+310 MB.** They were 1.7 GB of the old package against the app's 67 MB and Fast's 335 MB, and they
+were an installer *choice*, so most of that download was bytes a box could turn off — which saved
+disk and nothing else, since both payloads sat inside the one file either way. `ModelDownloader`
+fetches them on demand from `lmstudio-community/Qwen3-1.7B-MLX-8bit`, the same repo package.sh used
+to install and the one bench/results.md was measured on, and `SettingsView` offers that download
+exactly when `LLMCleaner.accurateNeedsModel` says Accurate would collapse onto Fast. (An earlier
+version of this file claimed no such code existed. It did.)
+
+**That makes the download path load-bearing, so it has a seam: `--download-accurate`.** It drives
+the real `ModelDownloader` and prints progress, because until it existed the whole path had been read
+and never once run. Exercise it with the 1.7B moved out of `Application Support/BisprBlow/models`.
 
 **package.sh fails the build when the bundle has no metallib**, because MLX aborts the process
 rather than throwing and there is no degraded mode to notice later. Verify payloads with
 `lsbom -s` on the extracted component BOMs; the weights are worth diffing against the source, since
-a truncated safetensors is invisible until first dictation.
+a truncated safetensors is invisible until first dictation. Both were checked on the 310 MB package:
+one weights payload, 21 entries, no 1.7B anywhere, and all nine Fast files sha256-identical to
+source.
 
 **After a .pkg install, `./build.sh` refuses to run until you hand the bundle back.** Installer
 leaves `/Applications/BisprBlow.app` owned by root, and build.sh's `rm -rf` then fails part-way
@@ -516,7 +536,7 @@ user's request. **If you switch it back to a local path, that clone needs
 `git submodule update --init`**: its C sources are symlinks into a llama.cpp
 submodule, and without it `swift build` fails on `build-info.h` — while the previous
 binary keeps sitting in `.build/release`, silently passing self-check. Check
-`strings .build/release/BluejayWispr` for something you just added if a change seems
+`strings .build/release/BisprBlow` for something you just added if a change seems
 to have no effect.
 
 `LLMCleaner.endpoints` lists `onDevice` **first**, earned on a bench run: the MLX
@@ -524,7 +544,7 @@ backend running the same Qwen3-0.6B-MLX-4bit weights LM Studio served reads 96%/
 recall/quality at 0.19s median over the 26 cases, against LM Studio's 96%/85% at
 0.33s — parity by construction, since it is the same runtime and the same weights.
 LM Studio was uninstalled on that result; the weights moved to
-`Application Support/BluejayWispr/models`. GGUF quants were tried first and lost on
+`Application Support/BisprBlow/models`. GGUF quants were tried first and lost on
 quality, not speed (Q4_K_M 77%, Q8_0 78-81% — the quantization itself, not sampling;
 repeat-penalty was tested and ruled out). The llama.cpp backend still reads any GGUF on
 disk, and is what a machine without the metallib falls back to — but no GGUF ships in the

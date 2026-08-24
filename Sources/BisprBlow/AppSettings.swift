@@ -14,7 +14,7 @@ final class AppSettings: ObservableObject {
     /// Named explicitly, not `.standard`: run as a bare binary (--print-prompt, --self-check)
     /// the process has no bundle id, so `.standard` would be a different domain than the app's
     /// and the benchmark would read a different dictionary than the one in use.
-    private let defaults = UserDefaults(suiteName: "ai.getbluejay.wispr") ?? .standard
+    private let defaults = UserDefaults(suiteName: "ai.getbluejay.bisprblow") ?? .standard
 
     /// The only thing the user gets to say about cleanup: how much of the pause after they let go
     /// it is allowed to spend. Which server is running and which model id it holds are things the

@@ -10,7 +10,7 @@ python3 bench/bench.py --models qwen3-0.6b-mlx
 python3 bench/bench.py --nothink off              # measure what reasoning costs
 ```
 
-The prompt comes from `BluejayWispr --print-prompt`, so the benchmark always
+The prompt comes from `BisprBlow --print-prompt`, so the benchmark always
 tests what the app actually sends. `sanitize` and `looksTruncated` in bench.py
 mirror LLMCleaner and need to stay in sync with it.
 

@@ -3,7 +3,7 @@ import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
 
-/// `BluejayWispr --self-check`: asserts the text logic that silently loses user words if
+/// `BisprBlow --self-check`: asserts the text logic that silently loses user words if
 /// it breaks. `precondition`, not `assert` — release builds strip asserts.
 enum SelfCheck {
     static func run() {

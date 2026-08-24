@@ -41,7 +41,7 @@ NSGradient(colors: [NSColor.white.withAlphaComponent(0.16), NSColor.white.withAl
     .draw(in: plate, relativeCenterPosition: NSPoint(x: -0.2, y: 0.9))
 
 // Mark, centered, with a soft lift.
-let svg = URL(fileURLWithPath: "Sources/BluejayWispr/Resources/Symbol_White.svg")
+let svg = URL(fileURLWithPath: "Sources/BisprBlow/Resources/Symbol_White.svg")
 guard let mark = NSImage(contentsOf: svg) else { fatalError("missing \(svg.path)") }
 let w = plate.width * 0.58
 let h = w * (mark.size.height / mark.size.width)

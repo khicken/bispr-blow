@@ -332,21 +332,27 @@ struct SignInView: View {
                     .font(.bj(11.5))
                     .foregroundStyle(Theme.inkSubtle)
             }
-            HStack(spacing: 10) {
-                Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
-                Text("or")
-                    .font(.bj(11))
-                    .foregroundStyle(Theme.inkTertiary)
-                Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
-            }
-            Button(action: google) {
-                HStack(spacing: 7) {
-                    GoogleMark()
-                    Text("Continue with Google")
+            // Hidden until the project actually has a Google client, because until then this is a
+            // button that cannot succeed — it answers "Unsupported provider: provider is not
+            // enabled", measured. Asked of the server rather than compiled in: enabling the
+            // provider in Supabase is then the only step, with nothing here to remember to change.
+            if cloud.googleEnabled {
+                HStack(spacing: 10) {
+                    Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
+                    Text("or")
+                        .font(.bj(11))
+                        .foregroundStyle(Theme.inkTertiary)
+                    Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
                 }
+                Button(action: google) {
+                    HStack(spacing: 7) {
+                        GoogleMark()
+                        Text("Continue with Google")
+                    }
+                }
+                .buttonStyle(CapsuleButtonStyle(filled: false))
+                .disabled(busy)
             }
-            .buttonStyle(CapsuleButtonStyle(filled: false))
-            .disabled(busy)
             if let note {
                 Text(note)
                     .font(.bj(11.5))
@@ -354,6 +360,7 @@ struct SignInView: View {
             }
         }
         .animation(.bjSoft, value: codeSent)
+        .task { await cloud.refreshProviders() }
     }
 
     private var trimmedEmail: String {

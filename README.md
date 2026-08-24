@@ -28,17 +28,19 @@ hold fn / double-tap fn
 
 `build.sh` stages the bundle in `.build/` and installs a single copy to `/Applications` — two installed copies means two fn event taps fighting each other. Never launch the bare binary from a terminal: macOS attributes permissions to the terminal instead of the app.
 
-`.build/release/BluejayWispr --self-check` asserts the cleanup/dictionary text logic.
+`.build/release/BisprBlow --self-check` asserts the cleanup/dictionary text logic.
 
 Requires macOS 26+ and Swift 6.2+ (Xcode CLT).
 
 ## Installing it on another Mac
 
-`./package.sh` builds `.build/BisprBlow.pkg` — the app plus the model weights it needs, since the
-weights live outside the bundle and an app without them quietly falls back to rule-based cleanup.
-The installer asks which weights to install: the fast model always goes in, and "Accurate writing"
-is an optional 1.7 GB on top. The package is ~1.9 GB either way, because it carries both and the
-choice only decides what lands on disk.
+`./package.sh` builds `.build/BisprBlow.pkg` — about 310 MB: the app, plus the fast model it cleans
+up your words with. The weights live outside the bundle and an app without them quietly falls back
+to rule-based cleanup, so the fast one is not optional.
+
+The larger model behind the **Accurate** setting is 1.7 GB and is *not* in the installer. Switch to
+Accurate and BisprBlow offers to fetch it; until then Accurate writes the same as Fast, and Settings
+says so rather than pretending.
 
 **Opening it takes an extra step.** BisprBlow is not notarized — that needs a paid Apple Developer
 Program membership — so macOS refuses the installer on a double-click. Right-click it, choose
@@ -64,11 +66,11 @@ The fn key needs no system changes: the app's event tap consumes bare-fn presses
 
 | Path | What |
 |---|---|
-| `Sources/BluejayWispr/FnKeyMonitor.swift` | fn hold / double-tap gesture state machine |
-| `Sources/BluejayWispr/Transcriber.swift` | SpeechAnalyzer streaming + SFSpeech fallback |
-| `Sources/BluejayWispr/LLMCleaner.swift` | provider chain + context-aware prompts |
-| `Sources/BluejayWispr/ContextDetector.swift` | frontmost app + window title (AX) |
-| `Sources/BluejayWispr/TextInserter.swift` | clipboard-swap paste |
-| `Sources/BluejayWispr/UI/` | pill, dashboard, theme (Bluejay palette) |
+| `Sources/BisprBlow/FnKeyMonitor.swift` | fn hold / double-tap gesture state machine |
+| `Sources/BisprBlow/Transcriber.swift` | SpeechAnalyzer streaming + SFSpeech fallback |
+| `Sources/BisprBlow/LLMCleaner.swift` | provider chain + context-aware prompts |
+| `Sources/BisprBlow/ContextDetector.swift` | frontmost app + window title (AX) |
+| `Sources/BisprBlow/TextInserter.swift` | clipboard-swap paste |
+| `Sources/BisprBlow/UI/` | pill, dashboard, theme (Bluejay palette) |
 | `make-icon.swift` | regenerates `AppIcon.icns` (Bluejay squircle + symbol) |
 | `shared/plans/design/20260611_bluejay_wispr_plan.md` | design plan |
