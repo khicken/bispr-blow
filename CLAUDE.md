@@ -209,11 +209,26 @@ leaves `/Applications/BisprBlow.app` owned by root, and build.sh's `rm -rf` then
 through it rather than at the start. The guard prints the `sudo rm -rf` plus `pkgutil --forget` to
 run; testing the installer and then iterating locally is the normal cycle, so expect it.
 
-**Nothing is notarized: the Apple account is free, so there is no Developer ID cert.** The app is
-signed with the self-signed `Bluejay Wispr Dev` identity and installs behind a right-click > Open.
-Moving to a paid membership and a Developer ID is the only thing that makes it open cleanly on a
-stranger's Mac — and it will re-prompt Accessibility, Microphone and Speech Recognition on every
-machine including Kaleb's, because TCC keys grants to the signing identity.
+**Nothing is notarized yet, but the scripts are: the only thing missing is the paid membership.**
+`build.sh` prefers a *Developer ID Application* certificate over the self-signed `Bluejay Wispr Dev`
+identity and adds `--options runtime --timestamp --entitlements` when it finds one; `package.sh`
+signs with a *Developer ID Installer* certificate and, if `notarytool` credentials are stored under
+the `bisprblow` profile, submits and staples. Every one of those is a no-op on a machine without the
+certificates, which is why the fallback path still ships today. Do not "simplify" the detection away.
+
+**The hardened runtime is why `BisprBlow.entitlements` exists, and it holds exactly one key.**
+`com.apple.security.device.audio-input` — under a hardened runtime the mic is blocked without it,
+and a hardened runtime is what notarization requires. Not the App Sandbox: the event tap and
+inserting text into arbitrary apps do not survive it.
+
+**A hardened runtime turns on library validation, so `llama.framework` must carry the same Team ID
+as the app.** Signing the framework with one identity and the app with another gives dyld
+"different Team IDs" and the app dies at launch before `main`. Measured: the self-signed cert has no
+Team ID at all, so it cannot be used to test this path — signing both halves with it reproduces the
+crash and means nothing. The real check is `Apple Development: Kaleb Kim (L34A3NY5T8)`, a proper
+Apple-issued cert with a team: with it, hardened runtime + entitlements gives `--self-check` passing,
+`codesign --verify --deep --strict` clean, and `--mic-check` capturing 88064 frames. That is as far
+as this can be verified before the Developer ID exists.
 
 ## Cleanup rules
 

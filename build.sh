@@ -39,16 +39,31 @@ mkdir -p "$APP/Contents/Frameworks"
 cp -R .build/arm64-apple-macosx/release/llama.framework "$APP/Contents/Frameworks/"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/BisprBlow"
 
+# A Developer ID cert wins when the machine has one: it is the only signature that opens on a
+# stranger's Mac, and notarization requires it plus the hardened runtime. Everything else is the
+# local-iteration path, where the point of a stable identity is only that TCC keeps its grants.
 IDENTITY="Bluejay Wispr Dev"
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+HARDEN=()
+DEVID=$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)
+if [ -n "$DEVID" ]; then
+    SIGN_ID="$DEVID"
+    # The hardened runtime is what makes the mic need an entitlement; see BisprBlow.entitlements.
+    HARDEN=(--options runtime --timestamp)
+    echo "Signing with \"$DEVID\" (hardened runtime — notarizable)."
+elif security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
     SIGN_ID="$IDENTITY"
     echo "Signing with \"$IDENTITY\" (stable — permissions persist across rebuilds)."
 else
     SIGN_ID="-"
     echo "Signing ad-hoc (run ./setup-signing.sh once for stable permissions)."
 fi
-codesign --force -s "$SIGN_ID" "$APP/Contents/Frameworks/llama.framework"
-codesign --force -s "$SIGN_ID" --identifier ai.getbluejay.bisprblow "$APP"
+# Nested code first, and it gets the hardened runtime too — notarization rejects a bundle whose
+# framework does not carry it. Entitlements go on the app alone.
+codesign --force -s "$SIGN_ID" "${HARDEN[@]+"${HARDEN[@]}"}" "$APP/Contents/Frameworks/llama.framework"
+codesign --force -s "$SIGN_ID" "${HARDEN[@]+"${HARDEN[@]}"}" \
+    ${DEVID:+--entitlements BisprBlow.entitlements} \
+    --identifier ai.getbluejay.bisprblow "$APP"
 DEST=/Applications/BisprBlow.app
 # A .pkg install leaves the bundle root-owned, and the rm below then fails halfway through it.
 if [ -e "$DEST" ] && [ ! -w "$DEST" ]; then

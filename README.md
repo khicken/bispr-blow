@@ -44,14 +44,49 @@ says so rather than pretending.
 
 **Opening it takes an extra step.** BisprBlow is not notarized — that needs a paid Apple Developer
 Program membership — so macOS refuses the installer on a double-click. Right-click it, choose
-**Open**, then **Open** again at the warning. Same for the app's first launch. If Gatekeeper is
-stubborn:
+**Open**, then **Open** again at the warning. Same for the app's first launch. (The build scripts
+are ready for the day that membership exists: they pick up a Developer ID certificate on their own
+and notarize — see *Signing and notarization* below.) If Gatekeeper is stubborn:
 
 ```bash
 xattr -dr com.apple.quarantine ~/Downloads/BisprBlow.pkg
 ```
 
 Installing to `/Library` needs an admin password, which the installer will ask for.
+
+## Signing and notarization
+
+Nothing here needs doing to build or run the app locally. `./setup-signing.sh` makes a self-signed
+certificate, and a stable identity is all local iteration wants — macOS keys its Accessibility and
+Microphone grants to the signing identity, so a changing one re-prompts on every build.
+
+What that identity cannot do is open on anyone else's Mac. Only a **Developer ID** signature plus a
+stapled notarization ticket clears Gatekeeper, and both come with the paid Apple Developer Program
+($99/year). The scripts already do the rest — `build.sh` prefers a *Developer ID Application*
+certificate over the self-signed one and switches on the hardened runtime when it finds one, and
+`package.sh` signs the installer with a *Developer ID Installer* certificate and notarizes when
+credentials are stored. Neither changes behaviour on a machine without the certificates.
+
+So the whole remaining task is three one-time steps:
+
+1. Join the Apple Developer Program.
+2. In Xcode → Settings → Accounts → Manage Certificates, add **both** *Developer ID Application*
+   and *Developer ID Installer*. They are separate certificates and the scripts look for each by
+   name — the app one is missing if `package.sh` says "no Developer ID Installer certificate".
+3. Store notarization credentials once, using an [app-specific
+   password](https://account.apple.com/account/manage):
+
+   ```bash
+   xcrun notarytool store-credentials bisprblow \
+       --apple-id you@example.com --team-id TEAMID --password abcd-efgh-ijkl-mnop
+   ```
+
+Then `./package.sh` produces a signed, notarized, stapled installer that opens with a double-click.
+`spctl -a -vvv -t install .build/BisprBlow.pkg` should say `accepted`; it says `rejected` today.
+
+One thing to expect: the hardened runtime means a new signing identity, and **TCC keys its grants
+to the identity** — so Accessibility, Microphone and Speech Recognition re-prompt once on every
+machine, including the one that built it.
 
 ## First-run setup
 
