@@ -230,6 +230,17 @@ Apple-issued cert with a team: with it, hardened runtime + entitlements gives `-
 `codesign --verify --deep --strict` clean, and `--mic-check` capturing 88064 frames. That is as far
 as this can be verified before the Developer ID exists.
 
+## Accounts rules
+
+**The Supabase project's dashboard settings are in `db/SETUP.md`, and sign-in is broken without
+them.** Four of them — schema, the Magic Link email template, the Google provider, the redirect
+allow-list — none reachable from code, all invisible in a diff. Two have already been mistaken for
+app bugs: a stock email template sends a link to `localhost` and never a code, because the default
+body is `{{ .ConfirmationURL }}` and the app asks for `{{ .Token }}`; and an unconfigured Google
+provider answers `authorize` with a JSON error rather than a redirect. Check that file before
+reading the client.
+
+
 ## Cleanup rules
 
 Losing the user's words is the worst outcome, worse than leaving fillers in.
