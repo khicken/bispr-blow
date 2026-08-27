@@ -97,6 +97,22 @@ enum SelfCheck {
                                                 vocabulary: ["git"]) == "i sent you a gift")
         precondition(LLMCleaner.applyVocabulary("hold shift and click",
                                                 vocabulary: ["Swift"]) == "hold shift and click")
+        // The two-word join is an EXACT hit — the recognizer heard "Blue Jay" right and only the
+        // spacing was ours — so it must not license the phonetic tier next door. It used to, and
+        // that one line corrupted 13 of 432 real dictations: "Says Blue Jay for all six." went out
+        // as "git bluejay Vite all six.", "Says" and "for" being one phonetic edit from the terms.
+        precondition(LLMCleaner.applyVocabulary("Says Blue Jay for all six.",
+                                                vocabulary: ["bluejay", "git", "Vite"])
+                     == "Says bluejay for all six.")
+        precondition(LLMCleaner.applyVocabulary("not just say Blue Jay everywhere",
+                                                vocabulary: ["bluejay", "git", "Prettier"])
+                     == "not just say bluejay everywhere")
+        // An inflection of a term is the term: "docs" must not be respelled to "doc", and must not
+        // license its neighbours either — "run the docs page locally" shipped as "run dev doc Vite
+        // locally" because it did both.
+        precondition(LLMCleaner.applyVocabulary("can you run the docs page locally",
+                                                vocabulary: ["doc", "dev", "Vite"])
+                     == "can you run the docs page locally")
         // The guard is the word list, so its absence must not be silent.
         precondition(!LLMCleaner.englishWords.isEmpty,
                      "/usr/share/dict/words is missing — vocabulary respelling is unguarded")

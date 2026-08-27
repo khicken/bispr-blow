@@ -66,6 +66,17 @@ enum Main {
             print(String(data: json, encoding: .utf8)!)
             return
         }
+        // The dictionary respeller alone, against the real dictionary, one line of stdin per case.
+        // It exists because vocabulary corruption has now shipped twice and neither time was
+        // reachable from a test: the damage happens after the model, so `--clean` hides it behind
+        // an endpoint and `--finish` never calls this at all.
+        if CommandLine.arguments.contains("--vocab") {
+            let vocab = AppSettings.shared.vocabulary
+            while let line = readLine(strippingNewline: true) {
+                print(LLMCleaner.applyVocabulary(line, vocabulary: vocab))
+            }
+            return
+        }
         // Everything `clean` does to a model's reply after the HTTP call, so bench/bench.py
         // scores the text that would land at the cursor instead of the raw model output.
         // stdin: {"raw", "cleaned", "lowTouch"?, "draftTerms"?} → stdout: {"text", "lossy", "reworded"}.

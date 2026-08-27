@@ -812,6 +812,13 @@ final class LLMCleaner {
             let w = b.lowercased(), t = term.lowercased()
             if w == t { return .exact }
             guard w.count >= 3, t.count >= 3 else { return .none }
+            // An inflection of a term IS the term, heard correctly — not a mishearing of it.
+            // "docs" is one edit from the dictionary's "doc" and is not in the word list, so
+            // `near` respelled it, which both destroyed the plural and marked the word corrected:
+            // that licensed `loose` on the words either side, and "Can you run the docs page
+            // locally with MK Docs?" shipped as "Can you run dev doc Vite locally with MK doc?".
+            // Both directions, because the dictionary may hold either form.
+            if w == t + "s" || w == t + "es" || t == w + "s" || t == w + "es" { return .none }
             // `near` fires without the matched-neighbour evidence `loose` demands, so the one thing
             // it must never do is overwrite a word the recognizer already got right. Measured:
             // "just put a code fix for it" shipped as "just put a Xcode Vite for it", because
@@ -852,7 +859,15 @@ final class LLMCleaner {
                     words[i] += tail
                     words.remove(at: i + 1)
                     seps.remove(at: i + 1)
-                    corrected.insert(i)
+                    // Deliberately NOT `corrected.insert(i)`. This branch fires on an `.exact`
+                    // match — the recognizer heard "work tree" or "Blue Jay" correctly and only
+                    // the spacing was ours to fix — and the rule that exact hits must not license
+                    // the phonetic tier on their neighbours is the same one the single-word
+                    // `.exact` case below obeys by doing nothing. It was written for that case and
+                    // this branch quietly opted out, which is what shipped "Says Blue Jay for all
+                    // six." as "git bluejay Vite all six.": the join marked itself corrected, and
+                    // that licensed `loose` on "Says" and "for" either side of it. Measured over
+                    // 432 real dictations, this one line accounts for 13 of the 16 corrupted.
                     i += 1
                     continue
                 }

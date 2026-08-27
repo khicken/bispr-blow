@@ -297,6 +297,27 @@ letters and is the case the dictionary exists for. The set is empty when the fil
 restores the old behaviour rather than disabling respelling, and `warmUp` builds it so the first
 dictation does not spend its deadline on it.
 
+**An exact dictionary hit must never license the phonetic tier, and the two-word join forgot.**
+`loose` fires only beside a word this pass itself corrected, and that neighbour is supposed to be
+*evidence of mishearing* — so a hit the recognizer got right cannot be it. The single-word `.exact`
+case obeys that by doing nothing; the "work tree" → "worktree" join marked itself corrected and
+handed both its neighbours to `loose`. A phonetic key drops every vowel, so one edit between keys is
+a huge neighbourhood: "Says"/"git", "for"/"Vite", "our"/"API", "the"/"dev", "agent"/"git",
+"everywhere"/"Prettier", "any"/"JSON". Replayed over 432 real dictations from `history.json`, the
+respeller corrupted 16 and this one line caused 13 — "Says Blue Jay for all six." left as "git
+bluejay Vite all six." Every corruption was a dictation containing "Blue Jay".
+
+**An inflection of a term IS the term, heard correctly.** "docs" is one edit from `doc` and is not in
+`/usr/share/dict/words`, so `near` respelled it — destroying the plural *and* marking it corrected,
+which licensed `loose` on both sides: "run the docs page locally" shipped as "run dev doc Vite
+locally". `tier` returns `.none` for a bare s/es difference in either direction. The cost is a
+mangled plural of a term going unrespelled ("kubernete"), which is the recoverable direction.
+
+**Measure the respeller against `history.json`, not by reading it — `--vocab`.** One dictation per
+line of stdin, the real dictionary, `applyVocabulary` alone. Vocabulary corruption has now shipped
+twice and neither time was reachable from a test: the damage lands after the model, so `--clean`
+hides it behind an endpoint and `--finish` never calls this at all. The bench cannot see it either.
+
 **Low touch means delete, repunctuate, respell — and it is checked, not trusted.**
 `rewordsContent` requires every output word to be a subsequence of the transcript,
 or to come from the closed set the user gave us (dictionary + on-screen words).
