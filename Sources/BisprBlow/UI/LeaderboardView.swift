@@ -2,7 +2,12 @@ import SwiftUI
 
 /// The team's dictation, ranked — words, pace, and streaks, built entirely from counts. The
 /// board never sees anyone's text; that is a property of the database, not of this view.
-struct LeaderboardView: View {
+///
+/// A section rather than a page, because a leaderboard is something you glance at. It had a nav
+/// row of its own, which meant the one thing on it that changes daily sat behind a click most
+/// people never made — and every state it can be in except "here is the board" was a sentence
+/// telling you to go somewhere else. Home is where it belongs.
+struct LeaderboardSection: View {
     @ObservedObject var cloud: CloudClient
 
     @State private var period: Period = .week
@@ -35,19 +40,44 @@ struct LeaderboardView: View {
     }
 
     var body: some View {
-        Page(title: "Leaderboard", subtitle: cloud.org?.name) {
-            if !CloudConfig.ready {
-                EmptyHint(text: "Teams aren't switched on in this build.")
-            } else if cloud.session == nil {
-                EmptyHint(text: "Sign in on the Team page to share a leaderboard with your team.")
-            } else if cloud.org == nil {
-                EmptyHint(text: "Create or join a team on the Team page. Joining is what puts you on the board.")
-            } else {
-                picker
-                board
+        // Nothing here when the build has no project: an empty card explaining a feature that
+        // cannot be switched on is worse than no card.
+        if CloudConfig.ready {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    SectionLabel("Leaderboard")
+                    if let name = cloud.org?.name {
+                        Text(name)
+                            .font(.bj(11))
+                            .foregroundStyle(Theme.inkTertiary)
+                    }
+                    Spacer()
+                    if cloud.session != nil, cloud.org != nil { picker }
+                }
+                content
             }
+            .task(id: period) { await reload() }
+            .task(id: cloud.session?.userID) { await reload() }
         }
-        .task(id: period) { await reload() }
+    }
+
+    /// Signed out, this shows the sign-in itself rather than a sentence pointing at another page.
+    /// Telling someone where to go to do a thing, on the screen where they wanted the thing, is a
+    /// step that exists only because the form lived somewhere else.
+    @ViewBuilder
+    private var content: some View {
+        // Both forms sit in a card, because everything else on Home does — the stat tiles and the
+        // history rows are cards, so a bare form reads as unfinished rather than as a section.
+        if cloud.session == nil {
+            SignInView(cloud: cloud, showsBlurb: false)
+                .card(padding: 14)
+        } else if cloud.org == nil {
+            // The same create/join controls the Team page uses, not a copy of them.
+            TeamCloudSection(cloud: cloud)
+                .card(padding: 14)
+        } else {
+            board
+        }
     }
 
     private var picker: some View {
@@ -68,7 +98,6 @@ struct LeaderboardView: View {
                 .buttonStyle(.plain)
                 .handCursor()
             }
-            Spacer()
             if loading {
                 ProgressView().controlSize(.small)
             }

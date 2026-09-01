@@ -57,7 +57,6 @@ struct DashboardView: View {
     enum Section: String, CaseIterable, Identifiable {
         case home = "Home"
         case history = "History"
-        case leaderboard = "Leaderboard"
         case dictionary = "Dictionary"
         case team = "Team"
         case settings = "Settings"
@@ -67,7 +66,6 @@ struct DashboardView: View {
             switch self {
             case .home: return "house"
             case .history: return "clock.arrow.circlepath"
-            case .leaderboard: return "trophy"
             case .dictionary: return "character.book.closed"
             case .team: return "person.2"
             case .settings: return "gearshape"
@@ -79,7 +77,7 @@ struct DashboardView: View {
         /// so the last row reads as the end of a list rather than something left over.
         /// Must cover `allCases` in order; SelfCheck asserts it.
         static let groups: [(title: String, items: [Section])] = [
-            ("Activity", [.home, .history, .leaderboard]),
+            ("Activity", [.home, .history]),
             ("Vocabulary", [.dictionary, .team]),
             ("App", [.settings]),
         ]
@@ -177,7 +175,6 @@ struct DashboardView: View {
             switch section {
             case .home: HomeView(history: history)
             case .history: HistoryView(history: history)
-            case .leaderboard: LeaderboardView(cloud: CloudClient.shared)
             case .dictionary: DictionaryView(settings: settings)
             case .team: TeamPage(settings: settings, cloud: CloudClient.shared)
             case .settings: SettingsView(settings: settings)
@@ -372,6 +369,8 @@ struct HomeView: View {
                 StatCard(value: averageWPM > 0 ? "\(averageWPM)" : "0", label: "Avg WPM")
                 StatCard(value: "\(streakDays)", label: "Day streak")
             }
+
+            LeaderboardSection(cloud: CloudClient.shared)
 
             VStack(alignment: .leading, spacing: 10) {
                 SectionLabel("Recent")
