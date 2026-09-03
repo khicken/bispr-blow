@@ -310,6 +310,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboard.show()
     }
 
+    /// The sign-in link in the emailed code lands here — `bisprblow://auth-callback` with the
+    /// tokens in the fragment (`CFBundleURLTypes` in Info.plist registers the scheme). The Google
+    /// sheet does not: `ASWebAuthenticationSession` intercepts its own callback, so this is only
+    /// the email half. A failure shows the dashboard anyway — an expired link has to say so
+    /// somewhere, and the sign-in card is where the user was headed.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let callback = urls.first(where: { $0.scheme == CloudConfig.callbackScheme })
+        else { return }
+        dashboard.show(.team)
+        Task { @MainActor in
+            do { try await CloudClient.shared.signIn(callback: callback) }
+            catch { logLine("cloud: email link sign-in failed: \(error.localizedDescription)") }
+        }
+    }
+
     /// `open BisprBlow.app` while running (or Dock/Launchpad click) reopens the dashboard.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         dashboard.show()

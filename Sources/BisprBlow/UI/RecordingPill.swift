@@ -395,9 +395,10 @@ struct PillView: View {
     /// tracking areas, and the rebuild emits a spurious `mouseExited` with no matching enter until
     /// the pointer moves again — so a hover-sized panel collapses under a stationary cursor and
     /// stutters under a moving one. The idle panel is therefore always big enough for the hover
-    /// row, and hovering changes only what is drawn inside it. The cost is that the idle pill's
-    /// mouse footprint is the hover target rather than the visible sliver; the sliver alone is
-    /// too small to aim at anyway.
+    /// row, and hovering changes only what is drawn inside it. What the *panel* claims is therefore
+    /// not what the pill answers to: `PillHitRegion` in `pill` narrows the hover and drag target
+    /// back down to the capsule being drawn, so the permanently-large panel costs nothing but a
+    /// patch of window that swallows clicks.
     static func size(for state: DictationController.State) -> CGSize {
         let content: CGSize = switch state {
         case .idle:
@@ -460,7 +461,6 @@ struct PillView: View {
             .frame(width: targetSize.width, height: targetSize.height)
             .animation(Self.grow, value: targetSize)
             .contentShape(Rectangle())
-            .onHover { hovering = $0 }
             // `simultaneousGesture` so the hover buttons keep working: a real click never travels
             // far enough to start this, and a drag that does never lands on a button.
             .simultaneousGesture(
@@ -524,7 +524,15 @@ struct PillView: View {
             .animation(Self.grow, value: capsuleSize)
             .frame(width: box.width, height: box.height, alignment: model.anchor.contentAlignment)
             .overlay { contents }
-            .contentShape(Capsule())
+            // Hover — and the drag — belong to the capsule you can *see*, not to the panel around
+            // it. The idle panel is permanently hover-sized (see `size(for:)`), and this used to be
+            // `contentShape(Rectangle())` on that panel, so the pill sprang open with the pointer
+            // up to 34pt away from anything drawn. `PillHitRegion` tracks `capsuleSize`, so it only
+            // ever *grows* while hovering: the pointer that opened the pill is still inside the
+            // expanded region, which is the flapping the note on `size(for:)` is guarding against.
+            .contentShape(PillHitRegion(size: capsuleSize,
+                                        alignment: model.anchor.contentAlignment))
+            .onHover { hovering = $0 }
             .padding(Self.margin)
     }
 
@@ -899,6 +907,29 @@ struct ToastView: View {
         // 420pt panel whose edges nobody can see.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: model.anchor.panelAlignment)
         .animation(.bjSoft, value: message)
+    }
+}
+
+/// The pill's hit region: a capsule the size of the one being drawn, sitting where it is drawn —
+/// against `contentAlignment` inside the box. Lives in the pill's own unrotated space, so it is
+/// applied inside `pill` rather than on the frame above `rotationEffect`, where `capsuleSize` and
+/// the frame are transposes of each other.
+struct PillHitRegion: Shape {
+    let size: CGSize
+    let alignment: Alignment
+
+    func path(in rect: CGRect) -> Path {
+        let x: CGFloat = switch alignment.horizontal {
+        case .leading: rect.minX
+        case .trailing: rect.maxX - size.width
+        default: rect.midX - size.width / 2
+        }
+        let y: CGFloat = switch alignment.vertical {
+        case .top: rect.minY
+        case .bottom: rect.maxY - size.height
+        default: rect.midY - size.height / 2
+        }
+        return Capsule().path(in: CGRect(x: x, y: y, width: size.width, height: size.height))
     }
 }
 

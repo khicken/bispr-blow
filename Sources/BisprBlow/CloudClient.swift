@@ -143,8 +143,18 @@ final class CloudClient: ObservableObject {
     }
 
     /// Step one of signing in: an email with a one-time code.
+    ///
+    /// `redirect_to` is here for the *link* half of that email, which we do not ask for and cannot
+    /// stop: GoTrue's Magic Link template renders `{{ .ConfirmationURL }}` unless the project's
+    /// template is changed, and that URL resolves against Site URL — `http://localhost:3000` on an
+    /// untouched project. So the mail arrived pointing at a web server that does not exist, which
+    /// is exactly what Kaleb reported. GoTrue reads this off the query string rather than the body
+    /// (`utilities.GetReferrer`), which is why `auth` takes query items at all. With it the link
+    /// lands on `bisprblow://auth-callback` and `AppDelegate` finishes the sign-in — so both halves
+    /// of the email now work, whichever the template happens to render.
     func requestCode(email: String) async throws {
-        _ = try await auth("otp", json: ["email": email, "create_user": true])
+        _ = try await auth("otp", json: ["email": email, "create_user": true],
+                           query: [.init(name: "redirect_to", value: CloudConfig.callbackURL)])
     }
 
     /// Step two: the code comes back and becomes a session.
@@ -175,8 +185,14 @@ final class CloudClient: ObservableObject {
         // Measured against the live project while Google was still unconfigured:
         // "Unsupported provider: provider is not enabled".
         try await checkProviderEnabled(components.url!)
-        let callback = try await WebAuth.run(url: components.url!,
-                                             scheme: CloudConfig.callbackScheme)
+        try await signIn(callback: try await WebAuth.run(url: components.url!,
+                                                         scheme: CloudConfig.callbackScheme))
+    }
+
+    /// A `bisprblow://auth-callback` URL becomes a session. Two things arrive here: the tail of the
+    /// Google sheet, and the app being opened by the link in a sign-in email (see `requestCode`).
+    /// One path for both, so a link that works in the browser cannot stop working in the mail.
+    func signIn(callback: URL) async throws {
         let tokens = try Self.tokens(fromCallback: callback)
         let who = try await user(accessToken: tokens.accessToken)
         adopt(accessToken: tokens.accessToken,
@@ -354,9 +370,13 @@ final class CloudClient: ObservableObject {
         return formatter
     }()
 
-    private func auth(_ endpoint: String, json: [String: Any]) async throws -> Data {
+    private func auth(_ endpoint: String, json: [String: Any],
+                      query: [URLQueryItem] = []) async throws -> Data {
         guard let base = CloudConfig.url else { throw CloudError(message: "Accounts aren't set up.") }
-        var request = URLRequest(url: base.appendingPathComponent("auth/v1/\(endpoint)"))
+        var components = URLComponents(url: base.appendingPathComponent("auth/v1/\(endpoint)"),
+                                       resolvingAgainstBaseURL: false)!
+        if !query.isEmpty { components.queryItems = query }
+        var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

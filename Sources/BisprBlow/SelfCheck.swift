@@ -702,6 +702,23 @@ enum SelfCheck {
         precondition(PillView.size(for: .idle, anchor: .leftCentre)
             == CGSize(width: flat.height, height: flat.width))
         precondition(Anchor.leftCentre.isVertical && !Anchor.bottomCentre.isVertical)
+        // The hit region has to sit on the capsule that is drawn, not on the panel: the idle panel
+        // is permanently hover-sized, so a region matching it opens the pill from a pointer nowhere
+        // near it. Box for idle is 110x36 (panel minus margin); the resting sliver is 42x9 against
+        // `contentAlignment`, which on the bottom anchor is the bottom edge.
+        let box = CGRect(x: 0, y: 0, width: 110, height: 36)
+        let resting = PillHitRegion(size: CGSize(width: 42, height: 9), alignment: .bottom)
+            .path(in: box).boundingRect
+        precondition(resting.maxY == box.maxY && abs(resting.midX - box.midX) < 0.01)
+        precondition(resting.height == 9 && resting.width == 42)
+        // Hovering grows it to the whole box, and only grows it — the pointer that opened the pill
+        // is still inside, which is what keeps it from flapping open and shut.
+        let hovered = PillHitRegion(size: box.size, alignment: .bottom).path(in: box).boundingRect
+        precondition(hovered.contains(CGPoint(x: resting.midX, y: resting.midY)))
+        // A side anchor parks against the local top edge, in the pill's own unrotated space.
+        let side = PillHitRegion(size: CGSize(width: 42, height: 9), alignment: .top)
+            .path(in: box).boundingRect
+        precondition(side.minY == box.minY)
     }
 
     /// Bindings are serialized into UserDefaults and rendered as key caps in Settings, so a
