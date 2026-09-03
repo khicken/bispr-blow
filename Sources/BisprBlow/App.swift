@@ -131,6 +131,34 @@ enum Main {
             print("key=\(CloudConfig.anonKey.isEmpty ? "none" : String(CloudConfig.anonKey.prefix(18)) + "…")")
             print("callback=\(CloudConfig.callbackURL)")
             print("session=\(CloudClient.storedSessionEmail().map { "signed in as \($0)" } ?? "signed out")")
+            // Everything above is our own config and cannot tell you the project is unconfigured.
+            // Three sessions in a row asked Kaleb "is the schema applied?" and probed by hand with
+            // curl; these are those probes. The tell is PGRST205: a table that exists but denies
+            // the anon role answers `[]`, so a missing table and an RLS-denied one look nothing
+            // alike. Anon-key GETs only — no session needed, and nothing here mails anybody.
+            if let base = CloudConfig.url, CloudConfig.ready {
+                let get: @Sendable (String) -> String = { path in
+                    var request = URLRequest(url: base.appendingPathComponent(path))
+                    request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
+                    let box = DispatchSemaphore(value: 0)
+                    var body = "no answer"
+                    URLSession.shared.dataTask(with: request) { data, _, _ in
+                        if let data { body = String(decoding: data, as: UTF8.self) }
+                        box.signal()
+                    }.resume()
+                    _ = box.wait(timeout: .now() + 10)
+                    return body
+                }
+                let settings = get("auth/v1/settings")
+                let enabled = ["google", "apple", "github", "email"].filter {
+                    settings.contains("\"\($0)\":true")
+                }
+                print("providers=\(enabled.isEmpty ? "none" : enabled.joined(separator: ","))")
+                for table in ["users", "teams", "team_members", "dictations", "leaderboard"] {
+                    let body = get("rest/v1/\(table)?select=*&limit=1")
+                    print("table.\(table)=\(body.contains("PGRST205") ? "MISSING" : "present")")
+                }
+            }
             return
         }
         // Drives the real `ModelDownloader` against Hugging Face and prints progress. The installer
