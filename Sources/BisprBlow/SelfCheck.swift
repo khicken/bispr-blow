@@ -390,6 +390,7 @@ enum SelfCheck {
         checkAnchors()
         checkCorrections()
         checkFieldLabel()
+        checkHistoryRoundTrip()
         checkShortcuts()
         checkGestures()
 
@@ -671,6 +672,25 @@ enum SelfCheck {
         ).draftTerms
         precondition(terms.contains("#platform-team"), "\(terms)")
         precondition(terms.contains("shipping"), "\(terms)")
+    }
+
+    /// History is written and read by two separate JSON codecs, and for a while they disagreed
+    /// about dates — so every launch decoded nothing, `try?` swallowed it, and the user's history
+    /// silently started over. An empty history is indistinguishable from a new install, so nothing
+    /// but a round trip catches this.
+    private static func checkHistoryRoundTrip() {
+        let entry = DictationEntry(
+            id: UUID(), date: Date(timeIntervalSince1970: 1_788_000_000),
+            raw: "um so ship it", cleaned: "Ship it.", appName: "Claude",
+            bundleID: "com.anthropic.claudefordesktop", provider: "on-device",
+            durationSeconds: 1.5)
+        let data = try! HistoryStore.encoder.encode([entry])
+        let back = try! HistoryStore.decoder.decode([DictationEntry].self, from: data)
+        precondition(back.count == 1)
+        precondition(back[0].id == entry.id)
+        precondition(back[0].cleaned == entry.cleaned)
+        precondition(Int(back[0].date.timeIntervalSince1970) == 1_788_000_000,
+                     "history date did not survive the round trip: \(back[0].date)")
     }
 
     private static func checkAnchors() {

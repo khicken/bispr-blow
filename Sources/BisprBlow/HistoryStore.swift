@@ -25,9 +25,25 @@ final class HistoryStore: ObservableObject {
         return dir.appendingPathComponent("history.json")
     }()
 
+    /// The two halves of the file format, together so they cannot drift. They did: persist()
+    /// set .iso8601 and the load used a default JSONDecoder, which reads dates as
+    /// .deferredToDate (a Double). Every load of an .iso8601 file threw, `try?` swallowed it,
+    /// and history silently restarted at zero on every launch — 432 real dictations lost that
+    /// way, and nothing said so, because an empty history looks exactly like a new install.
+    static let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+    static let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+
     private init() {
         if let data = try? Data(contentsOf: fileURL),
-           let saved = try? JSONDecoder().decode([DictationEntry].self, from: data) {
+           let saved = try? Self.decoder.decode([DictationEntry].self, from: data) {
             entries = saved
         }
     }
@@ -48,9 +64,7 @@ final class HistoryStore: ObservableObject {
     }
 
     private func persist() {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        if let data = try? encoder.encode(entries) {
+        if let data = try? Self.encoder.encode(entries) {
             try? data.write(to: fileURL, options: .atomic)
         }
     }

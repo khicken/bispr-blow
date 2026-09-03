@@ -69,8 +69,9 @@ enum Appearance: String, CaseIterable, Identifiable {
         field: .white,
         // Dark over any wallpaper, like Wispr's, and translucent enough to read as glass over it.
         // The wave and the glyphs are white, so the floor is contrast against a light wallpaper
-        // rather than taste: below about 0.7 the bars start disappearing into a bright desktop.
-        pillBackground: Color(hex: 0x1C1D1F).opacity(0.78),
+        // rather than taste, and 0.70 IS that floor — below it the bars start disappearing
+        // into a bright desktop. Kaleb asked for it this faint after looking at 0.78.
+        pillBackground: Color(hex: 0x1C1D1F).opacity(0.70),
         pillWave: .white
     )
 
@@ -100,7 +101,7 @@ enum Appearance: String, CaseIterable, Identifiable {
         red: Color(hex: 0xF87171),
         green: Color(hex: 0x4ADE80),
         field: Color(hex: 0x2E3238),
-        pillBackground: Color(hex: 0x1C1D1F).opacity(0.78),
+        pillBackground: Color(hex: 0x1C1D1F).opacity(0.70),
         pillWave: .white
     )
 
@@ -122,7 +123,7 @@ enum Appearance: String, CaseIterable, Identifiable {
         red: Color(hex: 0xF0479B),             // the sky
         green: Color(hex: 0x1FAE9C),
         field: .white,
-        pillBackground: Color(hex: 0x241638).opacity(0.8),
+        pillBackground: Color(hex: 0x241638).opacity(0.72),
         pillWave: Color(hex: 0xB8F0FA),
         sidebarImage: "World_Secondary",
         panelImage: "World_Abstract"
@@ -149,7 +150,7 @@ enum Appearance: String, CaseIterable, Identifiable {
         red: Color(hex: 0xFF0054),
         green: Color(hex: 0x2FBF14),
         field: Color(hex: 0xFFFBD6),
-        pillBackground: Color(hex: 0x7C1FBF).opacity(0.82),
+        pillBackground: Color(hex: 0x7C1FBF).opacity(0.74),
         pillWave: Color(hex: 0xC6FF3D),
         fontNames: ["Comic Sans MS", "Chalkboard SE", "Marker Felt"]
     )
