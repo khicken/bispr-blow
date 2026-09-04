@@ -3,8 +3,8 @@ import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
 
-/// `BisprBlow --self-check`: asserts the text logic that silently loses user words if
-/// it breaks. `precondition`, not `assert` — release builds strip asserts.
+// `BisprBlow --self-check`: asserts the text logic that silently loses user words if it breaks.
+// `precondition`, not `assert` — release builds strip asserts.
 enum SelfCheck {
     static func run() {
         let raw = "okay so um i tested the new build and uh the login flow it's mostly working "
@@ -32,8 +32,7 @@ enum SelfCheck {
             + "session. We should fix those before Friday.", raw: raw))
         // Short dictations legitimately shrink a lot.
         precondition(!LLMCleaner.looksTruncated("Does it work?", raw: "um does it uh does it work"))
-        // Filler-stuffed speech is measured against the transcript with the fillers already gone,
-        // so a tight cleanup of a third-filler transcript is not truncation. Reported by the bench:
+        // Filler-stuffed speech is measured against the transcript with the fillers already gone:
         // qwen3-0.6b cleaned this correctly and the guard threw the result away.
         let stuffed = "um um so uh uh i think we should just ship it um today and see what breaks"
         precondition(!LLMCleaner.looksTruncated(
@@ -60,8 +59,7 @@ enum SelfCheck {
         precondition(LLMCleaner.stripFillers("Ship it and like the post.") == "Ship it and like the post.")
 
         // Dictionary respelling is code, not the model: at 0.6B the prompt's vocabulary line went
-        // unapplied on every real dictation ("Christian Parik" shipped as-is with both names in
-        // the prompt), so the substitution runs after the model, where it cannot be ignored.
+        // unapplied on every real dictation, so the substitution runs after the model.
         let vocab = ["Krishin", "Parikh", "Claude", "worktree", "Kubernetes"]
         // One edit away respells; exact letters in the wrong case take the dictionary casing.
         precondition(LLMCleaner.applyVocabulary("Ask Parik about it.", vocabulary: vocab)
@@ -72,10 +70,9 @@ enum SelfCheck {
         // as a misheard pair, and the pair is the evidence...
         precondition(LLMCleaner.applyVocabulary("My name is Christian Parik.", vocabulary: vocab)
                      == "My name is Krishin Parikh.")
-        // ...and the evidence must be a word the pass itself respelled. An exact dictionary hit
-        // is a word the recognizer got RIGHT, and with a dictionary of common dev terms it fires
-        // on nearly every dictation: "per api key" shipped as "Vite API git" on a real one when
-        // exact matches licensed their neighbors. The case fix on "api" still applies.
+        // ...and the evidence must be a word the pass itself respelled. An exact hit is a word the
+        // recognizer got RIGHT, and it fires on nearly every dictation: "per api key" shipped as
+        // "Vite API git" when exact matches licensed their neighbours. The case fix still applies.
         precondition(LLMCleaner.applyVocabulary("a token bucket per api key",
                                                 vocabulary: ["Vite", "API", "git"])
                      == "a token bucket per API key")
@@ -85,11 +82,10 @@ enum SelfCheck {
                      == "the christian church")
         precondition(LLMCleaner.applyVocabulary("push it to cloud storage", vocabulary: vocab)
                      == "push it to cloud storage")
-        // A word the recognizer got RIGHT is never respelled, however close it sits to a term.
-        // "just put a code fix for it" shipped as "just put a Xcode Vite for it" on a real
-        // dictation: levenshtein("code", "xcode") is 1, and correcting it licensed the phonetic
-        // tier on its neighbour. Being real English is what disqualifies it — not being long,
-        // because "Parik" above is five letters and must still respell.
+        // A word the recognizer got RIGHT is never respelled, however close it sits to a term:
+        // levenshtein("code", "xcode") is 1, and "just put a code fix for it" shipped as "just put a
+        // Xcode Vite for it". Being real English disqualifies it, not being long — "Parik" above is
+        // five letters and must still respell.
         precondition(LLMCleaner.applyVocabulary("just put a code fix for it",
                                                 vocabulary: ["Xcode", "Vite"])
                      == "just put a code fix for it")
@@ -97,10 +93,9 @@ enum SelfCheck {
                                                 vocabulary: ["git"]) == "i sent you a gift")
         precondition(LLMCleaner.applyVocabulary("hold shift and click",
                                                 vocabulary: ["Swift"]) == "hold shift and click")
-        // The two-word join is an EXACT hit — the recognizer heard "Blue Jay" right and only the
-        // spacing was ours — so it must not license the phonetic tier next door. It used to, and
-        // that one line corrupted 13 of 432 real dictations: "Says Blue Jay for all six." went out
-        // as "git bluejay Vite all six.", "Says" and "for" being one phonetic edit from the terms.
+        // The two-word join is an EXACT hit, so it must not license the phonetic tier next door. It
+        // used to, and that one line corrupted 13 of 432 real dictations: "Says Blue Jay for all
+        // six." went out as "git bluejay Vite all six."
         precondition(LLMCleaner.applyVocabulary("Says Blue Jay for all six.",
                                                 vocabulary: ["bluejay", "git", "Vite"])
                      == "Says bluejay for all six.")
@@ -108,8 +103,7 @@ enum SelfCheck {
                                                 vocabulary: ["bluejay", "git", "Prettier"])
                      == "not just say bluejay everywhere")
         // An inflection of a term is the term: "docs" must not be respelled to "doc", and must not
-        // license its neighbours either — "run the docs page locally" shipped as "run dev doc Vite
-        // locally" because it did both.
+        // license its neighbours either ("run the docs page locally" → "run dev doc Vite locally").
         precondition(LLMCleaner.applyVocabulary("can you run the docs page locally",
                                                 vocabulary: ["doc", "dev", "Vite"])
                      == "can you run the docs page locally")
@@ -125,10 +119,9 @@ enum SelfCheck {
         precondition(LLMCleaner.applyVocabulary("run FLAG_RETRY_V2 now", vocabulary: ["flagRetry"])
                      == "run FLAG_RETRY_V2 now")
 
-        // Recognizer homophones. The real transcript: "branches that all need to be merged into
-        // Maine". The swap is whole-word and runs with an empty dictionary too, since it is not
-        // a dictionary entry — and it must not drag the rhymes along with it, which is exactly
-        // what putting "main" in the dictionary would have done at edit distance 1.
+        // Recognizer homophones, from the real transcript "...merged into Maine". Whole-word, and it
+        // runs with an empty dictionary since it is not an entry — putting "main" in the dictionary
+        // would drag the rhymes along at edit distance 1.
         precondition(LLMCleaner.applyVocabulary("merge it into Maine.", vocabulary: [])
                      == "merge it into main.")
         precondition(LLMCleaner.applyVocabulary("rebase onto Maine", vocabulary: vocab)
@@ -136,22 +129,19 @@ enum SelfCheck {
         precondition(LLMCleaner.applyVocabulary("check the mail in the rain", vocabulary: vocab)
                      == "check the mail in the rain")
 
-        // The trailing period comes off when "End with a period" is off — but only a lone final
-        // full stop. Question marks carry meaning, inner sentence periods stay, and a trailing
-        // identifier keeps its dots.
+        // The trailing period comes off when "End with a period" is off, but only a lone final full
+        // stop: question marks carry meaning and a trailing identifier keeps its dots.
         precondition(LLMCleaner.droppingTrailingPeriod("Blue Jays.") == "Blue Jays")
         precondition(LLMCleaner.droppingTrailingPeriod("Did the deploy work?") == "Did the deploy work?")
         precondition(LLMCleaner.droppingTrailingPeriod("Ship it. Then tag it") == "Ship it. Then tag it")
         precondition(LLMCleaner.droppingTrailingPeriod("tail app.log") == "tail app.log")
-        // Bare "like" mid-sentence is deliberately left in. "or like the task bar" is filler and
-        // "and like the post" is a verb, and only what sits before the conjunction tells them
-        // apart, so this one goes to the prompt rather than to a regex.
+        // Bare "like" mid-sentence is deliberately left in: "or like the task bar" is filler and
+        // "and like the post" is a verb, and only what precedes the conjunction tells them apart.
         precondition(LLMCleaner.stripFillers("the system tray or like the task bar")
                      == "the system tray or like the task bar")
 
-        // A leading-dot filename must survive the tidy pass. This ran on every dictation and glued
-        // the dot to the word before it, undoing the one thing the coding path exists to protect —
-        // and it read in the bench as the model "missing '.env'" when the model had it right.
+        // A leading-dot filename must survive the tidy pass, which used to glue the dot to the word
+        // before it — read in the bench as the model "missing '.env'" when the model had it right.
         precondition(LLMCleaner.stripFillers("check the .env file") == "check the .env file")
         precondition(LLMCleaner.stripFillers("cd ../src and run it") == "cd ../src and run it")
         precondition(LLMCleaner.stripFillers("open .gitignore and .env") == "open .gitignore and .env")
@@ -170,9 +160,9 @@ enum SelfCheck {
         precondition(LLMCleaner.ruleClean("um uh the tests pass") == "The tests pass")
         // "oh" inside a word is not an interjection.
         precondition(LLMCleaner.stripFillers("Ohio and Ahmed shipped it") == "Ohio and Ahmed shipped it")
-        // Deliberate phrase repetition collapsing on a short dictation now trips the truncation
-        // guard — "Blue Jays, Blue Jays, Blue Jays" reached the cursor as "blue Jays." with every
-        // guard silent, because under 12 words nothing was checked at all.
+        // Deliberate phrase repetition collapsing on a short dictation trips the truncation guard:
+        // "Blue Jays, Blue Jays, Blue Jays" reached the cursor as "blue Jays." with every guard
+        // silent, because under 12 words nothing was checked at all.
         precondition(LLMCleaner.looksTruncated("blue Jays.", raw: "Blue Jays, Blue Jays, Blue Jays"))
         // ...while legitimate short cleanups still clear the floor: heavy filler stripping and a
         // resolved self-correction both land at or above half the spoken words.
@@ -185,11 +175,10 @@ enum SelfCheck {
                      == "Basically, we want the script")
         precondition(LLMCleaner.stripFillers("a smaller model decide, oh, this seems incoherent")
                      == "a smaller model decide, this seems incoherent")
-        // A filler that brought its own comma takes it along, or the comma lands against the
-        // previous one: "Update the uh, this cookbook, Doc." shipped as "Update the, this cookbook,
-        // Doc." This matters more than it looks — a dictation at or under `LLMCleaner.verbatimWords`
-        // never reaches the model, so `ruleClean` is the only pass it gets and the stranded comma
-        // goes straight to the cursor with no rewrite to tidy it.
+        // A filler that brought its own comma takes it along, or the comma lands against the previous
+        // one ("Update the uh, this cookbook, Doc." → "Update the, this cookbook, Doc."). A dictation
+        // at or under `LLMCleaner.verbatimWords` never reaches the model, so `ruleClean` is its only
+        // pass and the stranded comma goes straight to the cursor.
         precondition(LLMCleaner.stripFillers("Update the uh, this cookbook, Doc.")
                      == "Update the this cookbook, Doc.")
 
@@ -204,9 +193,8 @@ enum SelfCheck {
         precondition(!LLMCleaner.fewShot.contains { $0.1.contains("—") })
 
         checkLowercaseSentences()
-        // The recognizer marks a pause with an ellipsis. Verbatim from history — this reached the
-        // cursor, and while it sat in the transcript it also switched off looksTruncated's elision
-        // check, so a cleanup that trailed off would have been accepted on the same dictation.
+        // The recognizer marks a pause with an ellipsis. Verbatim from history: while it sat in the
+        // transcript it also switched off looksTruncated's elision check on that dictation.
         precondition(Transcriber.withoutPauseMarks(
             "You check blue jet bottles again to see... If we already offloaded this work.")
             == "You check blue jet bottles again to see If we already offloaded this work.")
@@ -221,8 +209,7 @@ enum SelfCheck {
                                               + "mostly working... but the spinner never stopped")))
 
         // Verbatim from history: 45 words in, 24 out, the whole second half deleted — and it PASSED
-        // looksTruncated, because 24 clears 55% of the filler-stripped 40 by two words. A length
-        // ratio cannot see which half the survivors came from.
+        // looksTruncated, because 24 clears 55% of the filler-stripped 40 by two words.
         let halfLost = "In the text section, we should also add a formatting option to like reduce "
             + "commas, like then, I don't know, or do like punctuation. So if it's on, it would be "
             + "like one of my punctuation. I I don't know, justice system problem or something."
@@ -267,16 +254,12 @@ enum SelfCheck {
         // Short dictations are not judged: the last word is as likely to be a discarded "yeah".
         precondition(!LLMCleaner.dropsTail("Ship it today.", raw: "um so i think we should just ship "
                                            + "it um today yeah"))
-        // Verbatim from history, and it shipped: this 149-word dictation lost its whole closing
-        // sentence — "There's stutters or filler words that aren't needed, then that's for the
-        // cleanup too" — and every guard stayed silent. Real strings rather than a paraphrase, because
-        // a shortened stand-in trips `losesContent` and so stops demonstrating the hole.
-        //
-        // Two separate holes let it through, and both are pinned here. One: presence, not position.
-        // "cleanup" is the last spoken content word and it also appears 90 words earlier, in "when
-        // doing a bunch of intense cleanup", so scanning the whole output found it at index 38 of 128
-        // and called the tail intact. Two: the prefix loosener — even scanning only the tail, "clean"
-        // is a five-character prefix of "cleanup", so the surviving "...should clean that up" passed.
+        // Verbatim from history, and it shipped: a 149-word dictation lost its whole closing sentence
+        // and every guard stayed silent. Real strings rather than a paraphrase, because a shortened
+        // stand-in trips `losesContent` and stops demonstrating the hole. Two holes, both pinned here.
+        // One: presence, not position — "cleanup" is the last content word and also appears 90 words
+        // earlier, so scanning the whole output found it at index 38 of 128. Two: the prefix loosener
+        // — "clean" is a five-character prefix of "cleanup", so "...should clean that up" passed.
         let ramble = "Also, yeah, the dedication needs to be really worked on. I don't know why words keep getting "
             + "cut off. I think it's the LLM being too aggressive. Like, it should be aggressive when doing "
             + "a bunch of intense cleanup. Like, uh, like, the goal is we're trying to transcribe to real "
@@ -303,16 +286,15 @@ enum SelfCheck {
             raw: "check the snap regions before you rebase, and then run the whole suite again "
             + "against the staging database and the local snap regions"))
 
-        // Both dictation cues have to resolve. A misspelled or removed system sound makes
-        // `NSSound(named:)` return nil and `playSound` a no-op, so the app just goes quiet — there is
-        // no error and nothing in the log. `Tink` is asserted absent by name because it is the tick
-        // macOS plays for a rejected keystroke, which is what it was reported as.
+        // Both dictation cues have to resolve: a misspelled or removed system sound makes
+        // `NSSound(named:)` nil and `playSound` a silent no-op with nothing in the log. `Tink` is
+        // asserted absent because it is the tick macOS plays for a rejected keystroke.
         precondition(NSSound(named: "Purr") != nil, "the start cue is missing")
         precondition(NSSound(named: "Pop") != nil, "the end cue is missing")
 
         // A dictation short enough to skip the model (`LLMCleaner.verbatimWords`) ships `ruleClean`,
-        // so `ruleClean` is what has to keep the user's words. "Second is." is the case Kaleb
-        // reported twice: the model returned "Second." and no guard could see a two-letter word go.
+        // so `ruleClean` is what has to keep the user's words. "Second is." was reported twice: the
+        // model returned "Second." and no guard could see a two-letter word go.
         precondition(LLMCleaner.verbatimWords >= 8, "8 is where this user's history turns over")
         precondition(LLMCleaner.ruleClean("Second is.") == "Second is.")
         precondition(LLMCleaner.ruleClean("Hello?") == "Hello?", "a question stays a question")
@@ -324,9 +306,8 @@ enum SelfCheck {
 
         checkLowTouchInvariant()
 
-        // Verbatim from history: the recognizer chose "four" over "for" by sound and its number
-        // formatting made it a numeral, and the guard then threw away the only stage that could
-        // see the sentence and fix it.
+        // Verbatim from history: the recognizer chose "four" over "for" by sound and formatted it as
+        // a numeral, and the guard then threw away the only stage that could fix it.
         precondition(!LLMCleaner.rewordsContent("Just keep the best for and afterwards text.",
                                                 raw: "Just keep the best 4 and afterwards text."))
         precondition(!LLMCleaner.rewordsContent("push to dev, not prod", raw: "push 2 dev not prod"))
@@ -336,18 +317,18 @@ enum SelfCheck {
         // A real number the model spelled out stays legal in the other direction too.
         precondition(!LLMCleaner.rewordsContent("retry three times", raw: "retry 3 times"))
 
-        // The floor has to clear the cleanup latency actually observed in the log — 280-729ms, only
-        // weakly tied to length. A 400ms base sat inside that spread, so the deadline coin-flipped
-        // and threw away the model's punctuation on ~30% of dictations to save 14-47ms.
+        // The floor has to clear the cleanup latency observed in the log — 280-729ms, only weakly
+        // tied to length. A 400ms base sat inside that spread, so the deadline coin-flipped and threw
+        // away the model's punctuation on ~30% of dictations to save 14-47ms.
         precondition(LLMCleaner.deadlineMs(words: 0) > 729)
         precondition(LLMCleaner.deadlineMs(words: 47) > 729)
         // ...and a long dictation still gets proportionally more, since cost does grow with length:
         // measured on qwen3-0.6b, 0.20s for twelve words against 1.51s for two hundred and forty.
         precondition(LLMCleaner.deadlineMs(words: 240) > 1510)
         precondition(LLMCleaner.deadlineMs(words: 100_000) == 2500)
-        // Accurate resolves to a model several times the size, so it has to get several times the
-        // budget at every length. A careful model on the fast budget is not more accurate — it
-        // misses the deadline and ships the same rule-cleaned text, only later.
+        // Accurate resolves to a model several times the size, so it gets several times the budget at
+        // every length: on the fast budget it is not more accurate, it just ships the same rule-cleaned
+        // text later.
         for words in [0, 12, 240, 100_000] {
             precondition(LLMCleaner.deadlineMs(words: words, careful: true)
                             > LLMCleaner.deadlineMs(words: words) * 2)
@@ -371,10 +352,9 @@ enum SelfCheck {
         precondition(settings.dictionary.contains("Kubernetes"))
         settings.dictionary = before
 
-        // Recognizer bias comes from the words already on screen, and a plain lowercase word in a
-        // code buffer is exactly the one a general language model gets wrong — "query" heard as
-        // "quarry". So plain domain words have to survive, identifiers have to lead, and words
-        // common in any English must not crowd them out of a capped list.
+        // Recognizer bias comes from the words on screen, and a plain lowercase word in a code buffer
+        // is the one a general model gets wrong ("query" heard as "quarry"). So plain domain words
+        // survive, identifiers lead, and common English must not crowd them out of a capped list.
         let terms = AppContext(
             bundleID: "com.microsoft.vscode", appName: "Code", windowTitle: "db.ts",
             draft: "const rows = await db.query(sql) // just make sure the cache and the query are warm"
@@ -394,12 +374,11 @@ enum SelfCheck {
         checkShortcuts()
         checkGestures()
 
-        // The /no_think switch goes on its own LINE. Glued to the end of "Transcript: <words>" it
-        // reads as part of the transcript, and the low-touch rules tell the model every spoken word
-        // survives — so the coding path copied it out, sometimes mangled past `sanitize` ("/no_thing",
-        // "/no_ideas"), and sometimes gave up on cleaning and copied the nearest few-shot demo
-        // instead: "revert the last commit" came back "Commit the last commit.". Measured 10 of 15
-        // short terminal dictations wrong glued, 0 of 15 on its own line.
+        // The /no_think switch goes on its own LINE. Glued to "Transcript: <words>" it reads as part
+        // of the transcript, and the low-touch rules promise every spoken word survives — so the
+        // coding path copied it out, sometimes mangled past `sanitize` ("/no_thing", "/no_ideas") and
+        // sometimes copying the nearest few-shot demo instead. 10 of 15 short terminal dictations
+        // wrong glued, 0 of 15 on its own line.
         let switched = LLMCleaner.withThinkingOff(
             [["role": "user", "content": "App: Terminal (coding)\nTranscript: revert the last commit"]],
             model: "Qwen3-0.6B-MLX-4bit")
@@ -414,530 +393,5 @@ enum SelfCheck {
         checkAccurateResolution()
 
         print("self-check passed")
-    }
-
-    /// The pure halves of cloud sync: queue diffing, the rows that travel, and the state file.
-    /// The failure that matters is words leaving the machine on the stats path, or a state file
-    /// from another version resetting what has synced.
-    /// True when a redirect is not a session. Used for the shapes that must never become one.
-    private static func rejectsCallback(_ url: URL) -> Bool {
-        do {
-            _ = try CloudClient.tokens(fromCallback: url)
-            return false
-        } catch {
-            return true
-        }
-    }
-
-    private static func checkCloudSync() {
-        let a = UUID(), b = UUID(), c = UUID()
-
-        // The queue is "what history has that the synced set does not", in history order.
-        precondition(SyncEngine.pending([a, b, c], synced: []) == [a, b, c])
-        precondition(SyncEngine.pending([a, b, c], synced: [b]) == [a, c])
-        precondition(SyncEngine.pending([a, b, c], synced: [a, b, c]).isEmpty)
-        precondition(SyncEngine.pending([], synced: [a]).isEmpty)
-
-        // A metric row carries counts and timings — never the words. Same word count the Home
-        // page shows, so the leaderboard and the stat card can never disagree.
-        let entry = DictationEntry(id: a, date: Date(timeIntervalSince1970: 1_770_000_000),
-                                   raw: "um hello there nice", cleaned: "Hello there. Nice.",
-                                   appName: "Slack", bundleID: "com.tinyspeck.slackmacgap",
-                                   provider: "local", durationSeconds: 2.5)
-        let org = UUID()
-        let row = SyncEngine.metricRow(entry, userID: c, orgID: org)
-        precondition(row["id"] as? String == a.uuidString)
-        precondition(row["user_id"] as? String == c.uuidString)
-        precondition(row["org_id"] as? String == org.uuidString)
-        precondition(row["word_count"] as? Int == 3)
-        precondition(row["duration_seconds"] as? Double == 2.5)
-        precondition((row["created_at"] as? String)?.hasSuffix("Z") == true)
-        precondition(row["raw"] == nil && row["cleaned"] == nil, "transcript text on the stats path")
-        // No org means the column is simply absent, and Postgres keeps it null.
-        precondition(SyncEngine.metricRow(entry, userID: c, orgID: nil)["org_id"] == nil)
-        // Text is its own row against the same id, under its own opt-in.
-        let text = SyncEngine.textRow(entry)
-        precondition(text["dictation_id"] as? String == a.uuidString)
-        precondition(text["raw"] as? String == "um hello there nice")
-        precondition(text["cleaned"] as? String == "Hello there. Nice.")
-
-        // The state file tolerates missing keys, so a file written by any other version of the
-        // schema never resets the synced sets to "everything again" or crashes the decode.
-        precondition(try! JSONDecoder().decode(SyncEngine.State.self, from: Data("{}".utf8)).metrics.isEmpty)
-        let partial = try! JSONDecoder().decode(SyncEngine.State.self,
-                                                from: Data(#"{"metrics":["\#(a.uuidString)"]}"#.utf8))
-        precondition(partial.metrics == [a] && partial.texts.isEmpty)
-
-        // The compiled-in project, which is what every installed copy uses: a typo here switches
-        // accounts off for everyone but the machine that has the defaults override set, which is
-        // exactly the failure the constants replaced.
-        precondition(URL(string: CloudConfig.defaultURL)?.scheme == "https", CloudConfig.defaultURL)
-        precondition(CloudConfig.defaultAnonKey.hasPrefix("sb_publishable_"))
-        precondition(CloudConfig.ready)
-
-        // Google's redirect: the tokens arrive in the URL *fragment*, not the query, and an error
-        // arrives the same way. This is the only part of the Google path that can be checked without
-        // a configured Google client, so it is the part worth pinning.
-        let good = URL(string: "bisprblow://auth-callback#access_token=abc&expires_in=3600"
-                       + "&refresh_token=xyz&token_type=bearer")!
-        let tokens = try! CloudClient.tokens(fromCallback: good)
-        precondition(tokens.accessToken == "abc" && tokens.refreshToken == "xyz")
-        precondition(tokens.expiresIn == 3600)
-
-        // Query-string tokens are not a session: Supabase puts them in the fragment, and accepting
-        // them from the query would accept a link anyone could have built.
-        let query = URL(string: "bisprblow://auth-callback?access_token=abc&refresh_token=xyz")!
-        precondition(rejectsCallback(query))
-
-        // The server's own words survive: a provider that is not configured says so, and that
-        // sentence is the whole diagnosis.
-        let failed = URL(string: "bisprblow://auth-callback#error=invalid_request"
-                         + "&error_description=Unsupported+provider%3A+provider+is+not+enabled")!
-        do {
-            _ = try CloudClient.tokens(fromCallback: failed)
-            preconditionFailure("an error fragment must not read as a session")
-        } catch {
-            precondition(error.localizedDescription == "Unsupported provider: provider is not enabled",
-                         error.localizedDescription)
-        }
-
-        // A fragment with an access token but no refresh token would build a session that cannot
-        // outlive the hour, and the failure would land an hour later looking like something else.
-        let half = URL(string: "bisprblow://auth-callback#access_token=abc")!
-        precondition(rejectsCallback(half))
-
-        // Invite codes: fixed length, an alphabet with no 0/O or 1/I/L (someone will read one
-        // out loud), and no repeats in any realistic batch.
-        let codes = (0..<500).map { _ in CloudClient.newInviteCode() }
-        precondition(Set(codes).count == codes.count)
-        precondition(codes.allSatisfy { code in
-            code.count == 8 && code.allSatisfy { "23456789ABCDEFGHJKMNPQRSTUVWXYZ".contains($0) }
-        })
-    }
-
-    /// Lowercase sentence starts, and the three kinds of word that must survive it. The failure
-    /// that matters is a capital getting eaten off a term the user put in the dictionary
-    /// precisely so it would be spelled that way.
-    /// Accurate resolving to the same model as Fast is the whole trigger for offering the download,
-    /// and it is invisible from outside: `pick` falls through to the first installed model rather
-    /// than failing, so the setting moves and the writing does not change.
-    private static func checkAccurateResolution() {
-        let fastOnly = ["Qwen3-0.6B-MLX-4bit"]
-        precondition(LLMCleaner.pick(from: fastOnly, for: .accurate)
-            == LLMCleaner.pick(from: fastOnly, for: .fast), "Accurate should collapse onto Fast here")
-
-        let both = ["Qwen3-0.6B-MLX-4bit", "Qwen3-1.7B-MLX-8bit"]
-        precondition(LLMCleaner.pick(from: both, for: .fast) == "Qwen3-0.6B-MLX-4bit")
-        // The explicit "qwen3-1.7b" entry earning its place: without it the generic "qwen" matches
-        // the 0.6b and the two modes collapse even with both models on disk.
-        precondition(LLMCleaner.pick(from: both, for: .accurate) == "Qwen3-1.7B-MLX-8bit")
-
-        precondition(LLMCleaner.pick(from: [], for: .accurate) == nil)
-    }
-
-    private static func checkLowercaseSentences() {
-        let vocab = ["Kubernetes", "Bluejay", "Priya"]
-        func lower(_ s: String) -> String { LLMCleaner.lowercaseSentenceStarts(s, keeping: vocab) }
-
-        precondition(lower("Run the tests. Then commit.") == "run the tests. then commit.")
-        // "I" keeps its capital wherever it lands. This case used to assert the opposite, which
-        // is how "i thought I did that" reached a real dictation looking like a typo.
-        precondition(lower("I think it works") == "I think it works")
-        precondition(lower("I thought I did that.") == "I thought I did that.")
-        precondition(lower("I'm on it. I'll check.") == "I'm on it. I'll check.")
-        // Dictionary terms, acronyms, and internal capitals all keep theirs.
-        precondition(lower("Kubernetes crashed again") == "Kubernetes crashed again")
-        precondition(lower("Ship it. Kubernetes is fine.") == "ship it. Kubernetes is fine.")
-        precondition(lower("API returned a 500") == "API returned a 500")
-        precondition(lower("GitHub is down") == "GitHub is down")
-        precondition(lower("Priya said no") == "Priya said no")
-        // Only sentence starts: a capital mid-sentence is the speaker's, not ours to take.
-        precondition(lower("we told Kaleb and Sam") == "we told Kaleb and Sam")
-        precondition(lower("Ask Sam about it") == "ask Sam about it")
-        // A full stop inside quotes still ends the sentence; a comma does not start one.
-        precondition(lower("He said \"go.\" Then he left.") == "he said \"go.\" then he left.")
-        precondition(lower("First, Then second") == "first, Then second")
-        // Newlines open a sentence, and the text is otherwise returned byte for byte.
-        precondition(lower("One thing\nTwo things") == "one thing\ntwo things")
-        precondition(lower("") == "")
-        precondition(lower("   Spaced   out  ") == "   spaced   out  ")
-    }
-
-    /// The coding path promises the model may only delete, repunctuate and respell, and
-    /// `rewordsContent` is what makes that a fact rather than a hope. Every case here is one the
-    /// prompt's own few-shot demonstrates, or one the bench caught the model doing.
-    private static func checkLowTouchInvariant() {
-        let reworded = LLMCleaner.rewordsContent
-
-        // The three low-touch few-shot outputs must all satisfy the invariant they teach.
-        for (user, cleaned) in LLMCleaner.lowTouchFewShot {
-            let raw = String(user.split(separator: "\n").last!.dropFirst("Transcript: ".count))
-            precondition(!reworded(cleaned, raw, []), "few-shot violates the invariant: \(cleaned)")
-        }
-
-        // Deleting fillers and rendering spoken symbols is what the path is for.
-        precondition(!reworded("Run the tests with --verbose, and then commit.",
-                               "run the the tests with um dash dash verbose and then uh commit", []))
-        precondition(!reworded("Check the .env file.", "check the dot env file", []))
-        // Numbers spoken as words, written as digits. "500s" keeps its plural.
-        precondition(!reworded("Capping at 30 seconds, retry on 500s.",
-                               "capping at thirty seconds retry on five hundreds", []))
-        // Two spoken words respelled as one compound.
-        precondition(!reworded("A fixed backoff.", "a fixed back off", []))
-        // An identifier surviving verbatim is the whole point of the path.
-        precondition(!reworded("The FLAG_RETRY_V2 flag is on for 10 percent of orgs.",
-                               "the flag retry v2 flag is on for 10 percent of orgs", []))
-
-        // ...and the failures. A swapped word is the one looksTruncated can never see: same length,
-        // different meaning. Allowed only when the user handed us the term.
-        precondition(reworded("Run it against the query.", "run it against the quarry", []))
-        precondition(!reworded("Run it against the query.", "run it against the quarry", ["query"]))
-        precondition(!reworded("Push to prod.", "push to proud",
-                               LLMCleaner.allowedTerms(vocabulary: [], draftTerms: ["prod", "db.query"])))
-        // Reordering, which the prompt forbids and a length ratio cannot detect.
-        precondition(reworded("Warm the index then cache the query.",
-                              "cache the query then warm the index", []))
-        // An invented connective — the model writing rather than cleaning.
-        precondition(reworded("The spinner hangs. Furthermore, the session persists.",
-                              "the spinner hangs the session persists", []))
-        // A compound may only be assembled from a pair at the scan head, never from two words
-        // grabbed from opposite ends of the transcript.
-        precondition(reworded("Backoff.", "back it off", []))
-
-        // And the reason this is gated on the coding path: a perfectly good polish-path rewrite
-        // fails it, by design. Applying it everywhere would reject almost every dictation.
-        precondition(reworded(
-            "I tested the new build and the login flow is mostly working, but I found two issues. "
-            + "First, the spinner never goes away. Second, when you log out it doesn't clear the session.",
-            "okay so um i tested the new build and uh the login flow it's mostly working but i found "
-            + "like two issues one is the spinner never goes away and two um when you log out it "
-            + "doesn't clear the session", []))
-    }
-
-    /// Where a release lands the pill. Everything here is in screen coordinates, bottom-left
-    /// origin, against a `visibleFrame`-shaped rect.
-    /// Learning from a hand-typed fix, which is a new way to write to the dictionary — and the
-    /// dictionary is the one thing in the app that can turn a correct transcript into a wrong one.
-    /// Both halves are checked: what counts as a correction at all, and what is worth keeping.
-    private static func checkCorrections() {
-        func fix(_ before: String, _ after: String) -> CorrectionWatcher.Correction? {
-            CorrectionWatcher.substitution(from: before, to: after)
-        }
-
-        // One word swapped in place is the whole signal.
-        let one = fix("ask Parik about the deploy", "ask Parikh about the deploy")
-        precondition(one?.misheard == "Parik" && one?.corrected == "Parikh")
-
-        // Punctuation belongs to the sentence, not to the word that goes in the dictionary.
-        let punctuated = fix("thanks, Parik.", "thanks, Parikh.")
-        precondition(punctuated?.corrected == "Parikh", "\(punctuated?.corrected ?? "nil")")
-
-        // Everything else is the user writing, and there is no way to tell which half of a rewrite
-        // was a mishear. A second changed word, a word added, a word deleted: all nil.
-        precondition(fix("ask Parik about the deploy", "ask Parikh about the release") == nil)
-        precondition(fix("ask Parik about it", "ask Parik about it today") == nil)
-        precondition(fix("ask Parik about it", "ask about it") == nil)
-        precondition(fix("same text", "same text") == nil)
-
-        // Worth keeping: a name the word list has never heard of, one edit away from what we wrote.
-        precondition(LLMCleaner.learnable(misheard: "Parik", corrected: "Parikh"))
-        precondition(LLMCleaner.learnable(misheard: "Bispr", corrected: "BisprBlow") == false)
-        precondition(LLMCleaner.learnable(misheard: "kubernetis", corrected: "Kubernetes"))
-
-        // Not worth keeping. In all three the recognizer produced real English, so it got the word
-        // right as far as the word list can tell and the edit is as likely to be a change of mind
-        // as a fix. "code" → "Xcode" is the pair that turned "just put a code fix for it" into
-        // "just put a Xcode Vite for it", and it is indistinguishable from "prod" → "proud" without
-        // knowing what the speaker meant.
-        precondition(LLMCleaner.learnable(misheard: "prod", corrected: "proud") == false)
-        precondition(LLMCleaner.learnable(misheard: "code", corrected: "Xcode") == false)
-        precondition(LLMCleaner.learnable(misheard: "shift", corrected: "Swift") == false)
-
-        // Not a mishear at all: someone rewrote the word.
-        precondition(LLMCleaner.learnable(misheard: "send", corrected: "cancel") == false)
-        precondition(LLMCleaner.learnable(misheard: "Parikh", corrected: "Parikh") == false)
-
-        // A word with a digit or an underscore in it is a variable name, not a dictated word — the
-        // recognizer never produced it, so nothing here should be storing it.
-        precondition(LLMCleaner.learnable(misheard: "userId", corrected: "user_id") == false)
-    }
-
-    /// The field's own name is context too, and it leads: in an empty message box it is the only
-    /// thing there is, which is exactly when the draft has nothing to offer.
-    private static func checkFieldLabel() {
-        let terms = AppContext(
-            bundleID: "com.tinyspeck.slackmacgap", appName: "Slack",
-            windowTitle: "Slack", draft: "shipping this today",
-            fieldLabel: "Message #platform-team"
-        ).draftTerms
-        precondition(terms.contains("#platform-team"), "\(terms)")
-        precondition(terms.contains("shipping"), "\(terms)")
-    }
-
-    /// History is written and read by two separate JSON codecs, and for a while they disagreed
-    /// about dates — so every launch decoded nothing, `try?` swallowed it, and the user's history
-    /// silently started over. An empty history is indistinguishable from a new install, so nothing
-    /// but a round trip catches this.
-    private static func checkHistoryRoundTrip() {
-        let entry = DictationEntry(
-            id: UUID(), date: Date(timeIntervalSince1970: 1_788_000_000),
-            raw: "um so ship it", cleaned: "Ship it.", appName: "Claude",
-            bundleID: "com.anthropic.claudefordesktop", provider: "on-device",
-            durationSeconds: 1.5)
-        let data = try! HistoryStore.encoder.encode([entry])
-        let back = try! HistoryStore.decoder.decode([DictationEntry].self, from: data)
-        precondition(back.count == 1)
-        precondition(back[0].id == entry.id)
-        precondition(back[0].cleaned == entry.cleaned)
-        precondition(Int(back[0].date.timeIntervalSince1970) == 1_788_000_000,
-                     "history date did not survive the round trip: \(back[0].date)")
-    }
-
-    private static func checkAnchors() {
-        let screen = CGRect(x: 0, y: 0, width: 1352, height: 878)
-        let pill = CGSize(width: 122, height: 48)
-        typealias Anchor = RecordingPillController.Anchor
-        precondition(Anchor.containing(NSPoint(x: 60, y: 440), in: screen) == .leftCentre)
-        precondition(Anchor.containing(NSPoint(x: 1300, y: 440), in: screen) == .rightCentre)
-        precondition(Anchor.containing(NSPoint(x: 676, y: 20), in: screen) == .bottomCentre)
-        // Released in open space: nil, so the pill stays where it was instead of being flung to
-        // whichever target happened to be closest.
-        precondition(Anchor.containing(NSPoint(x: 676, y: 440), in: screen) == nil)
-        // The lit target is the landing spot, so a point inside a zone must be near its landing.
-        precondition(Anchor.leftCentre.zone(in: screen)
-            .contains(NSPoint(x: 60, y: 440)))
-        precondition(Anchor.leftCentre.landing(in: screen).size == CGSize(width: 48, height: 122))
-        precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 4, y: 415))
-        precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1226, y: 415))
-        precondition(Anchor.bottomCentre.origin(size: pill, in: screen) == NSPoint(x: 615, y: 0))
-        // The bar hugs its panel's edge, and `rotation` maps that local edge onto the parked screen
-        // edge. Get this pair out of step and the sliver drifts to the middle of the panel or, worse,
-        // to the side facing away from the bezel.
-        precondition(Anchor.bottomCentre.contentAlignment == .bottom)
-        precondition(Anchor.leftCentre.contentAlignment == .top
-                     && Anchor.rightCentre.contentAlignment == .top)
-        // A side-anchored pill is the same bar turned 90°, so its panel is the transpose. If these
-        // ever disagree the panel clips the pill or claims mouse events beside it.
-        let flat = PillView.size(for: .idle, anchor: .bottomCentre)
-        precondition(PillView.size(for: .idle, anchor: .leftCentre)
-            == CGSize(width: flat.height, height: flat.width))
-        precondition(Anchor.leftCentre.isVertical && !Anchor.bottomCentre.isVertical)
-        // The hit region has to sit on the capsule that is drawn, not on the panel: the idle panel
-        // is permanently hover-sized, so a region matching it opens the pill from a pointer nowhere
-        // near it. Box for idle is 110x36 (panel minus margin); the resting sliver is 42x9 against
-        // `contentAlignment`, which on the bottom anchor is the bottom edge.
-        let box = CGRect(x: 0, y: 0, width: 110, height: 36)
-        let resting = PillHitRegion(size: CGSize(width: 42, height: 9), alignment: .bottom)
-            .path(in: box).boundingRect
-        precondition(resting.maxY == box.maxY && abs(resting.midX - box.midX) < 0.01)
-        precondition(resting.height == 9 && resting.width == 42)
-        // Hovering grows it to the whole box, and only grows it — the pointer that opened the pill
-        // is still inside, which is what keeps it from flapping open and shut.
-        let hovered = PillHitRegion(size: box.size, alignment: .bottom).path(in: box).boundingRect
-        precondition(hovered.contains(CGPoint(x: resting.midX, y: resting.midY)))
-        // A side anchor parks against the local top edge, in the pill's own unrotated space.
-        let side = PillHitRegion(size: CGSize(width: 42, height: 9), alignment: .top)
-            .path(in: box).boundingRect
-        precondition(side.minY == box.minY)
-    }
-
-    /// Bindings are serialized into UserDefaults and rendered as key caps in Settings, so a
-    /// break here either loses the user's shortcut or shows them the wrong one.
-    private static func checkShortcuts() {
-        let combo = Shortcut(trigger: .key(kVK_ANSI_D),
-                             flags: CGEventFlags([.maskControl, .maskAlternate]).rawValue)
-        let mouse4 = Shortcut(trigger: .mouse(3))
-
-        precondition(Shortcut.fn.display == "fn")
-        precondition(Shortcut.escape.display == "esc")
-        precondition(combo.display == "⌃⌥D")
-        precondition(mouse4.display == "Mouse 4")  // button 3 is what every UI calls mouse 4
-        precondition(Shortcut(trigger: .key(kVK_Space)).display == "Space")
-
-        // Modifiers have to match exactly, minus the noise bits macOS adds.
-        precondition(combo.matches(keyCode: kVK_ANSI_D,
-                                   flags: [.maskControl, .maskAlternate, .maskNonCoalesced]))
-        precondition(!combo.matches(keyCode: kVK_ANSI_D, flags: [.maskControl]))
-        precondition(!combo.matches(keyCode: kVK_ANSI_D, flags: [.maskControl, .maskAlternate, .maskShift]))
-        precondition(!combo.matches(keyCode: kVK_ANSI_F, flags: [.maskControl, .maskAlternate]))
-        // A standalone modifier matches on its keycode whatever else is held — that is what
-        // makes "hold fn" work while shift is down, and it is what the fn-only monitor did.
-        precondition(Shortcut.fn.matches(keyCode: kVK_Function, flags: [.maskSecondaryFn, .maskShift]))
-        precondition(!Shortcut.fn.matches(keyCode: kVK_Shift, flags: [.maskSecondaryFn]))
-        precondition(mouse4.matches(mouseButton: 3) && !mouse4.matches(mouseButton: 2))
-        // Only an fn binding may take over the macOS Globe key.
-        precondition(Shortcut.fn.usesFn && !combo.usesFn)
-        precondition(Shortcut(trigger: .key(kVK_ANSI_D),
-                              flags: CGEventFlags.maskSecondaryFn.rawValue).usesFn)
-
-        // Recording a binding: hold the combination, let go, and what was down is what is saved.
-        // Both halves are from real reports — ⌃⇧G recorded as ⇧G, and ⌃⇧ not recording at all.
-        //
-        // The flags on these keyDowns are deliberately wrong, because that is the bug: the
-        // recorder swallows each modifier's flagsChanged, so the window server never learns the
-        // modifier went down and the flags it stamps on the following keyDown are missing it —
-        // the modifier held *first* being the one that vanishes.
-        func record(_ steps: [(CGEventType, Int?, CGEventFlags)]) -> Shortcut? {
-            var state = ShortcutMonitor.CaptureState()
-            for (type, code, flags) in steps {
-                if case .record(let shortcut) = ShortcutMonitor.captureStep(
-                    type: type, keyCode: code, mouseButton: nil, flags: flags, state: &state) {
-                    return shortcut
-                }
-            }
-            return nil
-        }
-        // ⌃⇧G, with the keyDown carrying only shift, then everything released.
-        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
-                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
-                             (.keyDown, kVK_ANSI_G, [.maskShift]),
-                             (.keyUp, kVK_ANSI_G, [.maskShift]),
-                             (.flagsChanged, kVK_Shift, [.maskControl]),
-                             (.flagsChanged, kVK_Control, [])])?.display == "⌃⇧G")
-        // Nothing is recorded until the last key is up: the same sequence, stopped early.
-        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
-                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
-                             (.keyDown, kVK_ANSI_G, [.maskShift]),
-                             (.keyUp, kVK_ANSI_G, [.maskShift])]) == nil)
-        // Modifiers with no key at all is a binding in its own right — hold ⌃⇧ to talk. It has
-        // no keycode, so it can only be recorded on release, which is why the model is release-
-        // to-finalize rather than first-key-wins.
-        precondition(record([(.flagsChanged, kVK_Control, [.maskControl]),
-                             (.flagsChanged, kVK_Shift, [.maskControl, .maskShift]),
-                             (.flagsChanged, kVK_Shift, [.maskControl]),
-                             (.flagsChanged, kVK_Control, [])])?.display == "⌃⇧")
-        // A lone modifier stays a keycode, so left ⌃ and right ⌃ remain different bindings.
-        precondition(record([(.flagsChanged, kVK_Function, [.maskSecondaryFn]),
-                             (.flagsChanged, kVK_Function, [])]) == Shortcut.fn)
-        precondition(record([(.flagsChanged, kVK_RightControl, [.maskControl]),
-                             (.flagsChanged, kVK_RightControl, [])])?.display == "Right ⌃")
-        // A plain key with no modifiers at all.
-        precondition(record([(.keyDown, kVK_ANSI_G, []), (.keyUp, kVK_ANSI_G, [])])?.display == "G")
-
-        // A modifiers-only binding fires when its set completes and stops when it breaks — the
-        // set is the whole gesture, so it matches exactly rather than as a subset.
-        let ctrlShift = Shortcut(trigger: .modifiers,
-                                 flags: CGEventFlags([.maskControl, .maskShift]).rawValue)
-        precondition(ctrlShift.matches(modifiers: [.maskControl, .maskShift]))
-        precondition(!ctrlShift.matches(modifiers: [.maskControl]))
-        precondition(!ctrlShift.matches(modifiers: [.maskControl, .maskShift, .maskCommand]))
-        precondition(!ctrlShift.matches(modifiers: []))
-        // It carries no keycode, so the key path must never claim it as well.
-        precondition(!ctrlShift.matches(keyCode: kVK_Control, flags: [.maskControl, .maskShift]))
-        precondition(Shortcut(trigger: .modifiers,
-                              flags: CGEventFlags([.maskSecondaryFn, .maskShift]).rawValue).usesFn)
-
-        // Round trip: bindings live in UserDefaults as JSON.
-        let saved = ["pushToTalk": [Shortcut.fn, combo], "handsFree": [mouse4]]
-        let data = try! JSONEncoder().encode(saved)
-        precondition(try! JSONDecoder().decode([String: [Shortcut]].self, from: data) == saved)
-
-        // fn stays the shipped push-to-talk default; Esc stays cancel.
-        precondition(ShortcutAction.pushToTalk.defaults == [.fn])
-        precondition(ShortcutAction.cancel.defaults == [.escape])
-
-        // Assigning a binding steals it: two actions on one key means one never fires.
-        let stolen = AppSettings.adding(mouse4, to: .cancel, in: saved)
-        precondition(stolen["handsFree"] == [])
-        precondition(stolen["cancel"] == [mouse4])
-        precondition(stolen["pushToTalk"] == [.fn, combo])
-        // Re-adding the same binding to the same action must not duplicate it.
-        precondition(AppSettings.adding(.fn, to: .pushToTalk, in: saved)["pushToTalk"] == [combo, .fn])
-    }
-
-    /// The hold-versus-double-tap machine. Real timings, so this costs about a second — worth it,
-    /// because every branch here either drops a dictation or starts one nobody asked for, and
-    /// none of it can be exercised without physically pressing a key.
-    private static func checkGestures() {
-        // Hold past the threshold: start on press, insert on release.
-        run { monitor, log in
-            precondition(monitor.simulate(.pushToTalk, down: true))
-            pump(0.32)
-            precondition(monitor.simulate(.pushToTalk, down: false))
-            precondition(log() == ["start", "stop"], "\(log())")
-        }
-
-        // Short tap on its own: the session started, so it has to be thrown away — but only
-        // after the double-tap window has passed with no second tap.
-        run { monitor, log in
-            _ = monitor.simulate(.pushToTalk, down: true)
-            _ = monitor.simulate(.pushToTalk, down: false)
-            precondition(log() == ["start"], "\(log())")
-            pump(0.45)
-            precondition(log() == ["start", "cancel"], "\(log())")
-        }
-
-        // Double tap locks hands-free, and cancels the discard the first tap queued up.
-        run { monitor, log in
-            _ = monitor.simulate(.pushToTalk, down: true)
-            _ = monitor.simulate(.pushToTalk, down: false)
-            _ = monitor.simulate(.pushToTalk, down: true)
-            _ = monitor.simulate(.pushToTalk, down: false)
-            pump(0.45)
-            precondition(log() == ["start", "lock"], "\(log())")
-            // A tap while locked finishes the session.
-            _ = monitor.simulate(.pushToTalk, down: true)
-            precondition(log() == ["start", "lock", "stop-locked"], "\(log())")
-        }
-
-        // "Dictate and send" is push to talk that asks for a Return afterwards.
-        run { monitor, log in
-            _ = monitor.simulate(.pressEnter, down: true)
-            pump(0.32)
-            _ = monitor.simulate(.pressEnter, down: false)
-            precondition(log() == ["start+enter", "stop"], "\(log())")
-        }
-
-        // Releasing a different binding must not end someone else's hold.
-        run { monitor, log in
-            _ = monitor.simulate(.pushToTalk, down: true)
-            _ = monitor.simulate(.pressEnter, down: false)
-            pump(0.32)
-            precondition(log() == ["start"], "\(log())")
-            _ = monitor.simulate(.pushToTalk, down: false)
-            precondition(log() == ["start", "stop"], "\(log())")
-        }
-
-        // Cancelling mid-hold discards it, and the trigger's own release is then a no-op
-        // rather than a second stop that would insert the text anyway.
-        run { monitor, log in
-            _ = monitor.simulate(.pushToTalk, down: true)
-            precondition(monitor.simulate(.cancel, down: true))
-            _ = monitor.simulate(.cancel, down: false)
-            _ = monitor.simulate(.pushToTalk, down: false)
-            pump(0.45)
-            precondition(log() == ["start", "cancel"], "\(log())")
-        }
-
-        // Nothing to cancel: Esc has to reach the app the user is actually typing in.
-        run { monitor, log in
-            precondition(!monitor.simulate(.cancel, down: true))
-            precondition(!monitor.simulate(.cancel, down: false))
-            precondition(log().isEmpty)
-        }
-
-        // Hands-free binding: press to start, press again to finish.
-        run { monitor, log in
-            _ = monitor.simulate(.handsFree, down: true)
-            precondition(log() == ["start", "lock"], "\(log())")
-            _ = monitor.simulate(.handsFree, down: true)
-            precondition(log() == ["start", "lock", "stop-locked"], "\(log())")
-        }
-    }
-
-    /// A fresh monitor per scenario — no event tap, no shared state carried over.
-    private static func run(_ body: (ShortcutMonitor, () -> [String]) -> Void) {
-        let monitor = ShortcutMonitor()
-        var log: [String] = []
-        monitor.onStart = { log.append($0 ? "start+enter" : "start") }
-        monitor.onStop = { log.append($0 ? "stop-locked" : "stop") }
-        monitor.onCancel = { log.append("cancel") }
-        monitor.onLock = { log.append("lock") }
-        body(monitor, { log })
-    }
-
-    /// Let the run loop turn so the deferred discard actually fires.
-    private static func pump(_ seconds: TimeInterval) {
-        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 }
