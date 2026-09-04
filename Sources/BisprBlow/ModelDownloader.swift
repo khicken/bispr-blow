@@ -8,12 +8,17 @@ import Foundation
 // handed a truncated safetensors, which aborts the process rather than throwing.
 @MainActor
 final class ModelDownloader: ObservableObject {
-    static let shared = ModelDownloader()
+    // Accurate. The weights bench/results.md was measured on, and the ones `package.sh` used to
+    // install. Downloading anything else would make the numbers there describe a different app.
+    static let shared = ModelDownloader(repo: "lmstudio-community/Qwen3-1.7B-MLX-8bit")
+    // Fast. A fresh clone has weights nowhere, and an app with none falls back to ruleClean
+    // without saying so, so building from source needs this.
+    static let fast = ModelDownloader(repo: "lmstudio-community/Qwen3-0.6B-MLX-4bit")
 
-    // The weights bench/results.md was measured on, and the ones `package.sh` used to install.
-    // Downloading anything else would make the numbers there describe a different app.
-    static let repo = "lmstudio-community/Qwen3-1.7B-MLX-8bit"
-    static var modelName: String { String(repo.split(separator: "/").last!) }
+    let repo: String
+    var modelName: String { String(repo.split(separator: "/").last!) }
+
+    private init(repo: String) { self.repo = repo }
 
     @Published private(set) var fraction: Double?
     @Published private(set) var failure: String?
@@ -60,8 +65,8 @@ final class ModelDownloader: ObservableObject {
 
     private func run() async throws {
         let fm = FileManager.default
-        let staging = root.appendingPathComponent(".incoming-\(Self.modelName)")
-        let installed = root.appendingPathComponent(Self.modelName)
+        let staging = root.appendingPathComponent(".incoming-\(modelName)")
+        let installed = root.appendingPathComponent(modelName)
         try? fm.removeItem(at: staging)
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
 
@@ -70,7 +75,7 @@ final class ModelDownloader: ObservableObject {
         var carried: Int64 = 0
         for file in files {
             try Task.checkCancellation()
-            let url = URL(string: "https://huggingface.co/\(Self.repo)/resolve/main/\(file.name)")!
+            let url = URL(string: "https://huggingface.co/\(repo)/resolve/main/\(file.name)")!
             let written = try await Fetch.file(url, to: staging.appendingPathComponent(file.name)) { got in
                 Task { @MainActor [weak self] in
                     self?.fraction = Double(carried + got) / Double(max(total, 1))
@@ -88,7 +93,7 @@ final class ModelDownloader: ObservableObject {
     private struct Remote { let name: String; let size: Int64 }
 
     private func listing() async throws -> [Remote] {
-        let api = URL(string: "https://huggingface.co/api/models/\(Self.repo)?blobs=true")!
+        let api = URL(string: "https://huggingface.co/api/models/\(repo)?blobs=true")!
         let (data, response) = try await URLSession.shared.data(from: api)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

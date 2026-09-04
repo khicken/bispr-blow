@@ -203,9 +203,12 @@ enum Main {
         // Drives the real `ModelDownloader` against Hugging Face and prints progress. The installer
         // no longer ships the Accurate weights, so this is the only way anyone gets them — and the
         // path had been read and never once run before this existed.
-        if CommandLine.arguments.contains("--download-accurate") {
-            let downloader = ModelDownloader.shared
-            print("downloading \(ModelDownloader.modelName)…")
+        if let flag = CommandLine.arguments.firstIndex(where: {
+            $0 == "--download-accurate" || $0 == "--download-fast"
+        }) {
+            let downloader = CommandLine.arguments[flag] == "--download-fast"
+                ? ModelDownloader.fast : ModelDownloader.shared
+            print("downloading \(downloader.modelName)…")
             downloader.start { print("done"); exit(0) }
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
                 if let failure = downloader.failure { print("failed: \(failure)"); exit(1) }

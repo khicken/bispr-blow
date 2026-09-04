@@ -21,10 +21,25 @@ hold fn / double-tap fn
 
 ## Build & run
 
+This is the supported way to install it today. There is no notarized download yet, so a
+build you make yourself is the one that opens without argument.
+
 ```bash
-./setup-signing.sh   # once: creates a stable signing identity so permissions persist
-./build.sh           # builds, installs to /Applications, relaunches
+git clone https://github.com/khicken/bispr-blow && cd bispr-blow
+xcodebuild -downloadComponent MetalToolchain   # once, ~700 MB, needed for MLX
+./setup-signing.sh                             # once: stable identity, so permissions persist
+./build.sh                                     # builds, installs to /Applications, relaunches
+.build/release/BisprBlow --download-fast       # once: the 335 MB model it cleans your words with
 ```
+
+**Do not skip the last line.** A fresh clone has no weights anywhere, and an app with none
+falls back to rule-based cleanup silently — it looks like it works, it just stops fixing
+anything. `--list-models` should print `Qwen3-0.6B-MLX-4bit` when it is done, and
+`echo '{"raw":"..."}' | .build/release/BisprBlow --clean` should answer `"provider":"On-device"`
+rather than `"rules"`.
+
+Accurate is a second, larger model and is optional: `--download-accurate`, or let Settings
+offer it. Until then Accurate writes the same as Fast and says so.
 
 `build.sh` stages the bundle in `.build/` and installs a single copy to `/Applications` — two installed copies means two fn event taps fighting each other. Never launch the bare binary from a terminal: macOS attributes permissions to the terminal instead of the app.
 
