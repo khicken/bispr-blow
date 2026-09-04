@@ -290,6 +290,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Wiring only: cloud sync wakes on new history entries and a slow timer, and touches
         // the network only while someone is signed in with a sync switch on.
         SyncEngine.shared.start()
+        // One shot at launch, and silent about every failure — see UpdateChecker.
+        Task { await UpdateChecker.shared.check() }
 
         // First run: open the dashboard so permissions/setup are visible.
         if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {

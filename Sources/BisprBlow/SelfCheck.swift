@@ -391,7 +391,22 @@ enum SelfCheck {
             [["role": "user", "content": "hi"]], model: "llama-3.2-3b")[0]["content"] == "hi")
         checkCloudSync()
         checkAccurateResolution()
+        checkVersionCompare()
 
         print("self-check passed")
+    }
+
+    // The update banner appears only when this says so, and it is wrong in the direction that
+    // matters: a string compare puts 0.10.0 below 0.9.0, so the first release past .9 would tell
+    // nobody. A tag it cannot parse must never nag.
+    private static func checkVersionCompare() {
+        precondition(UpdateChecker.isNewer("v0.3.0", than: "0.2.0"))
+        precondition(UpdateChecker.isNewer("v0.10.0", than: "0.9.0"))
+        precondition(UpdateChecker.isNewer("v0.2.1", than: "0.2"))
+        precondition(!UpdateChecker.isNewer("v0.2.0", than: "0.2.0"))
+        precondition(!UpdateChecker.isNewer("v0.2.0", than: "0.2"))
+        precondition(!UpdateChecker.isNewer("v0.1.9", than: "0.2.0"))
+        precondition(!UpdateChecker.isNewer("nightly", than: "0.2.0"))
+        precondition(!UpdateChecker.isNewer("v0.3.0", than: "dev"))
     }
 }

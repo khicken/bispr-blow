@@ -13,7 +13,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION=${VERSION:-1.0}
+# Same newest-tag version build.sh stamps into the bundle, so the installer cannot claim a
+# different version than the app inside it.
+VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 1.0)}
 OUT=.build/dmg
 DMG=".build/BisprBlow.dmg"
 

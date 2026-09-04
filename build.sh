@@ -31,6 +31,17 @@ mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
 cp "$METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 cp -R .build/release/BisprBlow_BisprBlow.bundle "$APP/Contents/Resources/" 2>/dev/null || true
 cp Info.plist "$APP/Contents/"
+# The version comes from the newest git tag, so the app and its GitHub release agree by
+# construction rather than by remembering to bump a literal — which is what the update check
+# compares against. A tree with no tags keeps Info.plist's own value; the update check treats
+# anything it cannot parse as "not behind", so an untagged build simply never nags.
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
+if [ -n "$VERSION" ]; then
+    BUILD=$(git rev-list --count HEAD)
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
+    echo "Version $VERSION (build $BUILD)."
+fi
 cp AppIcon.icns "$APP/Contents/Resources/"
 
 # llama.framework resolves via @loader_path beside the CLI binary, so `swift build` output runs

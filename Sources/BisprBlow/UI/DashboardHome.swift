@@ -45,6 +45,8 @@ struct HomeView: View {
 
     var body: some View {
         Page(title: greeting, subtitle: subtitle) {
+            UpdateBanner()
+
             HStack(spacing: 12) {
                 StatCard(value: "\(history.totalWords)", label: "Words")
                 StatCard(value: averageWPM > 0 ? "\(averageWPM)" : "0", label: "Avg WPM")
@@ -71,6 +73,39 @@ struct HomeView: View {
                     .animation(.bjSnap, value: history.entries.map(\.id))
                 }
             }
+        }
+    }
+}
+
+// A newer release exists. One line, on the page they already open, and only while it is true —
+// an update is something the user can act on, so it gets UI, while which version they run and where
+// it came from is not, so there is no section for it beyond the off switch in Settings.
+struct UpdateBanner: View {
+    var themeID = Appearance.current
+    @ObservedObject private var checker = UpdateChecker.shared
+
+    var body: some View {
+        if let latest = checker.latest {
+            Button { NSWorkspace.shared.open(UpdateChecker.releasePage) } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.bj(12))
+                        .foregroundStyle(Theme.blue)
+                    Text("BisprBlow \(latest) is out")
+                        .font(.bj(13, weight: .medium))
+                        .foregroundStyle(Theme.ink)
+                    Text("Get it on GitHub")
+                        .font(.bj(12))
+                        .foregroundStyle(Theme.inkSubtle)
+                    Spacer()
+                }
+                .card()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .handCursor()
+            .transition(.offset(y: -6).combined(with: .opacity))
+            .animation(.bjSoft, value: latest)
         }
     }
 }

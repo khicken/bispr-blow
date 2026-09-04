@@ -99,6 +99,13 @@ final class AppSettings: ObservableObject {
     @Published var restoreMicVolume: Bool {
         didSet { defaults.set(restoreMicVolume, forKey: "restoreMicVolume") }
     }
+    // One request to api.github.com at launch, asking whether a newer release is out. On by
+    // default: an update nobody hears about is the same as no update, and an opt-in check that
+    // nobody finds is dead code. Off, nothing is asked and nothing is sent — and it is the only
+    // network call the app makes without being signed in.
+    @Published var checkForUpdates: Bool {
+        didSet { defaults.set(checkForUpdates, forKey: "checkForUpdates") }
+    }
     // Which look the app draws in. Every colour, image and type face comes from the matching
     // `Palette`, so this is the only stored piece of a theme.
     @Published var appearance: Appearance {
@@ -244,6 +251,7 @@ final class AppSettings: ObservableObject {
         lowercaseSentences = defaults.bool(forKey: "lowercaseSentences")
         endWithPeriod = defaults.bool(forKey: "endWithPeriod")
         restoreMicVolume = defaults.bool(forKey: "restoreMicVolume")
+        checkForUpdates = defaults.object(forKey: "checkForUpdates") as? Bool ?? true
         appearance = Self.appearance(stored: defaults.string(forKey: "appearance"))
         if let data = defaults.data(forKey: "bindings"),
            let saved = try? JSONDecoder().decode([String: [Shortcut]].self, from: data) {

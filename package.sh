@@ -15,7 +15,9 @@ cd "$(dirname "$0")"
 MODELS="$HOME/Library/Application Support/BisprBlow/models"
 FAST=Qwen3-0.6B-MLX-4bit
 INSTALL_TO="/Library/Application Support/BisprBlow/models"
-VERSION=${VERSION:-1.0}
+# Same newest-tag version build.sh stamps into the bundle, so the installer cannot claim a
+# different version than the app inside it.
+VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 1.0)}
 NOTARY_PROFILE=${NOTARY_PROFILE:-bisprblow}
 OUT=.build/pkg
 

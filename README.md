@@ -25,7 +25,8 @@ This is the supported way to install it today. There is no notarized download ye
 build you make yourself is the one that opens without argument.
 
 ```bash
-git clone https://github.com/khicken/bispr-blow && cd bispr-blow
+git clone https://github.com/khicken/bispr-blow
+cd bispr-blow                                  # the clone made this; build.sh lives inside it
 xcodebuild -downloadComponent MetalToolchain   # once, ~700 MB, needed for MLX
 ./setup-signing.sh                             # once: stable identity, so permissions persist
 ./build.sh                                     # builds, installs to /Applications, relaunches

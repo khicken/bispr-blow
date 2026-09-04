@@ -115,6 +115,9 @@ struct SettingsView: View {
                 ToggleRow("Play a sound when dictation starts and ends",
                           help: "A click when the mic opens and one when the text lands.",
                           isOn: $settings.soundsEnabled)
+                ToggleRow("Tell me when there's a new version",
+                          help: "Asks GitHub once at launch whether a newer release is out, and shows a line on Home if there is. Nothing is downloaded or installed for you, and nothing about you is sent.",
+                          isOn: $settings.checkForUpdates)
             }
 
             settingsGroup("Microphone", padding: 5) {
