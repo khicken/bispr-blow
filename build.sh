@@ -6,6 +6,14 @@ cd "$(dirname "$0")"
 
 swift build -c release
 
+# `xcrun metal` lives in the Metal Toolchain, which is not part of the command line tools and is a
+# separate ~700 MB download. Fetched here rather than left as a README step somebody can skip:
+# without it there is no metallib, and MLX aborts the process at first dictation.
+if ! xcrun metal --version >/dev/null 2>&1; then
+    echo "Metal toolchain missing — fetching it (once, ~700 MB)."
+    xcodebuild -downloadComponent MetalToolchain
+fi
+
 # MLX aborts the process at first use without mlx.metallib beside the executable, and SwiftPM
 # cannot compile .metal sources — so build.sh does, and copies it next to the binary in both places.
 METALLIB=.build/release/mlx.metallib
@@ -17,6 +25,15 @@ if [ ! -f "$METALLIB" ] || [ -n "$(find "$KERNELS" -name '*.metal' -newer "$META
     done
     xcrun metallib "$AIR"/*.air -o "$METALLIB"
     rm -rf "$AIR"
+fi
+
+# A fresh clone has weights in none of LocalEngine.searchRoots, and an app with none falls back to
+# rule-based cleanup without ever saying so — it looks like it works and simply stops fixing
+# anything. Asking the binary rather than testing a path is what keeps this from drifting away from
+# `searchRoots`. Once per machine. SKIP_WEIGHTS=1 for a build meant to have none.
+if [ -z "${SKIP_WEIGHTS:-}" ] && [ -z "$(.build/release/BisprBlow --list-models)" ]; then
+    echo "No cleanup model on this machine — fetching Fast (once, 335 MB)."
+    .build/release/BisprBlow --download-fast
 fi
 
 # Staged in .build: a second launchable copy means two fn event taps fighting.
@@ -75,12 +92,19 @@ if [ -n "$DEVID" ]; then
     # The hardened runtime is what makes the mic need an entitlement; see BisprBlow.entitlements.
     HARDEN=(--options runtime --timestamp)
     echo "Signing with \"$DEVID\" (hardened runtime — notarizable)."
-elif security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-    SIGN_ID="$IDENTITY"
-    echo "Signing with \"$IDENTITY\" (stable — permissions persist across rebuilds)."
 else
-    SIGN_ID="-"
-    echo "Signing ad-hoc (run ./setup-signing.sh once for stable permissions)."
+    # No Developer ID: make the stable self-signed identity rather than print an instruction. TCC
+    # keys its grants to the signing identity, so an ad-hoc signature makes macOS re-prompt for
+    # Accessibility and the microphone on every single build. `|| true` because the trust step can
+    # need GUI approval, and a build that signs ad-hoc still beats a build that stops.
+    security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY" || ./setup-signing.sh || true
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+        SIGN_ID="$IDENTITY"
+        echo "Signing with \"$IDENTITY\" (stable — permissions persist across rebuilds)."
+    else
+        SIGN_ID="-"
+        echo "Signing ad-hoc — the trust step needs GUI approval, so permissions will re-prompt."
+    fi
 fi
 # Nested code first, and it gets the hardened runtime too — notarization rejects a bundle whose
 # framework does not carry it. Entitlements go on the app alone.
