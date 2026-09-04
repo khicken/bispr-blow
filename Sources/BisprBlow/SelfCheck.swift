@@ -60,32 +60,32 @@ enum SelfCheck {
 
         // Dictionary respelling is code, not the model: at 0.6B the prompt's vocabulary line went
         // unapplied on every real dictation, so the substitution runs after the model.
-        let vocab = ["Krishin", "Parikh", "Claude", "worktree", "Kubernetes"]
+        let vocab = ["Rohin", "Devi", "Claude", "worktree", "Kubernetes"]
         // One edit away respells; exact letters in the wrong case take the dictionary casing.
-        precondition(LLMCleaner.applyVocabulary("Ask Parik about it.", vocabulary: vocab)
-                     == "Ask Parikh about it.")
+        precondition(LLMCleaner.applyVocabulary("Ask Devy about it.", vocabulary: vocab)
+                     == "Ask Devi about it.")
         precondition(LLMCleaner.applyVocabulary("ask claude to fix it", vocabulary: vocab)
                      == "ask Claude to fix it")
         // A sound-alike is corrected only beside another dictionary hit — a misheard name arrives
         // as a misheard pair, and the pair is the evidence...
-        precondition(LLMCleaner.applyVocabulary("My name is Christian Parik.", vocabulary: vocab)
-                     == "My name is Krishin Parikh.")
+        precondition(LLMCleaner.applyVocabulary("My name is Robin Devy.", vocabulary: vocab)
+                     == "My name is Rohin Devi.")
         // ...and the evidence must be a word the pass itself respelled. An exact hit is a word the
         // recognizer got RIGHT, and it fires on nearly every dictation: "per api key" shipped as
         // "Vite API git" when exact matches licensed their neighbours. The case fix still applies.
         precondition(LLMCleaner.applyVocabulary("a token bucket per api key",
                                                 vocabulary: ["Vite", "API", "git"])
                      == "a token bucket per API key")
-        // ...so the same sound-alikes alone are never touched: not every christian is Krishin and
+        // ...so the same sound-alikes alone are never touched: not every robin is Rohin and
         // not every cloud is Claude.
-        precondition(LLMCleaner.applyVocabulary("the christian church", vocabulary: vocab)
-                     == "the christian church")
+        precondition(LLMCleaner.applyVocabulary("a robin in the garden", vocabulary: vocab)
+                     == "a robin in the garden")
         precondition(LLMCleaner.applyVocabulary("push it to cloud storage", vocabulary: vocab)
                      == "push it to cloud storage")
         // A word the recognizer got RIGHT is never respelled, however close it sits to a term:
         // levenshtein("code", "xcode") is 1, and "just put a code fix for it" shipped as "just put a
-        // Xcode Vite for it". Being real English disqualifies it, not being long — "Parik" above is
-        // five letters and must still respell.
+        // Xcode Vite for it". Being real English disqualifies it, not being long — "Devy" above is
+        // four letters and must still respell.
         precondition(LLMCleaner.applyVocabulary("just put a code fix for it",
                                                 vocabulary: ["Xcode", "Vite"])
                      == "just put a code fix for it")

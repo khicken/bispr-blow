@@ -20,7 +20,7 @@ extension SelfCheck {
         precondition(lower("GitHub is down") == "GitHub is down")
         precondition(lower("Priya said no") == "Priya said no")
         // Only sentence starts: a capital mid-sentence is the speaker's, not ours to take.
-        precondition(lower("we told Kaleb and Sam") == "we told Kaleb and Sam")
+        precondition(lower("we told Alice and Bob") == "we told Alice and Bob")
         precondition(lower("Ask Sam about it") == "ask Sam about it")
         // A full stop inside quotes still ends the sentence; a comma does not start one.
         precondition(lower("He said \"go.\" Then he left.") == "he said \"go.\" then he left.")

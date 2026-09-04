@@ -137,7 +137,7 @@ whichever is at fault. Screen capture is not an option: `CGWindowListCreateImage
 macOS 26 and ScreenCaptureKit wants a permission this app deliberately does not hold. Take the
 anchor as an argument — the CLI binary is not the installed bundle, so it has its own defaults
 domain and never sees the real `pillAnchor`. Three sessions tried to fix "the pill jumps" by
-reading code and asking Kaleb what he saw, and two shipped a regression; the first run of this
+reading code and asking the user what they saw, and two shipped a regression; the first run of this
 found the cause in minutes.
 
 **The pill's outer frame moves on the same spring as the capsule, and the panel is not involved.**
@@ -243,7 +243,7 @@ inserting text into arbitrary apps do not survive it.
 as the app.** Signing the framework with one identity and the app with another gives dyld
 "different Team IDs" and the app dies at launch before `main`. Measured: the self-signed cert has no
 Team ID at all, so it cannot be used to test this path — signing both halves with it reproduces the
-crash and means nothing. The real check is `Apple Development: Kaleb Kim (L34A3NY5T8)`, a proper
+crash and means nothing. The real check is an `Apple Development` cert, a proper
 Apple-issued cert with a team: with it, hardened runtime + entitlements gives `--self-check` passing,
 `codesign --verify --deep --strict` clean, and `--mic-check` capturing 88064 frames. That is as far
 as this can be verified before the Developer ID exists.
@@ -297,7 +297,7 @@ nearest same-category demo dominates, and for a while the final `(general)` demo
 so every short general *imperative*, a shape with no demo of its own, came back as that question.
 "send the invoice to finance" and "add a note about the pricing change" both shipped the literal
 string "Did the Kubernetes deploy work?"; "cancel the meeting" became "did the meeting cancel?".
-Six of these reached Kaleb's history. Questions, long dictations, coding and chat were all fine,
+Six of these reached a user's history. Questions, long dictations, coding and chat were all fine,
 because each had its own nearest demo. Nothing caught it: every guard is floored at 12 content
 words, so a short dictation has none at all — the floors are right for their own false-positive
 rates, and the fix belongs in the prompt. `fewShot` therefore ends with a short `(general)`
@@ -310,7 +310,7 @@ and, unlike `loose`, fires without neighbour evidence — so `levenshtein("code"
 on "fix". Across the shipped dictionary: "git" ate gift/gist/grit, "Vite" ate site/cite/bite,
 "Swift" ate shift, "linter" ate liner/linger/linker, "Claude" ate clause. The gate is
 `LLMCleaner.englishWords`, macOS's own `/usr/share/dict/words` — being real English is the
-discriminator. A length floor is the obvious fix and the wrong one: "Parik" → "Parikh" is five
+discriminator. A length floor is the obvious fix and the wrong one: "Devy" → "Devi" is four
 letters and is the case the dictionary exists for. The set is empty when the file is missing, which
 restores the old behaviour rather than disabling respelling, and `warmUp` builds it so the first
 dictation does not spend its deadline on it.
@@ -539,7 +539,7 @@ This is what the device picker was silently doing for its whole life, and it is 
 **Run `--mic-check` after touching capture.** It drives the real `AudioRecorder` for
 two seconds against the *selected* device and prints the frame count, so the capture
 path is testable without the keyboard — before it existed, an input-only mic
-capturing nothing could only be caught by asking Kaleb, and it shipped twice. It also
+capturing nothing could only be caught by asking the user, and it shipped twice. It also
 caught a `frameLength`-set-after-copy bug that the standalone harness did not have.
 
 **The mic opens ~150ms after the shortcut, and `AudioRecorder.start` is where it

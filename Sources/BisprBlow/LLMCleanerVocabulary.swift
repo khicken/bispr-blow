@@ -20,11 +20,11 @@ extension LLMCleaner {
     }()
 
     // Deterministic dictionary respelling, after the model, because at 0.6B-1.7B the model does not
-    // do it ("Christian Parik" shipped uncorrected with both names in the prompt) and the rules path
+    // do it ("Robin Devy" shipped uncorrected with both names in the prompt) and the rules path
     // has no model at all. Tiered, because a wrong swap corrupts the user's words:
     //
     // - exact: same letters, wrong case → take the dictionary casing ("claude" → "Claude").
-    // - near: edit distance ≤1 (≤2 from eight letters), four letters minimum — "Parik" → "Parikh"
+    // - near: edit distance ≤1 (≤2 from eight letters), four letters minimum — "Devy" → "Devi"
     //   but never "def" → "dev".
     // - loose: sound-alike by phonetic key, accepted ONLY next to a word this pass just respelled;
     //   alone it turns every "cloud" into "Claude". An exact match is NOT evidence — counting them
@@ -75,7 +75,7 @@ extension LLMCleaner {
         // overwrite a word the recognizer got right: levenshtein("code", "xcode") == 1 shipped "just
         // put a Xcode Vite for it". Across the shipped dictionary "git" ate gift/gist/grit, "Vite" ate
         // site/cite/bite, "Swift" ate shift, "linter" ate liner/linger/linker, "Claude" ate clause.
-        // Being real English is the discriminator, not being long: "Parik" → "Parikh" is five letters
+        // Being real English is the discriminator, not being long: "Devy" → "Devi" is four letters
         // and is exactly what the dictionary is for.
             if w.count >= 4, !englishWords.contains(w),
                levenshtein(w, t) <= (max(w.count, t.count) >= 8 ? 2 : 1) { return .near }
@@ -169,7 +169,7 @@ extension LLMCleaner {
     // neighbours, which is how "code" turned "just put a code fix for it" into "just put a Xcode Vite
     // for it". BOTH words are tested against the word list — an edit away from real English is as
     // likely to be a change of mind as a mishear — so the app learns only from what the recognizer
-    // plainly invented ("Parik", "kubernetis"). The pair also has to be a plausible mishear: same
+    // plainly invented ("Devy", "kubernetis"). The pair also has to be a plausible mishear: same
     // rough length, and either one edit apart or sharing a phonetic key.
     static func learnable(misheard: String, corrected: String) -> Bool {
         let heard = misheard.lowercased(), fixed = corrected.lowercased()
