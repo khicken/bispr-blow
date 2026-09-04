@@ -115,6 +115,25 @@ enum Main {
             print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!)
             return
         }
+        // The real releases/latest request and the real comparison, against a version given on the
+        // command line. The banner cannot otherwise be seen without cutting a second release, and
+        // this is the app's only unsolicited network call — worth being able to watch it.
+        if let index = CommandLine.arguments.firstIndex(of: "--update-check") {
+            let current = CommandLine.arguments.count > index + 1
+                ? CommandLine.arguments[index + 1] : "0.0.0"
+            // A RunLoop and not `awaitSync`, which deadlocks here: UpdateChecker is @MainActor, so
+            // the work needs the main thread that the semaphore is holding. Same shape as
+            // --download-fast. Offline, URLSession gives up on its own and this reports no banner.
+            print("current=\(current)")
+            Task { @MainActor in
+                await UpdateChecker.shared.check(against: current)
+                print(UpdateChecker.shared.latest.map { "latest=\($0) — behind, the banner shows" }
+                      ?? "up to date (or offline) — no banner")
+                exit(0)
+            }
+            RunLoop.main.run()
+            return
+        }
         // Whether accounts are switched on, and where they point. Worth a seam because the answer
         // used to depend on a per-user `defaults write`, with nothing printed either way.
         if CommandLine.arguments.contains("--cloud-check") {

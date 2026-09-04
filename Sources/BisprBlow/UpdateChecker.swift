@@ -27,6 +27,13 @@ final class UpdateChecker: ObservableObject {
 
     func check() async {
         guard AppSettings.shared.checkForUpdates, let current = Self.current else { return }
+        await check(against: current)
+    }
+
+    // Split out so `--update-check <version>` can drive the real request: the CLI binary has no
+    // bundle and therefore no version, so without an argument to stand in for one this path could
+    // only be exercised by cutting a second release.
+    func check(against current: String) async {
         var request = URLRequest(url: Self.api)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         guard let (data, response) = try? await URLSession.shared.data(for: request),

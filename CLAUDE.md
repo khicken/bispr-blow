@@ -186,6 +186,35 @@ never asked to download weights it already has, and a hand-placed model still wi
 /Library install, and the weights-payload verification below is still how you check it. What changed
 is that it is no longer the *only* shape.
 
+**The app's version comes from the newest git tag, stamped into the staged `Info.plist` by
+build.sh.** `Info.plist`'s own `0.1.0` is only the fallback for a tree with no tags, and it used to
+be the whole story: the literal never moved, so every build ever made claimed the same version. The
+version exists because the update check compares against it, and `UpdateChecker.isNewer` treats
+anything it cannot parse as *not behind*, so an untagged build simply never nags. `package.sh` and
+`dmg.sh` default `VERSION` to the same tag, so an installer cannot claim a different version than
+the app inside it.
+
+**The update check tells the user and installs nothing, and Sparkle is not the next step until
+there is a Developer ID.** Sparkle's job is to replace `/Applications/BisprBlow.app` with a
+downloaded bundle — and a downloaded bundle is quarantined, an unnotarized one is refused, so a
+*successful* update would leave the user with an app that will not launch. Strictly worse than not
+updating. So `UpdateChecker` asks `api.github.com/repos/khicken/bispr-blow/releases/latest` once at
+launch, and a newer tag becomes one line on Home that opens the release page.
+
+Every failure is silence, deliberately: offline is the normal case for this app, and the site says
+it works with the wifi off. It is the only network call the app makes unbidden, which is why the off
+switch's help text says so out loud (`AppSettings.checkForUpdates`, on by default — an opt-in check
+nobody finds is dead code).
+
+**Drive it with `--update-check <version>`**, which takes the version to compare as an argument
+because the CLI binary has no bundle and therefore no version of its own — without it this path
+could only be exercised by cutting a second release. It runs on a RunLoop rather than `awaitSync`:
+`UpdateChecker` is `@MainActor`, so the work needs the main thread the semaphore would be holding.
+
+**Comparison is numeric per component, and a string compare is the trap.** "0.10.0" sorts below
+"0.9.0" as text, so the first release past .9 would tell nobody at all — which is exactly the
+release where nobody would think to check. `--self-check` covers that plus the unparseable tags.
+
 **Neither one opens on a stranger's Mac yet, and the .dmg makes that worse rather than better.** A
 disk image downloaded through a browser carries a quarantine flag, so Gatekeeper refuses the app
 outright — the failure is a dialog about an unverified developer, not a warning you can click past.
