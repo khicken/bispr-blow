@@ -61,7 +61,21 @@ you change all three.
 
 ## Checking it from the outside
 
-    K=<publishable key>; U=https://qprsavobltijpuhwqrhw.supabase.co
-    curl -s -H "apikey: $K" "$U/auth/v1/settings"   # which providers are actually on
+    BisprBlow --cloud-check
 
-Requesting an OTP sends a real email, so do it against an address you can read.
+Reports which providers are on and whether each table exists, so §1 and §3 need no
+curl and no asking. The tell for a missing table is `PGRST205`; a table that exists
+but refuses the anon key answers `42501`, which is what a correctly-granted schema
+does here — `policies.sql` grants to `authenticated` only. Nothing in it emails anyone.
+
+§2 and §4 cannot be probed. **The allow-list especially looks checkable and is not:**
+`/auth/v1/authorize?provider=google&redirect_to=...` answers 302 to Google for an
+allowed callback *and* for a deliberately bogus one — measured, both. GoTrue validates
+the redirect at the callback, after Google returns, so only a real sign-in exercises it.
+
+    BisprBlow --sign-in <email>          # mails a real code to a real person
+    BisprBlow --sign-in <email> <code>   # spends it, then prints session, org, leaderboard
+
+That is the whole path — the same `CloudClient` methods the sheet calls. It is also the
+only way to find out what §2 renders: a code means the template is `{{ .Token }}`, a bare
+link means it is still stock (the link works too since `b1fe1cc`, it just is not the ask).

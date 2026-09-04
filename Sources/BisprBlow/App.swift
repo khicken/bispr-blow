@@ -174,6 +174,45 @@ enum Main {
             }
             return
         }
+        // Sign-in end to end against the live project, because until now the only way to run it
+        // was to click it, and nobody could. Drives the real CloudClient — the same requestCode
+        // and signIn the sheet calls — so a break here is a break in the app.
+        //
+        // Two invocations rather than one prompting for the code: `--sign-in <email>` mails it,
+        // `--sign-in <email> <code>` spends it. The code arrives out of band, in a mail client,
+        // so there is nothing to pipe. Note this mails a real person a real code; it is not a
+        // probe to run casually, unlike --cloud-check, which touches nobody.
+        if let flag = CommandLine.arguments.firstIndex(of: "--sign-in") {
+            let rest = CommandLine.arguments.dropFirst(flag + 1)
+            guard let email = rest.first else {
+                print("usage: --sign-in <email> [code]")
+                exit(2)
+            }
+            let code = rest.dropFirst().first
+            Task { @MainActor in
+                let cloud = CloudClient.shared
+                do {
+                    guard let code else {
+                        try await cloud.requestCode(email: email)
+                        print("code mailed to \(email) — re-run with it as the second argument")
+                        exit(0)
+                    }
+                    try await cloud.signIn(email: email, code: code)
+                    print("session=\(cloud.session?.email ?? "none")")
+                    print("org=\(cloud.org.map { "\($0.name) (\($0.role))" } ?? "none")")
+                    if cloud.org != nil {
+                        let rows = try await cloud.leaderboard(period: "week")
+                        print("leaderboard.rows=\(rows.count)")
+                    }
+                    exit(0)
+                } catch {
+                    print("failed: \(error.localizedDescription)")
+                    exit(1)
+                }
+            }
+            RunLoop.main.run()
+            return
+        }
         // Drives the real `ModelDownloader` against Hugging Face and prints progress. The installer
         // no longer ships the Accurate weights, so this is the only way anyone gets them — worth a
         // seam, because before this existed the whole path had been read and never once run.
