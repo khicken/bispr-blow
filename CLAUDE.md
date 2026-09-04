@@ -3,11 +3,20 @@
 A local dictation app for macOS. Hold your shortcut, speak, release, and
 cleaned-up text lands at your cursor. Everything runs on the machine.
 
-BisprBlow is the name the user sees. Everything else is still `BluejayWispr`:
-the SwiftPM package, target and binary, `Sources/BluejayWispr/`, the bundle id
-`ai.getbluejay.wispr` and the UserDefaults suite of that name. Renaming the
-suite wipes the user's dictionary, bindings, theme and pill anchor, so the two
-names are load-bearing separately — rename the copy, never the identifiers.
+It is `BisprBlow` everywhere now: the SwiftPM package, target and binary,
+`Sources/BisprBlow/`, the bundle id `ai.getbluejay.bisprblow`, the UserDefaults
+suite of that name, and `Application Support/BisprBlow/`. It used to be
+`BluejayWispr` under the hood, and this file used to say never to touch that,
+because the suite holds the user's dictionary, bindings, theme and pill anchor
+and a rename orphans all of it. What actually moves it across is
+`defaults export <old> - | defaults import <new> -`, plus moving the support
+directory by hand — both done on this machine, nothing lost. There is no
+migration code in the app, deliberately: one user, two commands.
+
+The `Bluejay Wispr Dev` signing identity keeps its name, because it is a
+certificate in the login keychain rather than anything in this repo. Changing it
+means a new cert, and TCC keys grants to the signing identity — so Accessibility,
+Microphone and Speech Recognition would all re-prompt for nothing.
 
 Shortcuts are configurable per action — push to talk, hands-free, dictate and
 send, cancel — bound to a key plus modifiers or to a mouse button, and stored in
@@ -17,7 +26,7 @@ copy that names fn; read `AppSettings.holdPhrase` or `holdHint` instead.
 
 Build, install, and relaunch with `./build.sh`. It installs one copy to
 /Applications on purpose: two copies means two fn event taps fighting.
-Run `.build/release/BluejayWispr --self-check` after touching the cleanup or
+Run `.build/release/BisprBlow --self-check` after touching the cleanup or
 dictionary text logic.
 
 ## UI rules
@@ -128,7 +137,7 @@ whichever is at fault. Screen capture is not an option: `CGWindowListCreateImage
 macOS 26 and ScreenCaptureKit wants a permission this app deliberately does not hold. Take the
 anchor as an argument — the CLI binary is not the installed bundle, so it has its own defaults
 domain and never sees the real `pillAnchor`. Three sessions tried to fix "the pill jumps" by
-reading code and asking Kaleb what he saw, and two shipped a regression; the first run of this
+reading code and asking the user what they saw, and two shipped a regression; the first run of this
 found the cause in minutes.
 
 **The pill's outer frame moves on the same spring as the capsule, and the panel is not involved.**
@@ -159,41 +168,125 @@ to AppKit rather than layering workarounds.
 `./package.sh` builds `.build/BisprBlow.pkg`. `./build.sh` is still the local iteration path and
 package.sh calls it, so the bundle is assembled in exactly one place.
 
-**It is a .pkg because the weights are a question, and a .dmg cannot ask one.** A disk image is
-drag-and-drop with no UI. `customize="always"` in the distribution XML is what makes Installer show
-the choice pane instead of a bare Install button; without it the choices exist but nobody sees them.
-A literal drop-down needs a custom Installer plugin, which is an ObjC bundle for one question.
+**There is now a .dmg too, and it is the one to put behind a download link — `./dmg.sh`.** The .pkg
+existed because the Fast weights had to be written to `/Library`, which a disk image cannot do. That
+is no longer forced: `BUNDLE_WEIGHTS=1 ./build.sh` copies the 335 MB Fast model into
+`Contents/Resources/models`, `LocalEngine.searchRoots` reads that directory, and the app then writes
+nothing outside /Applications. 316 MB compressed, against the .pkg's 310 MB. Measured, not reasoned:
+with `~/Library/Application Support/BisprBlow/models` moved aside, the installed bundle still lists
+`Qwen3-0.6B-MLX-4bit` and `--clean` returns `"provider":"On-device"` — so a machine that has never
+held weights gets real cleanup rather than silent `ruleClean`.
+
+The copy happens BEFORE `codesign`, because anything added afterwards breaks the seal, and
+`BUNDLE_WEIGHTS` is off by default so ordinary iteration does not build a 400 MB bundle for nothing.
+`searchRoots` still reads `/Library` and still reads home first, so a machine that took the .pkg is
+never asked to download weights it already has, and a hand-placed model still wins over both.
+
+**package.sh stays.** Nothing about the .pkg became wrong — it is still the right shape for a
+/Library install, and the weights-payload verification below is still how you check it. What changed
+is that it is no longer the *only* shape.
+
+**The app's version comes from the newest git tag, stamped into the staged `Info.plist` by
+build.sh.** `Info.plist`'s own `0.1.0` is only the fallback for a tree with no tags, and it used to
+be the whole story: the literal never moved, so every build ever made claimed the same version. The
+version exists because the update check compares against it, and `UpdateChecker.isNewer` treats
+anything it cannot parse as *not behind*, so an untagged build simply never nags. `package.sh` and
+`dmg.sh` default `VERSION` to the same tag, so an installer cannot claim a different version than
+the app inside it.
+
+**The update check tells the user and installs nothing, and Sparkle is not the next step until
+there is a Developer ID.** Sparkle's job is to replace `/Applications/BisprBlow.app` with a
+downloaded bundle — and a downloaded bundle is quarantined, an unnotarized one is refused, so a
+*successful* update would leave the user with an app that will not launch. Strictly worse than not
+updating. So `UpdateChecker` asks `api.github.com/repos/khicken/bispr-blow/releases/latest` once at
+launch, and a newer tag becomes one line on Home that opens the release page.
+
+Every failure is silence, deliberately: offline is the normal case for this app, and the site says
+it works with the wifi off. It is the only network call the app makes unbidden, which is why the off
+switch's help text says so out loud (`AppSettings.checkForUpdates`, on by default — an opt-in check
+nobody finds is dead code).
+
+**Drive it with `--update-check <version>`**, which takes the version to compare as an argument
+because the CLI binary has no bundle and therefore no version of its own — without it this path
+could only be exercised by cutting a second release. It runs on a RunLoop rather than `awaitSync`:
+`UpdateChecker` is `@MainActor`, so the work needs the main thread the semaphore would be holding.
+
+**Comparison is numeric per component, and a string compare is the trap.** "0.10.0" sorts below
+"0.9.0" as text, so the first release past .9 would tell nobody at all — which is exactly the
+release where nobody would think to check. `--self-check` covers that plus the unparseable tags.
+
+**Neither one opens on a stranger's Mac yet, and the .dmg makes that worse rather than better.** A
+disk image downloaded through a browser carries a quarantine flag, so Gatekeeper refuses the app
+outright — the failure is a dialog about an unverified developer, not a warning you can click past.
+That is the missing Developer ID membership, not a packaging bug; do not try to fix it by telling
+people to run `xattr -d com.apple.quarantine`.
 
 **The Fast weights are not deselectable, and that is not timidity.** Fast means the smallest model
 installed, so a machine holding only the 1.7B resolves *Fast* to it as well — the Writing setting
 becomes a label with one model behind both sides. Shipping the 335M always is what keeps that
 setting honest, and it is also what keeps the app from launching into silent `ruleClean`.
 
-**Weights install to `/Library/Application Support/BluejayWispr/models`, not `~/Library`.** A .pkg
+**Weights install to `/Library/Application Support/BisprBlow/models`, not `~/Library`.** A .pkg
 cannot write to a home directory without moving the whole install to the user domain, which drags
 the app out of /Applications with it. `LocalEngine.searchRoots` scans both, home first, so a
 hand-placed model still wins over the installed one.
 
-**The choice saves disk, not download.** Both payloads are inside the one package, so it is ~1.9 GB
-whichever way the box is ticked. Making the download smaller means either two separate packages (no
-choice) or fetching over the network at first run (no code for it exists — `LocalEngine`'s comment
-about "the download-on-setup step" describes something that was never written).
+**The Accurate weights are NOT in the installer, and dropping them is what took it from 2.06 GB to
+310 MB.** They were 1.7 GB of the old package against the app's 67 MB and Fast's 335 MB, and they
+were an installer *choice*, so most of that download was bytes a box could turn off — which saved
+disk and nothing else, since both payloads sat inside the one file either way. `ModelDownloader`
+fetches them on demand from `lmstudio-community/Qwen3-1.7B-MLX-8bit`, the same repo package.sh used
+to install and the one bench/results.md was measured on, and `SettingsView` offers that download
+exactly when `LLMCleaner.accurateNeedsModel` says Accurate would collapse onto Fast. (An earlier
+version of this file claimed no such code existed. It did.)
+
+**That makes the download path load-bearing, so it has a seam: `--download-accurate`.** It drives
+the real `ModelDownloader` and prints progress, because until it existed the whole path had been read
+and never once run. Exercise it with the 1.7B moved out of `Application Support/BisprBlow/models`.
 
 **package.sh fails the build when the bundle has no metallib**, because MLX aborts the process
 rather than throwing and there is no degraded mode to notice later. Verify payloads with
 `lsbom -s` on the extracted component BOMs; the weights are worth diffing against the source, since
-a truncated safetensors is invisible until first dictation.
+a truncated safetensors is invisible until first dictation. Both were checked on the 310 MB package:
+one weights payload, 21 entries, no 1.7B anywhere, and all nine Fast files sha256-identical to
+source.
 
 **After a .pkg install, `./build.sh` refuses to run until you hand the bundle back.** Installer
 leaves `/Applications/BisprBlow.app` owned by root, and build.sh's `rm -rf` then fails part-way
 through it rather than at the start. The guard prints the `sudo rm -rf` plus `pkgutil --forget` to
 run; testing the installer and then iterating locally is the normal cycle, so expect it.
 
-**Nothing is notarized: the Apple account is free, so there is no Developer ID cert.** The app is
-signed with the self-signed `Bluejay Wispr Dev` identity and installs behind a right-click > Open.
-Moving to a paid membership and a Developer ID is the only thing that makes it open cleanly on a
-stranger's Mac — and it will re-prompt Accessibility, Microphone and Speech Recognition on every
-machine including Kaleb's, because TCC keys grants to the signing identity.
+**Nothing is notarized yet, but the scripts are: the only thing missing is the paid membership.**
+`build.sh` prefers a *Developer ID Application* certificate over the self-signed `Bluejay Wispr Dev`
+identity and adds `--options runtime --timestamp --entitlements` when it finds one; `package.sh`
+signs with a *Developer ID Installer* certificate and, if `notarytool` credentials are stored under
+the `bisprblow` profile, submits and staples. Every one of those is a no-op on a machine without the
+certificates, which is why the fallback path still ships today. Do not "simplify" the detection away.
+
+**The hardened runtime is why `BisprBlow.entitlements` exists, and it holds exactly one key.**
+`com.apple.security.device.audio-input` — under a hardened runtime the mic is blocked without it,
+and a hardened runtime is what notarization requires. Not the App Sandbox: the event tap and
+inserting text into arbitrary apps do not survive it.
+
+**A hardened runtime turns on library validation, so `llama.framework` must carry the same Team ID
+as the app.** Signing the framework with one identity and the app with another gives dyld
+"different Team IDs" and the app dies at launch before `main`. Measured: the self-signed cert has no
+Team ID at all, so it cannot be used to test this path — signing both halves with it reproduces the
+crash and means nothing. The real check is an `Apple Development` cert, a proper
+Apple-issued cert with a team: with it, hardened runtime + entitlements gives `--self-check` passing,
+`codesign --verify --deep --strict` clean, and `--mic-check` capturing 88064 frames. That is as far
+as this can be verified before the Developer ID exists.
+
+## Accounts rules
+
+**The Supabase project's dashboard settings are in `db/SETUP.md`, and sign-in is broken without
+them.** Four of them — schema, the Magic Link email template, the Google provider, the redirect
+allow-list — none reachable from code, all invisible in a diff. Two have already been mistaken for
+app bugs: a stock email template sends a link to `localhost` and never a code, because the default
+body is `{{ .ConfirmationURL }}` and the app asks for `{{ .Token }}`; and an unconfigured Google
+provider answers `authorize` with a JSON error rather than a redirect. Check that file before
+reading the client.
+
 
 ## Cleanup rules
 
@@ -233,7 +326,7 @@ nearest same-category demo dominates, and for a while the final `(general)` demo
 so every short general *imperative*, a shape with no demo of its own, came back as that question.
 "send the invoice to finance" and "add a note about the pricing change" both shipped the literal
 string "Did the Kubernetes deploy work?"; "cancel the meeting" became "did the meeting cancel?".
-Six of these reached Kaleb's history. Questions, long dictations, coding and chat were all fine,
+Six of these reached a user's history. Questions, long dictations, coding and chat were all fine,
 because each had its own nearest demo. Nothing caught it: every guard is floored at 12 content
 words, so a short dictation has none at all — the floors are right for their own false-positive
 rates, and the fix belongs in the prompt. `fewShot` therefore ends with a short `(general)`
@@ -246,10 +339,31 @@ and, unlike `loose`, fires without neighbour evidence — so `levenshtein("code"
 on "fix". Across the shipped dictionary: "git" ate gift/gist/grit, "Vite" ate site/cite/bite,
 "Swift" ate shift, "linter" ate liner/linger/linker, "Claude" ate clause. The gate is
 `LLMCleaner.englishWords`, macOS's own `/usr/share/dict/words` — being real English is the
-discriminator. A length floor is the obvious fix and the wrong one: "Parik" → "Parikh" is five
+discriminator. A length floor is the obvious fix and the wrong one: "Devy" → "Devi" is four
 letters and is the case the dictionary exists for. The set is empty when the file is missing, which
 restores the old behaviour rather than disabling respelling, and `warmUp` builds it so the first
 dictation does not spend its deadline on it.
+
+**An exact dictionary hit must never license the phonetic tier, and the two-word join forgot.**
+`loose` fires only beside a word this pass itself corrected, and that neighbour is supposed to be
+*evidence of mishearing* — so a hit the recognizer got right cannot be it. The single-word `.exact`
+case obeys that by doing nothing; the "work tree" → "worktree" join marked itself corrected and
+handed both its neighbours to `loose`. A phonetic key drops every vowel, so one edit between keys is
+a huge neighbourhood: "Says"/"git", "for"/"Vite", "our"/"API", "the"/"dev", "agent"/"git",
+"everywhere"/"Prettier", "any"/"JSON". Replayed over 432 real dictations from `history.json`, the
+respeller corrupted 16 and this one line caused 13 — "Says Blue Jay for all six." left as "git
+bluejay Vite all six." Every corruption was a dictation containing "Blue Jay".
+
+**An inflection of a term IS the term, heard correctly.** "docs" is one edit from `doc` and is not in
+`/usr/share/dict/words`, so `near` respelled it — destroying the plural *and* marking it corrected,
+which licensed `loose` on both sides: "run the docs page locally" shipped as "run dev doc Vite
+locally". `tier` returns `.none` for a bare s/es difference in either direction. The cost is a
+mangled plural of a term going unrespelled ("kubernete"), which is the recoverable direction.
+
+**Measure the respeller against `history.json`, not by reading it — `--vocab`.** One dictation per
+line of stdin, the real dictionary, `applyVocabulary` alone. Vocabulary corruption has now shipped
+twice and neither time was reachable from a test: the damage lands after the model, so `--clean`
+hides it behind an endpoint and `--finish` never calls this at all. The bench cannot see it either.
 
 **Low touch means delete, repunctuate, respell — and it is checked, not trusted.**
 `rewordsContent` requires every output word to be a subsequence of the transcript,
@@ -300,7 +414,10 @@ rate that decides this guard did not move. The one-character slack keeps the mor
 exists for (`regions` → `region`) and drops the coincidences.
 
 **The cleanup deadline scales with the transcript** (`deadlineMs(words:)`,
-400ms + 6ms/word). A flat budget is wrong in both directions: measured on
+900ms + 6ms/word capped at 2500 for Fast, 2000ms + 15ms/word capped at 6000 for
+Accurate — read the function, this line has been stale before: it said 400ms for
+long enough that `bench/results.md`, which prints the real figure in its header,
+disagreed with it in the repo). A flat budget is wrong in both directions: measured on
 qwen3-0.6b, twelve words clean in 0.20s and 240 words in 1.51s, so a flat 450ms
 sent every long dictation — the content that most needs the model — to the rules
 path. Nobody minds 1.5s after speaking for ninety seconds. Missing the deadline
@@ -451,7 +568,7 @@ This is what the device picker was silently doing for its whole life, and it is 
 **Run `--mic-check` after touching capture.** It drives the real `AudioRecorder` for
 two seconds against the *selected* device and prints the frame count, so the capture
 path is testable without the keyboard — before it existed, an input-only mic
-capturing nothing could only be caught by asking Kaleb, and it shipped twice. It also
+capturing nothing could only be caught by asking the user, and it shipped twice. It also
 caught a `frameLength`-set-after-copy bug that the standalone harness did not have.
 
 **The mic opens ~150ms after the shortcut, and `AudioRecorder.start` is where it
@@ -516,7 +633,7 @@ user's request. **If you switch it back to a local path, that clone needs
 `git submodule update --init`**: its C sources are symlinks into a llama.cpp
 submodule, and without it `swift build` fails on `build-info.h` — while the previous
 binary keeps sitting in `.build/release`, silently passing self-check. Check
-`strings .build/release/BluejayWispr` for something you just added if a change seems
+`strings .build/release/BisprBlow` for something you just added if a change seems
 to have no effect.
 
 `LLMCleaner.endpoints` lists `onDevice` **first**, earned on a bench run: the MLX
@@ -524,7 +641,7 @@ backend running the same Qwen3-0.6B-MLX-4bit weights LM Studio served reads 96%/
 recall/quality at 0.19s median over the 26 cases, against LM Studio's 96%/85% at
 0.33s — parity by construction, since it is the same runtime and the same weights.
 LM Studio was uninstalled on that result; the weights moved to
-`Application Support/BluejayWispr/models`. GGUF quants were tried first and lost on
+`Application Support/BisprBlow/models`. GGUF quants were tried first and lost on
 quality, not speed (Q4_K_M 77%, Q8_0 78-81% — the quantization itself, not sampling;
 repeat-penalty was tested and ruled out). The llama.cpp backend still reads any GGUF on
 disk, and is what a machine without the metallib falls back to — but no GGUF ships in the

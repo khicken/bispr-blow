@@ -76,7 +76,7 @@
 
 **qwen3-0.6b-mlx / long_meeting_notes** 0.96s 100% recall 92% ok
 
-> Kaleb is still on the shortcut. The event tap part is done. The recorder UI will take another day because there's no existing pattern in the app to copy. Second thing, the pill was eating clicks along the bottom of the screen and that's fixed now. It was a borderless panel claiming every point in its frame even where swiftui declined the hit. Third thing, we still owe a decision on whether insert then upgrade ships on by default and I think the answer is no because replacing text in someone else's app can go wrong. And then last, nobody has actually dictated into the instrumented build yet so the latency numbers we're quoting are from the benchmark not from real use, which we should fix before we optimize anything else.
+> Alex is still on the shortcut. The event tap part is done. The recorder UI will take another day because there's no existing pattern in the app to copy. Second thing, the pill was eating clicks along the bottom of the screen and that's fixed now. It was a borderless panel claiming every point in its frame even where swiftui declined the hit. Third thing, we still owe a decision on whether insert then upgrade ships on by default and I think the answer is no because replacing text in someone else's app can go wrong. And then last, nobody has actually dictated into the instrumented build yet so the latency numbers we're quoting are from the benchmark not from real use, which we should fix before we optimize anything else.
 
 **qwen3-0.6b-mlx / draft_context** 0.26s 67% recall 100% missing 'FLAG_RETRY_V2'
 

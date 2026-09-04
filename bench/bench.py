@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BINARY = ROOT / ".build/release/BluejayWispr"
+BINARY = ROOT / ".build/release/BisprBlow"
 BASE = "http://127.0.0.1:1234/v1"
 
 

@@ -150,3 +150,29 @@ cross join (values ('day', 1), ('week', 7), ('month', 30), ('all', 100000))
 where m.day > current_date - p.days
   and is_org_member(m.org_id)
 group by m.org_id, m.user_id, om.display_name, p.period, s.day_streak;
+
+-- `users.id` IS `auth.users.id`, and this is what makes it so. Without the trigger
+-- a sign-in creates the auth row and nothing else, so every policy in
+-- policies.sql — all of which key off `auth.uid()` against this table — matches no
+-- row and the signed-in user sees an empty app. The default on `id` goes away
+-- because the id now comes from auth, not from us; leaving it would let an insert
+-- mint a row belonging to nobody.
+--
+-- Supabase-only: it references the `auth` schema, so a plain Postgres skips from
+-- here down.
+alter table users alter column id drop default;
+alter table users add constraint users_auth_fk
+    foreign key (id) references auth.users (id) on delete cascade;
+
+create function handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+    insert into public.users (id, email, display_name)
+    values (new.id, new.email, new.raw_user_meta_data ->> 'display_name')
+    on conflict (id) do nothing;
+    return new;
+end $$;
+
+create trigger on_auth_user_created
+    after insert on auth.users
+    for each row execute function handle_new_user();

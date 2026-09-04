@@ -5,11 +5,11 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleExecutable</key>
-	<string>BluejayWispr</string>
+	<string>BisprBlow</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>ai.getbluejay.wispr</string>
+	<string>ai.getbluejay.bisprblow</string>
 	<key>CFBundleName</key>
 	<string>BisprBlow</string>
 	<key>CFBundleDisplayName</key>
@@ -22,7 +22,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>ai.getbluejay.wispr.auth</string>
+			<string>ai.getbluejay.bisprblow.auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>bisprblow</string>
