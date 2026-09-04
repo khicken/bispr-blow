@@ -89,22 +89,22 @@ extension SelfCheck {
         }
 
         // One word swapped in place is the whole signal.
-        let one = fix("ask Parik about the deploy", "ask Parikh about the deploy")
-        precondition(one?.misheard == "Parik" && one?.corrected == "Parikh")
+        let one = fix("ask Devy about the deploy", "ask Devi about the deploy")
+        precondition(one?.misheard == "Devy" && one?.corrected == "Devi")
 
         // Punctuation belongs to the sentence, not to the word that goes in the dictionary.
-        let punctuated = fix("thanks, Parik.", "thanks, Parikh.")
-        precondition(punctuated?.corrected == "Parikh", "\(punctuated?.corrected ?? "nil")")
+        let punctuated = fix("thanks, Devy.", "thanks, Devi.")
+        precondition(punctuated?.corrected == "Devi", "\(punctuated?.corrected ?? "nil")")
 
         // Everything else is the user writing, and there is no telling which half of a rewrite was a
         // mishear. A second changed word, a word added, a word deleted: all nil.
-        precondition(fix("ask Parik about the deploy", "ask Parikh about the release") == nil)
-        precondition(fix("ask Parik about it", "ask Parik about it today") == nil)
-        precondition(fix("ask Parik about it", "ask about it") == nil)
+        precondition(fix("ask Devy about the deploy", "ask Devi about the release") == nil)
+        precondition(fix("ask Devy about it", "ask Devy about it today") == nil)
+        precondition(fix("ask Devy about it", "ask about it") == nil)
         precondition(fix("same text", "same text") == nil)
 
         // Worth keeping: a name the word list has never heard of, one edit away from what we wrote.
-        precondition(LLMCleaner.learnable(misheard: "Parik", corrected: "Parikh"))
+        precondition(LLMCleaner.learnable(misheard: "Devy", corrected: "Devi"))
         precondition(LLMCleaner.learnable(misheard: "Bispr", corrected: "BisprBlow") == false)
         precondition(LLMCleaner.learnable(misheard: "kubernetis", corrected: "Kubernetes"))
 
@@ -118,7 +118,7 @@ extension SelfCheck {
 
         // Not a mishear at all: someone rewrote the word.
         precondition(LLMCleaner.learnable(misheard: "send", corrected: "cancel") == false)
-        precondition(LLMCleaner.learnable(misheard: "Parikh", corrected: "Parikh") == false)
+        precondition(LLMCleaner.learnable(misheard: "Devi", corrected: "Devi") == false)
 
         // A word with a digit or an underscore is a variable name, not a dictated word.
         precondition(LLMCleaner.learnable(misheard: "userId", corrected: "user_id") == false)
