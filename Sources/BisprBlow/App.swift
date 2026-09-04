@@ -137,8 +137,14 @@ enum Main {
             // the anon role answers `[]`, so a missing table and an RLS-denied one look nothing
             // alike. Anon-key GETs only — no session needed, and nothing here mails anybody.
             if let base = CloudConfig.url, CloudConfig.ready {
-                let get: @Sendable (String) -> String = { path in
-                    var request = URLRequest(url: base.appendingPathComponent(path))
+                // appendingPathComponent percent-encodes a `?`, which turns a query into part of
+                // the table name and answers PGRST205 for a table that exists — the exact false
+                // negative this command is here to prevent. Build the URL, don't concatenate it.
+                let get: @Sendable (String, [URLQueryItem]) -> String = { path, query in
+                    var components = URLComponents(url: base.appendingPathComponent(path),
+                                                   resolvingAgainstBaseURL: false)!
+                    if !query.isEmpty { components.queryItems = query }
+                    var request = URLRequest(url: components.url!)
                     request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
                     let box = DispatchSemaphore(value: 0)
                     var body = "no answer"
@@ -149,13 +155,20 @@ enum Main {
                     _ = box.wait(timeout: .now() + 10)
                     return body
                 }
-                let settings = get("auth/v1/settings")
+                let settings = get("auth/v1/settings", [])
                 let enabled = ["google", "apple", "github", "email"].filter {
                     settings.contains("\"\($0)\":true")
                 }
                 print("providers=\(enabled.isEmpty ? "none" : enabled.joined(separator: ","))")
-                for table in ["users", "teams", "team_members", "dictations", "leaderboard"] {
-                    let body = get("rest/v1/\(table)?select=*&limit=1")
+                // The real names, from db/schema.sql. An earlier list here said teams and
+                // team_members, which this schema has never had — so it reported MISSING for
+                // tables nobody was ever going to create.
+                for table in ["users", "orgs", "org_members", "invites",
+                              "dictations", "dictation_texts", "leaderboard"] {
+                    let body = get("rest/v1/\(table)", [
+                        URLQueryItem(name: "select", value: "*"),
+                        URLQueryItem(name: "limit", value: "1"),
+                    ])
                     print("table.\(table)=\(body.contains("PGRST205") ? "MISSING" : "present")")
                 }
             }
