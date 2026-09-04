@@ -43,9 +43,8 @@ struct SettingsView: View {
 
             settingsGroup("Appearance") {
                 // Swatches rather than a menu: a theme is the one setting whose value you can only
-                // judge by looking at it, so the control shows it instead of naming it. A grid
-                // rather than a row, because five no longer fit across the content pane and the
-                // window resizes down to 760.
+                // judge by looking at it. A grid rather than a row, because five no longer fit
+                // across the content pane and the window resizes down to 760.
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 168, maximum: 200),
                                              spacing: 10, alignment: .leading)],
                           alignment: .leading, spacing: 10) {
@@ -58,9 +57,9 @@ struct SettingsView: View {
                 }
             }
 
-            // Not "Transcription": nothing here reaches the recognizer, so a heading that named it
-            // would promise that Accurate mishears fewer words. And not "Cleanup", which is our
-            // word for our second stage. Both settings decide how the app writes what it heard.
+            // Not "Transcription": nothing here reaches the recognizer, so that heading would
+            // promise Accurate mishears fewer words. Not "Cleanup" either, which is our word for our
+            // second stage. Both settings decide how the app writes what it heard.
             settingsGroup("Writing", padding: 5) {
                 ForEach(AppSettings.Cleanup.allCases) { mode in
                     ChoiceRow(title: mode.rawValue,
@@ -91,9 +90,8 @@ struct SettingsView: View {
                     .frame(height: 1)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 3)
-                // What survives the lowercasing is real, but it is reassurance rather than
-                // something to act on, so it goes in a tooltip (CLAUDE.md) instead of a line of
-                // grey text under a one-line setting.
+                // What survives the lowercasing is reassurance rather than something to act on, so
+                // it goes in a tooltip instead of grey text under a one-line setting.
                 ToggleRow("Start sentences in lowercase",
                           help: "Names, acronyms, and your dictionary keep their capitals.",
                           isOn: $settings.lowercaseSentences)
@@ -176,9 +174,8 @@ struct SettingsView: View {
         }
     }
 
-    /// `padding` drops to a hairline for the groups made of rows: a row that is the hit target has
-    /// to reach the edges of its card, or the part of it you can click stops short of the part of
-    /// it you can see.
+    // `padding` drops to a hairline for the groups made of rows: a row that is the hit target has to
+    // reach the edges of its card, or the clickable part stops short of the visible part.
     @ViewBuilder
     private func settingsGroup(_ title: String, padding: CGFloat = 16,
                                @ViewBuilder content: () -> some View) -> some View {
@@ -226,9 +223,8 @@ struct SettingsView: View {
     }
 }
 
-/// Label left, switch hard right, and the whole row is the target. The switch is a small thing to
-/// aim at, and the row already says what it does — so the switch does not take the click at all
-/// (`allowsHitTesting(false)`), which also rules out a click landing on both and cancelling itself.
+// Label left, switch hard right, and the whole row is the target. The switch does not take the click
+// at all (`allowsHitTesting(false)`), which also rules out a click landing on both and cancelling.
 struct ToggleRow: View {
     var themeID = Appearance.current
     let title: String
@@ -266,9 +262,9 @@ struct ToggleRow: View {
     }
 }
 
-/// One of two ways to spend the pause between letting go and seeing text. The line beside the name
-/// is not a subtitle — it is the entire content of the choice, since nothing about picking Fast or
-/// Accurate is visible until you have already dictated something.
+// One of two ways to spend the pause between letting go and seeing text. The line beside the name is
+// the entire content of the choice, since nothing about Fast or Accurate is visible until you have
+// dictated something.
 private struct ChoiceRow: View {
     var themeID = Appearance.current
     let title: String
@@ -312,12 +308,9 @@ private struct ChoiceRow: View {
     }
 }
 
-/// A theme, shown as the thing it themes: the window at postage-stamp size — sidebar, nav, content
-/// cards, and the recording pill — drawn entirely from the palette on offer.
-///
-/// It used to show a brand render on one card and a bare gradient on the other, which promised a
-/// photograph and a blank page and delivered neither. Every fill here comes from the same table
-/// the app reads at runtime, so a swatch cannot show a look the app will not draw.
+// A theme, shown as the thing it themes: the window at postage-stamp size — sidebar, nav, cards and
+// the pill — drawn entirely from the palette on offer. Every fill comes from the same table the app
+// reads at runtime, so a swatch cannot show a look the app will not draw.
 struct ThemeSwatch: View {
     var themeID = Appearance.current
     let appearance: Appearance
@@ -325,9 +318,9 @@ struct ThemeSwatch: View {
     let action: () -> Void
     @State private var hovering = false
 
-    /// System draws both halves. It resolves to Light or Dark, so on its own it would be an exact
-    /// copy of whichever one is in force — two identical cards and no way to tell which is which.
-    /// Showing the pair is also the truer answer: what System means is "both, whichever applies".
+    // System draws both halves. It resolves to Light or Dark, so alone it would be an exact copy of
+    // whichever is in force. The pair is also the truer answer: System means "both, whichever
+    // applies".
     @ViewBuilder
     private var preview: some View {
         if appearance == .system {
@@ -379,8 +372,8 @@ struct ThemeSwatch: View {
     }
 }
 
-/// The app, small. Same proportions and the same parts as the real window, including the way a
-/// theme with brand imagery puts it at the foot of the sidebar and fades it into the rail.
+// The app, small. Same proportions and the same parts as the real window, including the way a
+// theme with brand imagery puts it at the foot of the sidebar and fades it into the rail.
 private struct MiniWindow: View {
     var themeID = Appearance.current
     let palette: Palette
@@ -463,8 +456,8 @@ private struct MiniWindow: View {
         .background(RoundedRectangle(cornerRadius: 4).fill(palette.tableHeader))
     }
 
-    /// The recording pill, the one part of the app that lives outside the window and the part a
-    /// user recognises first — at the size and the place it actually draws.
+    // The recording pill, the one part of the app that lives outside the window and the part a
+    // user recognises first — at the size and the place it actually draws.
     private var pill: some View {
         HStack(spacing: 2) {
             wave(4)

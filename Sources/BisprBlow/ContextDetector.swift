@@ -5,12 +5,11 @@ struct AppContext {
     let bundleID: String
     let appName: String
     let windowTitle: String
-    /// Text already sitting in the field being dictated into. Steers both the recognizer and
-    /// cleanup toward the topic and register the user is mid-way through.
+    // Text already sitting in the field being dictated into. Steers both the recognizer and
+    // cleanup toward the topic and register the user is mid-way through.
     var draft: String = ""
-    /// What the field calls itself — a placeholder, label or description, like "Message #general"
-    /// or "Search". One phrase, and often the only thing a field exposes when it is still empty,
-    /// which is exactly when `draft` has nothing to give.
+    // What the field calls itself — a placeholder, label or description ("Message #general").
+    // Often the only thing a field exposes when empty, which is when `draft` has nothing to give.
     var fieldLabel: String = ""
 
     enum Category: String {
@@ -44,8 +43,8 @@ struct AppContext {
 }
 
 enum ContextDetector {
-    /// Snapshot of the frontmost app. Capture at recording start — the recording pill is
-    /// non-activating, so the target app stays frontmost.
+    // Snapshot of the frontmost app. Capture at recording start — the recording pill is
+    // non-activating, so the target app stays frontmost.
     static func current() -> AppContext {
         guard let app = NSWorkspace.shared.frontmostApplication else {
             return AppContext(bundleID: "", appName: "", windowTitle: "")
@@ -61,9 +60,8 @@ enum ContextDetector {
         )
     }
 
-    /// The focused element, for anyone who needs to come back to it — the correction watcher reads
-    /// the same element after the text lands. nil rather than a guess when Accessibility is not
-    /// trusted, since every AX call then returns an error rather than a value.
+    // The focused element, for anyone who needs to come back to it — the correction watcher reads it
+    // after the text lands. nil rather than a guess when Accessibility is not trusted.
     static func focusedElement() -> (element: AXUIElement, pid: pid_t)? {
         guard AXIsProcessTrusted(),
               let app = NSWorkspace.shared.frontmostApplication else { return nil }
@@ -81,11 +79,9 @@ enum ContextDetector {
         return (focused as! AXUIElement)
     }
 
-    /// Whole value of the focused text element, plus what the field calls itself.
-    ///
-    /// Every read here is on the path that opens the microphone, which is already 150ms of the
-    /// user's silence (CLAUDE.md), so the whole thing is bounded: an app that is slow to answer AX
-    /// gives back whatever arrived before the budget ran out rather than delaying the mic.
+    // Whole value of the focused text element, plus what the field calls itself. Every read here is
+    // on the path that opens the microphone, already ~150ms of the user's silence, so the whole thing
+    // is bounded: a slow app gives back whatever arrived before the budget ran out.
     static func focusedText(element: AXUIElement, limit: Int = 4000) -> String? {
         for attribute in [kAXRoleAttribute, kAXSubroleAttribute] {
             var value: CFTypeRef?
@@ -101,12 +97,9 @@ enum ContextDetector {
         return text.count <= limit ? text : String(text.suffix(limit))
     }
 
-    /// The focused field's text and its own name. Never reads a secure field: a password must not
-    /// reach a prompt, a log, or history.
-    ///
-    /// Selected text is folded in because a selection is the user pointing at the words they mean —
-    /// and in an editor it is usually the identifier they are about to dictate about. It leads for
-    /// that reason.
+    // The focused field's text and its own name. Never reads a secure field: a password must not
+    // reach a prompt, a log, or history. Selected text is folded in and leads, because a selection is
+    // the user pointing at the words they mean.
     private static func focusedField(pid: pid_t) -> (text: String, label: String)? {
         let deadline = Date().addingTimeInterval(0.12)
         guard let element = focused(pid: pid) else { return nil }
@@ -151,20 +144,15 @@ enum ContextDetector {
 }
 
 extension AppContext {
-    /// The words already on screen, handed to the recognizer as bias.
-    ///
-    /// This is the general mechanism behind mishearing. The recognizer picks between near
-    /// homophones using acoustics plus a general-English language model, and general English has
-    /// no idea the user is looking at code: "query" comes back as "quarry", "prod" as "proud".
-    /// What actually settles it is that the right word is usually already in the buffer being
-    /// dictated into, so the fix is to bias toward the buffer rather than to enumerate pairs.
-    ///
-    /// Identifiers lead, because they are what `contextualStrings` exists for and what no general
-    /// model has seen. Plain words follow: in a code buffer or a spec the plain lowercase words
-    /// *are* the domain vocabulary, which is what the previous "distinctive shapes only" filter
-    /// threw away — `getQuery` biased the recognizer and a buffer full of `query` did not. Only
-    /// words that are common in any English are dropped, since biasing "the" biases nothing. The
-    /// list stays capped: a long one dilutes every entry in it.
+    // The words already on screen, handed to the recognizer as bias — the general mechanism behind
+    // mishearing. The recognizer picks between near homophones on acoustics plus a general-English
+    // model, which has no idea the user is looking at code ("query" → "quarry", "prod" → "proud"),
+    // and the right word is usually already in the buffer.
+    //
+    // Identifiers lead, because they are what `contextualStrings` exists for. Plain words follow: in
+    // a code buffer the plain lowercase words ARE the domain vocabulary, which a "distinctive shapes
+    // only" filter threw away. Only words common in any English are dropped, and the list stays
+    // capped, since a long one dilutes every entry.
     var draftTerms: [String] {
         var seen = Set<String>()
         var identifiers: [String] = []
@@ -188,10 +176,9 @@ extension AppContext {
 
     private static let termCap = 50
 
-    /// Words that are common in every kind of English, so biasing toward them says nothing about
-    /// the topic. Deliberately only function words and generic verbs: "cache", "query", "branch",
-    /// "commit", "state" and their kind are ordinary English *and* domain terms, and dropping them
-    /// would remove exactly the words this is for.
+    // Words common in every kind of English, so biasing toward them says nothing about the topic.
+    // Only function words and generic verbs: "cache", "query", "branch", "commit" are ordinary
+    // English AND domain terms, and dropping them would remove exactly the words this is for.
     static let commonWords: Set<String> = [
         "about", "after", "again", "against", "actually", "all", "also", "always", "and", "another",
         "any", "anything", "are", "around", "back", "because", "been", "before", "being", "both",

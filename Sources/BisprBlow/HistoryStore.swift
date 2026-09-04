@@ -11,7 +11,7 @@ struct DictationEntry: Codable, Identifiable {
     let durationSeconds: Double
 }
 
-/// JSON-persisted dictation history (most recent first, capped).
+// JSON-persisted dictation history (most recent first, capped).
 final class HistoryStore: ObservableObject {
     static let shared = HistoryStore()
     private static let cap = 500
@@ -25,11 +25,10 @@ final class HistoryStore: ObservableObject {
         return dir.appendingPathComponent("history.json")
     }()
 
-    /// The two halves of the file format, together so they cannot drift. They did: persist()
-    /// set .iso8601 and the load used a default JSONDecoder, which reads dates as
-    /// .deferredToDate (a Double). Every load of an .iso8601 file threw, `try?` swallowed it,
-    /// and history silently restarted at zero on every launch — 432 real dictations lost that
-    /// way, and nothing said so, because an empty history looks exactly like a new install.
+    // The two halves of the file format, together so they cannot drift. They did: persist() set
+    // .iso8601 while the load used a default decoder (.deferredToDate), so every load threw, `try?`
+    // swallowed it, and history silently restarted at zero on every launch — 432 real dictations
+    // lost, and nothing said so, because an empty history looks exactly like a new install.
     static let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601

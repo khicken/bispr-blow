@@ -1,18 +1,17 @@
 import Foundation
 
-/// Fetches the Accurate weights, which the installer does not ship — they are 1.7 GB against the
-/// whole rest of the package's 400 MB, and most people never leave Fast.
-///
-/// Staging is a dot-prefixed directory because `LocalEngine.installedModels` enumerates with
-/// `.skipsHiddenFiles`: a partly-written model stays invisible to the scanner, so MLX can never be
-/// handed a truncated safetensors — which aborts the process rather than throwing, at the first
-/// dictation rather than at download time.
+// Fetches the Accurate weights, which the installer does not ship — 1.7 GB against the rest of the
+// package's 400 MB, and most people never leave Fast.
+//
+// Staging is a dot-prefixed directory because `LocalEngine.installedModels` enumerates with
+// `.skipsHiddenFiles`: a partly-written model stays invisible to the scanner, so MLX can never be
+// handed a truncated safetensors, which aborts the process rather than throwing.
 @MainActor
 final class ModelDownloader: ObservableObject {
     static let shared = ModelDownloader()
 
-    /// The weights bench/results.md was measured on, and the ones `package.sh` used to install.
-    /// Downloading anything else would make the numbers there describe a different app.
+    // The weights bench/results.md was measured on, and the ones `package.sh` used to install.
+    // Downloading anything else would make the numbers there describe a different app.
     static let repo = "lmstudio-community/Qwen3-1.7B-MLX-8bit"
     static var modelName: String { String(repo.split(separator: "/").last!) }
 
@@ -124,13 +123,11 @@ final class ModelDownloader: ObservableObject {
     }
 }
 
-/// One file to one path, reporting bytes as they land.
-///
-/// The task is driven with a *session* delegate and bridged back with a continuation, rather than
-/// with the one-liner `try await URLSession.shared.download(from:delegate:)`. That form's per-task
-/// delegate never receives `didWriteData` — measured, zero callbacks, on `URLSession.shared` and on
-/// a session of our own — so the Accurate download sat at 0.0% for six minutes and then finished.
-/// `AsyncBytes` is not the alternative: it yields one byte at a time, which cannot move 1.8 GB.
+// One file to one path, reporting bytes as they land. Driven with a SESSION delegate and bridged
+// back with a continuation rather than `try await URLSession.shared.download(from:delegate:)`: that
+// form's per-task delegate never receives `didWriteData` (measured, zero callbacks), so the download
+// sat at 0.0% for six minutes and then finished. `AsyncBytes` yields one byte at a time, which
+// cannot move 1.8 GB.
 private enum Fetch {
     static func file(_ url: URL, to path: URL,
                      progress: @escaping @Sendable (Int64) -> Void) async throws -> Int64 {
@@ -148,7 +145,7 @@ private enum Fetch {
     private final class Driver: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
         private let destination: URL
         private let progress: @Sendable (Int64) -> Void
-        /// Set before `resume()`, read only on the delegate queue afterwards.
+        // Set before `resume()`, read only on the delegate queue afterwards.
         var continuation: CheckedContinuation<Int64, Error>?
         private var settled = false
 
@@ -163,7 +160,7 @@ private enum Fetch {
             progress(totalBytesWritten)
         }
 
-        /// The move happens here because the temp file is deleted the moment this returns.
+        // The move happens here because the temp file is deleted the moment this returns.
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                         didFinishDownloadingTo location: URL) {
             let code = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
@@ -187,7 +184,7 @@ private enum Fetch {
             if let error { settle(.failure(error)) }
         }
 
-        /// Both callbacks above can arrive for one task, and a continuation may only be resumed once.
+        // Both callbacks above can arrive for one task, and a continuation may only be resumed once.
         private func settle(_ result: Result<Int64, Error>) {
             guard !settled else { return }
             settled = true

@@ -1,9 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The Account group in Settings: who is signed in, and the two backup switches. Teams are not
-/// here — they are the Team page, which is the only place they are, because an invite form in two
-/// places is two invite forms to keep in step.
+// The Account group in Settings: who is signed in, and the two backup switches. Teams live on the
+// Team page and only there — an invite form in two places is two invite forms to keep in step.
 struct AccountSection: View {
     @ObservedObject var cloud: CloudClient
     @ObservedObject var settings: AppSettings
@@ -51,8 +50,8 @@ struct AccountSection: View {
     }
 }
 
-/// The cloud half of the Team page: the org you are in, who else is in it, and the invite codes if
-/// you own it. Lifted out of Settings when Team became the place teams live.
+// The cloud half of the Team page: the org you are in, who else is in it, and the invite codes if
+// you own it. Lifted out of Settings when Team became the place teams live.
 struct TeamCloudSection: View {
     var themeID = Appearance.current
     @ObservedObject var cloud: CloudClient
@@ -219,7 +218,7 @@ struct TeamCloudSection: View {
         memberNames = (try? await cloud.members().map(\.displayName)) ?? []
     }
 
-    /// One shape for every async action: clear the note, show the error if there is one.
+    // One shape for every async action: clear the note, show the error if there is one.
     private func run(_ work: @escaping () async throws -> Void) {
         busy = true
         note = nil
@@ -239,7 +238,7 @@ struct TeamCloudSection: View {
     }
 }
 
-/// The initial of an address or a team name, in a soft circle.
+// The initial of an address or a team name, in a soft circle.
 struct InitialCircle: View {
     var themeID = Appearance.current
     let letter: String
@@ -255,7 +254,7 @@ struct InitialCircle: View {
     }
 }
 
-/// The hairline between rows of one card.
+// The hairline between rows of one card.
 struct CardDivider: View {
     var themeID = Appearance.current
 
@@ -278,16 +277,14 @@ struct FieldBackground: View {
     }
 }
 
-/// Signing in, in one place — Settings shows it inside the Account group, the Team page shows it
-/// as the whole page. Two copies of this drifted apart the moment either was touched.
-///
-/// It says "sign in or create an account" because that is literally one call: `requestCode` passes
-/// `create_user: true`, so a first-time address and a returning one take the same path and there is
-/// no sign-up form to build.
+// Signing in, in one place: Settings shows it inside the Account group, the Team page as the whole
+// page, and two copies of this drifted apart the moment either was touched. It says "sign in or
+// create an account" because that is literally one call — `requestCode` passes `create_user: true`,
+// so there is no sign-up form to build.
 struct SignInView: View {
     var themeID = Appearance.current
     @ObservedObject var cloud: CloudClient
-    /// Team fills the page, Settings sits in a card — the difference is only the copy above.
+    // Team fills the page, Settings sits in a card — the difference is only the copy above.
     var showsBlurb = true
 
     @State private var email = ""
@@ -333,9 +330,8 @@ struct SignInView: View {
                     .foregroundStyle(Theme.inkSubtle)
             }
             // Hidden until the project actually has a Google client, because until then this is a
-            // button that cannot succeed — it answers "Unsupported provider: provider is not
-            // enabled", measured. Asked of the server rather than compiled in: enabling the
-            // provider in Supabase is then the only step, with nothing here to remember to change.
+            // button that cannot succeed (measured: "Unsupported provider: provider is not
+            // enabled"). Asked of the server, so enabling the provider in Supabase is the only step.
             if cloud.googleEnabled {
                 HStack(spacing: 10) {
                     Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
@@ -387,7 +383,7 @@ struct SignInView: View {
         run { try await cloud.signInWithGoogle() }
     }
 
-    /// Closing the Google sheet is a decision, not a failure, so it leaves no red line behind.
+    // Closing the Google sheet is a decision, not a failure, so it leaves no red line behind.
     private func run(_ work: @escaping () async throws -> Void) {
         busy = true
         note = nil
@@ -401,9 +397,9 @@ struct SignInView: View {
 
 }
 
-/// Google's G. Drawn rather than shipped as an asset: it is four fixed brand colours and a few
-/// paths, and Google's guidelines require the mark unmodified — which a tinted SF Symbol would not
-/// be. These four hexes are Google's own, so they are not palette tokens and must not become them.
+// Google's G, drawn rather than shipped as an asset: four fixed brand colours and a few paths, and
+// Google's guidelines require the mark unmodified, which a tinted SF Symbol would not be. These
+// hexes are Google's own and must not become palette tokens.
 private struct GoogleMark: View {
     var body: some View {
         ZStack {

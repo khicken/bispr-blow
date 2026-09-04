@@ -3,7 +3,7 @@ import AVFoundation
 import IOKit.hidsystem
 import Speech
 
-/// Central state machine: shortcut gesture → record → transcribe → clean → insert → history.
+// Central state machine: shortcut gesture → record → transcribe → clean → insert → history.
 @MainActor
 final class DictationController: ObservableObject {
     enum State: Equatable {
@@ -16,14 +16,14 @@ final class DictationController: ObservableObject {
     @Published private(set) var level: Float = 0
     @Published private(set) var partialText = ""
     @Published private(set) var lastError: String?
-    /// Transient message shown on the pill (e.g. manual-paste fallback).
+    // Transient message shown on the pill (e.g. manual-paste fallback).
     @Published private(set) var notice: String?
-    /// A button on the current notice, when the notice is about something the app just did on its
-    /// own. Only the learned-a-word message uses it: an app that changes your dictionary without
-    /// asking has to offer the way back in the same breath.
+    // A button on the current notice, when the notice is about something the app did on its own.
+    // Only the learned-a-word message uses it: changing the user's dictionary without asking has to
+    // offer the way back in the same breath.
     @Published private(set) var noticeAction: (label: String, run: () -> Void)?
-    /// Device name flashed on the pill — only when the input device changed since last time.
-    /// The current device is always visible in Settings.
+    // Device name flashed on the pill — only when the input device changed since last time.
+    // The current device is always visible in Settings.
     @Published private(set) var micFlash: String?
 
     private var axPollTimer: Timer?
@@ -37,7 +37,7 @@ final class DictationController: ObservableObject {
     private var capturedContext: AppContext?
     private var recordingStartedAt = Date()
     private var sessionGeneration = 0
-    /// Set by the "dictate and send" binding: press Return once the text is in.
+    // Set by the "dictate and send" binding: press Return once the text is in.
     private var sendEnter = false
 
     func start() {
@@ -88,21 +88,21 @@ final class DictationController: ObservableObject {
         return false
     }
 
-    /// `--pill-demo` only: replays a release transition with no mic, no model and no event tap, so
-    /// the pill's animation can be measured instead of described.
+    // `--pill-demo` only: replays a release transition with no mic, no model and no event tap, so
+    // the pill's animation can be measured instead of described.
     func demoState(_ state: State) { self.state = state }
 
-    /// Reflect lock state in UI when the monitor transitions hold → locked.
+    // Reflect lock state in UI when the monitor transitions hold → locked.
     func noteLocked() {
         if case .recording = state { state = .recording(locked: true) }
     }
 
-    /// Stop button on the pill during a hands-free session.
+    // Stop button on the pill during a hands-free session.
     func stopHandsFree() {
         monitor.endLockedSession()
     }
 
-    /// Pill button: start a hands-free dictation into the focused app.
+    // Pill button: start a hands-free dictation into the focused app.
     func startHandsFree() {
         guard state == .idle else { return }
         monitor.beginLockedSession()
@@ -149,9 +149,8 @@ final class DictationController: ObservableObject {
             self?.transcriber.feed(buffer)
         }
 
-        // Whether the focused field's text actually reaches us is per-app and unmeasured — some
-        // apps expose nothing over Accessibility, and recognizer biasing is only as good as this.
-        // Counts, never the text itself: the unified log is readable by anything on the machine.
+        // Whether the focused field's text reaches us is per-app and unmeasured, and recognizer
+        // biasing is only as good as this. Counts, never the text: the unified log is world-readable.
         if let context = capturedContext {
             logLine("""
                 context app=\(context.appName.isEmpty ? "unknown" : context.appName) \
@@ -173,9 +172,8 @@ final class DictationController: ObservableObject {
                 return
             }
             // The pill says "recording" from the moment the shortcut fires, but the mic only opens
-            // here — everything spoken while the analyzer was spinning up was never captured by
-            // anything. Reported against the gesture edge alongside the other activation stages,
-            // so the old "ms after shortcut" number is still there as `mic` minus `onStart`.
+            // here — anything spoken while the analyzer span up was captured by nothing. Reported
+            // against the gesture edge, so "ms after shortcut" is `mic` minus `onStart`.
             ActivationTrace.mark("mic")
         }
     }
@@ -187,11 +185,10 @@ final class DictationController: ObservableObject {
         level = 0
         state = .processing
 
-        // Nothing was captured, so there is nothing to finalise — and finalising anyway is not
-        // merely pointless, it hangs: `finalizeAndFinishThroughEndOfInput` never returns on an
-        // analyzer that was never fed, which left the pill spinning on the dots until the app was
-        // force-quit. A capture that produced no audio is a failure the user has to be told about,
-        // because the alternative is dictating into nothing and not finding out.
+        // Nothing was captured, so there is nothing to finalise — and finalising anyway hangs:
+        // `finalizeAndFinishThroughEndOfInput` never returns on an analyzer that was never fed, which
+        // left the pill spinning until the app was force-quit. Silence is a failure the user has to
+        // be told about.
         guard recorder.capturedFrames > 0 else {
             logLine("dictation discarded: no audio captured")
             sessionGeneration += 1
@@ -260,22 +257,19 @@ final class DictationController: ObservableObject {
         Task { await transcriber.cancelSession() }
     }
 
-    /// One cue when the mic opens, one when the text lands. Fire and forget: you are looking at
-    /// the app you dictated into, not at the pill, and a sound that waits on anything is late.
-    ///
-    /// Not `Tink`, which is what this used to open with. `Tink` is the tick macOS itself plays for a
-    /// keystroke it will not accept, so using it for "recording started" told the user their shortcut
-    /// had *failed* every single time — Kaleb reported it as "the invalid key input sound". Anything
-    /// the system has already assigned a meaning to is off the table for that reason: `Basso`, `Funk`,
-    /// `Sosumi` and `Frog` are alert sounds. `Purr` is soft, low and unclaimed, and it is audibly
-    /// different from `Pop` rather than a near-twin of it, which matters when the two sounds are the
-    /// only thing telling you whether a dictation just began or just ended.
-    ///
-    /// Held as instances rather than built per call, because `NSSound(named:)` reads the file off disk
-    /// the first time and the start cue fires on the pre-mic path — the ~150ms window where the user
-    /// is already talking and nothing is recording it yet (see `AudioRecorder.start`). `preloadSounds`
-    /// pays that read at launch instead. `stop()` before `play()` because a reused instance ignores
-    /// `play()` while it is still playing, which would silently drop the cue on a fast repeat.
+    // One cue when the mic opens, one when the text lands. Fire and forget: a sound that waits on
+    // anything is late.
+    //
+    // Not `Tink`: that is the tick macOS plays for a keystroke it refuses, so using it for
+    // "recording started" told the user their shortcut had failed on every dictation — reported as
+    // "the invalid key input sound". Anything the system has already assigned a meaning to is out for
+    // the same reason (`Basso`, `Funk`, `Sosumi`, `Frog` are alert sounds). `Purr` is unclaimed and
+    // audibly different from `Pop`, which is the whole job when two sounds are all that tell you
+    // whether a dictation began or ended.
+    //
+    // Held as instances because `NSSound(named:)` reads from disk on first use and the start cue
+    // fires on the pre-mic path; `preloadSounds` pays that at launch. `stop()` before `play()`
+    // because a reused instance ignores `play()` while still playing.
     private static let startSound = NSSound(named: "Purr")
     private static let endSound = NSSound(named: "Pop")
 
@@ -290,9 +284,9 @@ final class DictationController: ObservableObject {
         sound?.play()
     }
 
-    /// A word the user fixed by hand goes into the dictionary, so the next dictation spells it
-    /// their way. Said out loud on the pill with the way back attached — this changes a setting the
-    /// user owns, and doing that silently is how a dictionary quietly starts respelling good words.
+    // A word the user fixed by hand goes into the dictionary, so the next dictation spells it their
+    // way. Said out loud on the pill with the way back attached: this changes a setting the user
+    // owns, and doing that silently is how a dictionary starts respelling good words.
     private func watchForCorrection(to inserted: String) {
         CorrectionWatcher.watch(inserted: inserted) { [weak self] fix in
             let settings = AppSettings.shared

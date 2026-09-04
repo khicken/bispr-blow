@@ -1,30 +1,27 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Global shortcut detection: watches the user's bindings (`AppSettings.bindings`) and turns
-/// them into dictation gestures.
-///
-/// Gestures on a push-to-talk binding:
-/// - Hold (≥ holdThreshold) → `onStart` fires on key-down, `onStop` on release.
-/// - Double-tap → hands-free lock: recording continues until the next tap or a cancel binding.
-/// - Single short tap → `onCancel` (recording that started on key-down is discarded).
-///
-/// Primary mechanism is an active CGEventTap that *consumes* the events a binding claims, so a
-/// bare-fn binding never lets the macOS "Press 🌐 key to…" action fire, and a ⌃⌥D binding never
-/// reaches the app underneath. Everything unbound passes straight through. Falls back to passive
-/// NSEvent monitors if the tap can't be created.
-/// Requires Accessibility trust (tap creation also prompts Input Monitoring on macOS 15+).
+// Global shortcut detection: watches `AppSettings.bindings` and turns them into dictation gestures.
+// On a push-to-talk binding: hold (≥ holdThreshold) starts on key-down and stops on release;
+// double-tap locks hands-free until the next tap or a cancel binding; a single short tap cancels and
+// discards what key-down started.
+//
+// The primary mechanism is an active CGEventTap that CONSUMES the events a binding claims, so a
+// bare-fn binding never lets the macOS "Press 🌐 key to…" action fire and a ⌃⌥D binding never reaches
+// the app underneath. Everything unbound passes through. Falls back to passive NSEvent monitors if
+// the tap cannot be created. Requires Accessibility trust (tap creation also prompts Input
+// Monitoring on macOS 15+).
 final class ShortcutMonitor {
-    /// One monitor per process by construction — two taps would fight over the same events.
-    /// Shared so Settings can arm the recorder without threading the controller through the UI.
+    // One monitor per process by construction — two taps would fight over the same events.
+    // Shared so Settings can arm the recorder without threading the controller through the UI.
     static let shared = ShortcutMonitor()
 
-    /// `sendEnter` is true when the binding that started this session was "Dictate and send".
+    // `sendEnter` is true when the binding that started this session was "Dictate and send".
     var onStart: ((_ sendEnter: Bool) -> Void)?
-    /// locked == true when stopping a hands-free session.
+    // locked == true when stopping a hands-free session.
     var onStop: ((_ locked: Bool) -> Void)?
     var onCancel: (() -> Void)?
-    /// Fired when a double-tap upgrades the session to hands-free.
+    // Fired when a double-tap upgrades the session to hands-free.
     var onLock: (() -> Void)?
 
     private let holdThreshold: TimeInterval = 0.30
@@ -35,12 +32,12 @@ final class ShortcutMonitor {
     private var lastTapAt: TimeInterval = -10
     private var locked = false
     private var pendingCancel: DispatchWorkItem?
-    /// Which action is holding the current session: a release only counts from the same binding,
-    /// so letting go of "dictate and send" can't end a push-to-talk hold.
+    // Which action is holding the current session: a release only counts from the same binding,
+    // so letting go of "dictate and send" can't end a push-to-talk hold.
     private var heldAction: ShortcutAction?
-    /// Set when we swallowed a cancel key-down, so its key-up gets swallowed to match.
+    // Set when we swallowed a cancel key-down, so its key-up gets swallowed to match.
     private var swallowedCancelDown = false
-    /// The modifiers-only binding currently held, so the release edge knows what broke.
+    // The modifiers-only binding currently held, so the release edge knows what broke.
     private var heldCombo: (action: ShortcutAction, shortcut: Shortcut)?
 
     private var bindings: [(ShortcutAction, Shortcut)] = []
@@ -72,7 +69,7 @@ final class ShortcutMonitor {
         }
     }
 
-    /// Pick up edited bindings, and suppress the macOS fn action only while fn is actually bound.
+    // Pick up edited bindings, and suppress the macOS fn action only while fn is actually bound.
     func reload() {
         bindings = AppSettings.shared.allBindings
         // The combo that was held may not exist anymore; without this its release edge never
@@ -99,14 +96,14 @@ final class ShortcutMonitor {
         nsMonitors = []
     }
 
-    /// Stop a hands-free session from the UI (pill stop button).
+    // Stop a hands-free session from the UI (pill stop button).
     func endLockedSession() {
         guard locked else { return }
         locked = false
         onStop?(true)
     }
 
-    /// Start a hands-free session from the UI (pill buttons) — same as double-tapping.
+    // Start a hands-free session from the UI (pill buttons) — same as double-tapping.
     func beginLockedSession() {
         guard !locked, !triggerIsDown else { return }
         locked = true
@@ -120,33 +117,29 @@ final class ShortcutMonitor {
     private var capturePreview: ((Shortcut?) -> Void)?
     private var captureState = CaptureState()
 
-    /// The recorder's bookkeeping, kept apart from the monitor so `--self-check` can drive the
-    /// whole state machine with no event tap in the way.
-    ///
-    /// The shape is press-and-release, not first-key-wins: what you are holding shows as you
-    /// hold it and the binding is whatever was down at the moment you let go. That is the only
-    /// model in which ⌃⇧ can be recorded at all — it has no ordinary key to end it — and it is
-    /// also what makes ⌃⇧G one shortcut rather than a race between ⌃, ⇧ and G.
-    ///
-    /// It tracks the modifiers itself rather than reading them off the key event, and that part
-    /// is load-bearing: while armed the tap *swallows* each modifier's `flagsChanged`, so the
-    /// window server never learns the modifier went down and the flags it stamps on a following
-    /// keyDown can be missing it — ⌃⇧G arriving as ⇧G, the modifier held first being the one
-    /// that vanishes. What we watched go down is the truth; the event's own flags are a floor.
+    // The recorder's bookkeeping, kept apart from the monitor so `--self-check` can drive the whole
+    // state machine with no event tap in the way.
+    //
+    // Press-and-release, not first-key-wins: the binding is whatever was down when you let go. That
+    // is the only model in which ⌃⇧ can be recorded at all, and it is what makes ⌃⇧G one shortcut.
+    // It tracks the modifiers itself rather than reading them off the key event, and that is
+    // load-bearing: while armed the tap SWALLOWS each modifier's `flagsChanged`, so the flags stamped
+    // on a following keyDown can be missing one — ⌃⇧G arriving as ⇧G, the modifier held first being
+    // the one that vanishes. What we watched go down is the truth; the event's flags are a floor.
     struct CaptureState: Equatable {
-        /// Modifiers physically down right now.
+        // Modifiers physically down right now.
         var held: CGEventFlags = []
-        /// Every modifier this combination has contained, so releasing them in any order still
-        /// records what was pressed.
+        // Every modifier this combination has contained, so releasing them in any order still
+        // records what was pressed.
         var peak: CGEventFlags = []
-        /// The first modifier down. A single modifier records as `.key` so left ⌃ stays distinct
-        /// from right ⌃; two or more can only be `.modifiers`, which has no keycode.
+        // The first modifier down. A single modifier records as `.key` so left ⌃ stays distinct
+        // from right ⌃; two or more can only be `.modifiers`, which has no keycode.
         var firstModifier: Int?
-        /// The ordinary key or mouse button, once one joins.
+        // The ordinary key or mouse button, once one joins.
         var trigger: Shortcut.Trigger?
         var triggerIsDown = false
 
-        /// The binding as it stands — what the sheet draws while you hold the keys down.
+        // The binding as it stands — what the sheet draws while you hold the keys down.
         var preview: Shortcut? {
             if let trigger { return Shortcut(trigger: trigger, flags: peak.rawValue) }
             guard !peak.isEmpty else { return nil }
@@ -159,18 +152,17 @@ final class ShortcutMonitor {
         var everythingReleased: Bool { held.isEmpty && !triggerIsDown }
     }
 
-    /// What the recorder does with one event while armed.
+    // What the recorder does with one event while armed.
     enum CaptureStep: Equatable {
-        /// Consumed; `state.preview` is what to show meanwhile.
+        // Consumed; `state.preview` is what to show meanwhile.
         case wait
         case record(Shortcut)
     }
 
     var isCapturing: Bool { captureHandler != nil }
 
-    /// Arm the recorder: keys and mouse buttons go to the recorder instead of firing any binding,
-    /// and never reach the app underneath. `preview` fires as the combination is held, `handler`
-    /// once when it is released.
+    // Arm the recorder: keys and mouse buttons go to the recorder instead of firing any binding, and
+    // never reach the app underneath. `preview` fires as the combination is held, `handler` on release.
     func beginCapture(preview: @escaping (Shortcut?) -> Void,
                       _ handler: @escaping (Shortcut) -> Void) {
         captureState = CaptureState()
@@ -184,9 +176,8 @@ final class ShortcutMonitor {
         captureState = CaptureState()
     }
 
-    /// One armed event, as a pure function of the state. Every branch returns — a modifier that
-    /// is not bindable, a stray key-up, a flag we do not track — because while armed the event is
-    /// consumed either way and only a `record` ends the capture.
+    // One armed event, as a pure function of the state. Every branch returns, because while armed the
+    // event is consumed either way and only a `record` ends the capture.
     static func captureStep(type: CGEventType, keyCode: Int?, mouseButton: Int?,
                             flags: CGEventFlags, state: inout CaptureState) -> CaptureStep {
         func finish() -> CaptureStep {
@@ -262,7 +253,7 @@ final class ShortcutMonitor {
         return true
     }
 
-    /// Runs on the main run loop (source is attached there). Must stay fast.
+    // Runs on the main run loop (source is attached there). Must stay fast.
     private func handleTapEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
         switch type {
@@ -274,10 +265,9 @@ final class ShortcutMonitor {
             if capture(type: type, keyCode: code, mouseButton: nil, flags: event.flags) { return nil }
             if type == .flagsChanged, let (action, down) = comboEdge(flags: event.flags) {
                 _ = dispatch(action, down: down)
-                // Passed through even though the binding claimed it. A modifiers-only combo is
-                // only recognised once its *last* modifier arrives, so the earlier ones already
-                // reached the system — swallowing the rest would leave them stuck down in every
-                // other app. ⌃⇧ held alone does nothing anywhere, so there is nothing to eat.
+                // Passed through even though the binding claimed it: a modifiers-only combo is only
+                // recognised once its LAST modifier arrives, so the earlier ones already reached the
+                // system and swallowing the rest would leave them stuck down everywhere else.
                 return pass
             }
             guard let (action, down) = keyMatch(
@@ -299,9 +289,8 @@ final class ShortcutMonitor {
         bindings.first { predicate($0.1) }?.0
     }
 
-    /// Press and release edges for a modifiers-only binding (⌃⇧ held on its own). It has no
-    /// keycode, so there is no key event whose up/down is the gesture: the press is the flag set
-    /// completing and the release is it breaking, which only the previous state can tell us.
+    // Press and release edges for a modifiers-only binding (⌃⇧ held alone). It has no keycode, so the
+    // press is the flag set completing and the release is it breaking — only the previous state says.
     private func comboEdge(flags: CGEventFlags) -> (ShortcutAction, Bool)? {
         let tracked = flags.intersection(Shortcut.tracked)
         if let held = heldCombo {
@@ -314,7 +303,7 @@ final class ShortcutMonitor {
         return (match.0, true)
     }
 
-    /// Feeds the Settings recorder. Returns true when the event was consumed by it.
+    // Feeds the Settings recorder. Returns true when the event was consumed by it.
     private func capture(type: CGEventType, keyCode: Int?, mouseButton: Int?, flags: CGEventFlags) -> Bool {
         guard let handler = captureHandler, let preview = capturePreview else { return false }
         let step = Self.captureStep(type: type, keyCode: keyCode, mouseButton: mouseButton,
@@ -336,7 +325,7 @@ final class ShortcutMonitor {
 
     private var sessionIsLive: Bool { locked || triggerIsDown }
 
-    /// Returns true when the event should be swallowed rather than passed to the app underneath.
+    // Returns true when the event should be swallowed rather than passed to the app underneath.
     private func dispatch(_ action: ShortcutAction, down: Bool) -> Bool {
         switch action {
         case .pushToTalk, .pressEnter:
@@ -404,10 +393,9 @@ final class ShortcutMonitor {
         }) { nsMonitors.append(monitor) }
     }
 
-    /// Which action a key event fires, and whether it is a press or a release.
-    /// A modifier key only ever arrives as flagsChanged and an ordinary key only as
-    /// keyDown/keyUp: crossing them would double-fire on fn+arrow style events, where the
-    /// arrow's keyDown also carries the fn flag.
+    // Which action a key event fires, and whether it is a press or a release. A modifier key only
+    // arrives as flagsChanged and an ordinary key only as keyDown/keyUp: crossing them would
+    // double-fire on fn+arrow events, where the arrow's keyDown also carries the fn flag.
     private func keyMatch(keyCode: Int, flags: CGEventFlags, isFlagsChanged: Bool,
                           isKeyDown: Bool) -> (ShortcutAction, Bool)? {
         let modifierFlag = Shortcut.modifierFlags[keyCode]
@@ -419,15 +407,15 @@ final class ShortcutMonitor {
         return (action, modifierFlag.map { flags.contains($0) } ?? isKeyDown)
     }
 
-    /// Test seam for `--self-check`: drives the gesture machine with no event tap in the way.
-    /// Returns whether the event would have been swallowed.
+    // Test seam for `--self-check`: drives the gesture machine with no event tap in the way.
+    // Returns whether the event would have been swallowed.
     func simulate(_ action: ShortcutAction, down: Bool) -> Bool {
         dispatch(action, down: down)
     }
 
     // MARK: - Gesture state machine
 
-    /// The hold-versus-double-tap machine, unchanged apart from *which* binding drives it.
+    // The hold-versus-double-tap machine, unchanged apart from *which* binding drives it.
     private func handleHold(_ action: ShortcutAction, down: Bool) {
         let now = ProcessInfo.processInfo.systemUptime
 

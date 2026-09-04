@@ -1,10 +1,8 @@
 import AVFoundation
 import Speech
 
-/// Streaming on-device transcription.
-///
-/// Primary path: the macOS 26 `SpeechAnalyzer` + `SpeechTranscriber` API (fast, fully
-/// on-device, no quota). Fallback: `SFSpeechRecognizer` with on-device recognition.
+// Streaming on-device transcription. Primary path: the macOS 26 `SpeechAnalyzer` +
+// `SpeechTranscriber` API. Fallback: `SFSpeechRecognizer` with on-device recognition.
 final class Transcriber {
     enum TranscriberError: Error, LocalizedError {
         case localeUnsupported
@@ -18,7 +16,7 @@ final class Transcriber {
         }
     }
 
-    /// Volatile (in-progress) text, for live UI feedback.
+    // Volatile (in-progress) text, for live UI feedback.
     var onPartial: ((String) -> Void)?
 
     private var analyzer: SpeechAnalyzer?
@@ -26,8 +24,8 @@ final class Transcriber {
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
     private var analyzerFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
-    /// The format `converter` was built from, so a buffer arriving in some other format rebuilds it
-    /// rather than being fed to a converter that cannot read it. See `feed`.
+    // The format `converter` was built from, so a buffer arriving in some other format rebuilds it
+    // rather than being fed to a converter that cannot read it. See `feed`.
     private var converterInputFormat: AVAudioFormat?
     private var resultsTask: Task<Void, Never>?
     private var finalizedText = ""
@@ -40,30 +38,23 @@ final class Transcriber {
     private var sfLatest = ""
     private var usingFallback = false
 
-    /// Drops the ellipsis the recognizer writes where the speaker paused. It is punctuation the
-    /// recognizer invented, not a word anybody said, and it does two kinds of damage.
-    ///
-    /// It reaches the cursor: "again to see... If we already offloaded this work" is a real
-    /// dictation from history, ellipsis and stray capital included, and no stage downstream removes
-    /// it — cleanup is told never to *write* an ellipsis, so it copies this one through, and
-    /// `ruleClean` never touched punctuation.
-    ///
-    /// Worse, it disarms a guard. `looksTruncated` reads an ellipsis in the transcript as proof the
-    /// speaker dictated one and stops rejecting elided cleanups for that whole dictation — so on any
-    /// dictation containing a pause, a model that trailed off mid-sentence sailed through. Removing
-    /// the marker here keeps that check armed everywhere, which is why this belongs at the source
-    /// rather than in cleanup.
-    ///
-    /// Three dots minimum: ".." is left alone so a spoken relative path ("dot dot slash src") is not
-    /// quietly eaten. The following word keeps whatever case the recognizer gave it — cleanup fixes
-    /// capitalization, and lowercasing blindly here would ruin "see... Kubernetes".
+    // Drops the ellipsis the recognizer writes where the speaker paused: punctuation it invented,
+    // not a word anybody said, and it does two kinds of damage. It reaches the cursor ("again to
+    // see... If we already offloaded this work" is verbatim from history), because cleanup is told
+    // never to WRITE an ellipsis and so copies this one through. Worse, it disarms a guard:
+    // `looksTruncated` reads an ellipsis in the transcript as proof the speaker dictated one, so on
+    // any dictation containing a pause a model that trailed off sailed through. Fixing it at the
+    // source is what keeps that check armed.
+    //
+    // Three dots minimum, so a spoken relative path ("dot dot slash src") is not eaten. The
+    // following word keeps its case — lowercasing blindly here would ruin "see... Kubernetes".
     static func withoutPauseMarks(_ text: String) -> String {
         text.replacingOccurrences(of: "\\s*(\\.{3,}|…)\\s*", with: " ", options: .regularExpression)
             .replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Downloads the on-device model if needed. Call once at startup.
+    // Downloads the on-device model if needed. Call once at startup.
     static func prepareAssets() async {
         guard let locale = await bestLocale() else { return }
         let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
@@ -91,8 +82,8 @@ final class Transcriber {
 
     // MARK: - Session
 
-    /// No `inputFormat` parameter: the converter is built from the first buffer that actually arrives
-    /// (see `feed`), which is the only format guaranteed to be the real one.
+    // No `inputFormat` parameter: the converter is built from the first buffer that actually arrives
+    // (see `feed`), which is the only format guaranteed to be the real one.
     func startSession(contextTerms: [String] = []) async {
         finalizedText = ""
         volatileText = ""
@@ -117,12 +108,11 @@ final class Transcriber {
             inputBuilder.yield(AnalyzerInput(buffer: buffer))
             return
         }
-        // Built from the buffer actually in hand, not from a format captured earlier. `beginRecording`
-        // read `recorder.inputFormat` *before* `AudioRecorder.start` applied the selected input device,
-        // so on any non-default mic running at a different sample rate the converter was constructed
-        // for a format the buffers never had. AVAudioConverter does not recover from that — it returns
-        // nothing, silently, for the whole dictation. Keying on the format also survives a device
-        // change mid-session.
+        // Built from the buffer in hand, never from a format read earlier. `beginRecording` read
+        // `recorder.inputFormat` BEFORE `AudioRecorder.start` applied the selected device, so on any
+        // mic at a different sample rate the converter was built for a format the buffers never had
+        // — and AVAudioConverter does not recover, it silently yields nothing for the whole
+        // dictation. Keying on the format also survives a device change mid-session.
         if converterInputFormat != buffer.format {
             converter = AVAudioConverter(from: buffer.format, to: analyzerFormat)
             converterInputFormat = buffer.format
@@ -150,7 +140,7 @@ final class Transcriber {
         }
     }
 
-    /// Stops the session and returns the full transcript.
+    // Stops the session and returns the full transcript.
     func finishSession() async -> String {
         if usingFallback { return await finishSFSession() }
 
@@ -184,10 +174,9 @@ final class Transcriber {
     private func startAnalyzerSession(contextTerms: [String]) async throws {
         guard let locale = await Self.bestLocale() else { throw TranscriberError.localeUnsupported }
         // Alternatives and confidence cost nothing to ask for and are the raw material every
-        // recognition fix needs: if "Wispr" is anywhere in the n-best, choosing it is free accuracy,
-        // and confidence is what tells us which span to even consider rewriting. 1-best alone is a
-        // measurably bad input for correction — published ablations put 1-best-only rewriting at
-        // roughly break-even, and negative zero-shot, while n-best is where the gains are.
+        // recognition fix needs: if a term is anywhere in the n-best, choosing it is free accuracy.
+        // Published ablations put 1-best-only rewriting at roughly break-even, and negative
+        // zero-shot, while n-best is where the gains are.
         let transcriber = SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
@@ -195,20 +184,14 @@ final class Transcriber {
             attributeOptions: [.transcriptionConfidence]
         )
         // NOTE: contextualStrings below is very likely a NO-OP on this module. Apple DTS, twice:
-        // "contextual strings only help transcriptions from the DictationTranscriber module. The
-        // SpeechTranscriber module does not currently take contextual strings into account."
-        // (developer.apple.com/forums/thread/811083, /801877). It fails silently — setContext
-        // succeeds and nothing changes — so it cannot be smoke-tested by "looks fine".
-        //
-        // Confirmed structurally on this SDK: `SpeechTranscriber` has no `contentHints:` parameter
-        // at all (the compiler rejects it), while `DictationTranscriber` does and accepts
-        // `.customizedLanguage(modelConfiguration:)`. So the real biasing door — SFCustomLanguageModelData,
-        // with per-phrase weights and X-SAMPA pronunciations — opens only onto the older, weaker
-        // acoustic model. That is a genuine trade, not an upgrade, and it needs measuring.
-        //
-        // Left in place rather than deleted: it is harmless, it is load-bearing on the
-        // SFSpeechRecognizer fallback path (where it does work, capped at 100 phrases), and the
-        // no-op has not been confirmed at runtime here. Do not tune it further until it has been.
+        // contextual strings only help the DictationTranscriber module, and SpeechTranscriber does
+        // not take them into account (developer.apple.com/forums/thread/811083, /801877). It fails
+        // silently, so it cannot be smoke-tested by "looks fine". Confirmed structurally on this
+        // SDK: `SpeechTranscriber` has no `contentHints:` parameter while `DictationTranscriber`
+        // does, so the real biasing door — SFCustomLanguageModelData — opens only onto the older,
+        // weaker acoustic model. Left in place because it is harmless and load-bearing on the
+        // SFSpeechRecognizer fallback (capped at 100 phrases). Do not tune it until the no-op is
+        // confirmed at runtime.
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let vocabulary = await MainActor.run { AppSettings.shared.vocabulary } + contextTerms
         if !vocabulary.isEmpty {
@@ -233,11 +216,10 @@ final class Transcriber {
                     guard let self else { break }
                     let text = String(result.text.characters)
                     if result.isFinal {
-                        // Whether `alternatives` is actually populated, and how deep, is undocumented
-                        // and unreported by anyone — and it decides whether n-best rescoring is worth
-                        // building at all. A CLI probe cannot answer it (no Speech authorization), so
-                        // measure it from real dictations. Counts only, never the text: the unified log
-                        // is readable by anything on the machine.
+                        // Whether `alternatives` is populated, and how deep, is undocumented, and it
+                        // decides whether n-best rescoring is worth building. A CLI probe cannot ask
+                        // (no Speech authorization). Counts only, never the text: the unified log is
+                        // readable by anything on the machine.
                         logLine("alternatives=\(result.alternatives.count) for \(text.split(whereSeparator: \.isWhitespace).count)w span")
                         self.finalizedText += text
                         self.volatileText = ""

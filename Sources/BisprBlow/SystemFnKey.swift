@@ -1,11 +1,9 @@
 import Foundation
 
-/// Manages the system "Press 🌐 key to…" action (com.apple.HIToolbox AppleFnUsageType:
-/// 0 = Do Nothing, 1 = Change Input Source, 2 = Show Emoji & Symbols, 3 = Start Dictation).
-///
-/// The CGEventTap swallow isn't always enough — the Globe-key action can fire below the
-/// tap — so while the app runs we set the action to Do Nothing, and restore the user's
-/// original value on quit.
+// Manages the system "Press 🌐 key to…" action (com.apple.HIToolbox AppleFnUsageType: 0 = Do
+// Nothing, 1 = Change Input Source, 2 = Show Emoji & Symbols, 3 = Start Dictation). The CGEventTap
+// swallow is not always enough — the Globe-key action can fire below the tap — so while the app runs
+// we set the action to Do Nothing and restore the user's value on quit.
 enum SystemFnKey {
     private static let domain = "com.apple.HIToolbox" as CFString
     private static let key = "AppleFnUsageType" as CFString
@@ -15,13 +13,13 @@ enum SystemFnKey {
         CFPreferencesCopyValue(key, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? Int
     }
 
-    /// Suppress only while fn is actually bound to something: an app that took over the Globe
-    /// key without using it is just a bug report waiting to happen.
+    // Suppress only while fn is actually bound to something: an app that took over the Globe
+    // key without using it is just a bug report waiting to happen.
     static func sync(suppress: Bool) {
         suppress ? suppressWhileRunning() : restore()
     }
 
-    /// Remember the user's setting and switch to Do Nothing.
+    // Remember the user's setting and switch to Do Nothing.
     private static func suppressWhileRunning() {
         let current = currentUsage()
         guard current != 0 else { return }  // already Do Nothing; nothing to save or restore
@@ -29,7 +27,7 @@ enum SystemFnKey {
         write(0)
     }
 
-    /// Call on quit: put the user's original setting back (only if we changed it).
+    // Call on quit: put the user's original setting back (only if we changed it).
     static func restore() {
         guard UserDefaults.standard.object(forKey: savedKey) != nil else { return }
         let saved = UserDefaults.standard.integer(forKey: savedKey)

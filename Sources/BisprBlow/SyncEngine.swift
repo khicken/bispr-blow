@@ -1,27 +1,25 @@
 import Combine
 import Foundation
 
-/// Pushes dictation stats — and, under its own opt-in, their text — to the signed-in account,
-/// after the fact. Local history is the source of truth: this only ever reads it, and every push
-/// is an upsert keyed on the entry's own UUID, so retries are free and nothing can duplicate.
-///
-/// It wakes when history gains an entry (debounced, well clear of the release-to-paste path) and
-/// on a slow timer for whatever a failed push left behind. Nothing here touches the network
-/// unless the user is signed in and the stats toggle is on.
+// Pushes dictation stats — and, under its own opt-in, their text — to the signed-in account, after
+// the fact. Local history is the source of truth: this only reads it, and every push is an upsert
+// keyed on the entry's UUID, so retries are free and nothing can duplicate. It wakes when history
+// gains an entry (debounced, clear of the release-to-paste path) and on a slow timer for whatever a
+// failed push left behind. Nothing touches the network unless signed in with the stats toggle on.
 @MainActor
 final class SyncEngine {
     static let shared = SyncEngine()
 
-    /// Which entries have already landed, kept in its own file next to history.json rather than
-    /// inside the entries — `DictationEntry` stays byte-compatible with every history file on
-    /// disk. Two sets, because text sync can be switched on after years of metric sync.
+    // Which entries have already landed, in its own file next to history.json rather than inside the
+    // entries, so `DictationEntry` stays byte-compatible with every history file on disk. Two sets,
+    // because text sync can be switched on after years of metric sync.
     struct State: Codable {
         var metrics: Set<UUID> = []
         var texts: Set<UUID> = []
 
         init() {}
 
-        /// Tolerant of missing keys so an older (or newer) file never resets the sets.
+        // Tolerant of missing keys so an older (or newer) file never resets the sets.
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             metrics = try container.decodeIfPresent(Set<UUID>.self, forKey: .metrics) ?? []
@@ -44,7 +42,7 @@ final class SyncEngine {
         state = (try? JSONDecoder().decode(State.self, from: Data(contentsOf: url))) ?? State()
     }
 
-    /// Wiring only — no network happens here, just subscriptions and a timer.
+    // Wiring only — no network happens here, just subscriptions and a timer.
     func start() {
         HistoryStore.shared.$entries
             .dropFirst()
@@ -64,7 +62,7 @@ final class SyncEngine {
         }
     }
 
-    /// Sync if there is anything to do and the user asked for it; otherwise free.
+    // Sync if there is anything to do and the user asked for it; otherwise free.
     func kick() {
         guard !syncing, CloudConfig.ready,
               AppSettings.shared.syncStats,
@@ -76,16 +74,16 @@ final class SyncEngine {
         }
     }
 
-    /// Joining a team is the leaderboard opt-in, so rows pushed before the join get restamped
-    /// with the org — same ids, so this is an update everywhere, never a duplicate.
+    // Joining a team is the leaderboard opt-in, so rows pushed before the join get restamped
+    // with the org — same ids, so this is an update everywhere, never a duplicate.
     func noteOrgChanged() {
         state.metrics = []
         save()
         kick()
     }
 
-    /// Sign-out forgets what was synced. The rows themselves are never touched from here — the
-    /// worst a stale set could do is make the next account's first sync fail, so it goes.
+    // Sign-out forgets what was synced. The rows themselves are never touched from here — the
+    // worst a stale set could do is make the next account's first sync fail, so it goes.
     func reset() {
         state = State()
         save()
@@ -125,13 +123,13 @@ final class SyncEngine {
         }
     }
 
-    /// Entries not yet synced, in history order. Pure so the self-check can exercise it.
+    // Entries not yet synced, in history order. Pure so the self-check can exercise it.
     nonisolated static func pending(_ ids: [UUID], synced: Set<UUID>) -> [UUID] {
         ids.filter { !synced.contains($0) }
     }
 
-    /// One `dictations` row: the schema's metric columns and nothing else — the words themselves
-    /// never travel on this path.
+    // One `dictations` row: the schema's metric columns and nothing else — the words themselves
+    // never travel on this path.
     nonisolated static func metricRow(_ entry: DictationEntry, userID: UUID, orgID: UUID?) -> [String: Any] {
         var row: [String: Any] = [
             "id": entry.id.uuidString,

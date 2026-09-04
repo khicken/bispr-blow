@@ -44,7 +44,7 @@ final class CloudClient: ObservableObject {
                            query: [.init(name: "redirect_to", value: CloudConfig.callbackURL)])
     }
 
-    /// Step two: the code comes back and becomes a session.
+    // Step two: the code comes back and becomes a session.
     func signIn(email: String, code: String) async throws {
         let data = try await auth("verify", json: ["type": "email", "email": email, "token": code])
         try adopt(tokenData: data, fallbackEmail: email)

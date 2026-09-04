@@ -1,19 +1,17 @@
 import AVFoundation
 import CoreAudio
 
-/// Mic capture via AVCaptureSession. Streams buffers to a consumer and publishes a
-/// smoothed level (0...1) for the waveform UI.
-///
-/// **Not AVAudioEngine, and this is the whole reason the device picker works.** AVAudioEngine
-/// wants one device providing both input *and* output. Point its input node at an input-only
-/// microphone — which is every ordinary USB mic, and the built-in one — and the graph is handed a
-/// 0ch/0Hz output format and fails to initialise with `-10868`, after which `installTap` *raises*
-/// and aborts the whole app. `setDeviceID` is not the fix; nothing is, because the node latches
-/// its format when it is created and never renegotiates. Measured on this machine over twelve
-/// runs: through AVAudioEngine the USB PnP mic and the built-in mic both yield 0 frames, while the
-/// EarPods yield audio only because they carry speakers too. Through `AVCaptureDeviceInput`, which
-/// takes an arbitrary device by design, all three capture — 72192 frames from the USB mic at the
-/// same ~150ms startup the engine cost. Do not "simplify" this back to AVAudioEngine.
+// Mic capture via AVCaptureSession. Streams buffers to a consumer and publishes a smoothed level
+// (0...1) for the waveform UI.
+//
+// NOT AVAudioEngine, and that is why the device picker works: AVAudioEngine wants one device
+// providing both input AND output. Point its input node at an input-only mic — every ordinary USB
+// mic, and the built-in one — and the graph gets a 0ch/0Hz output format, fails with `-10868`, and
+// `installTap` then raises and aborts the app. Nothing fixes it: the node latches its format when
+// created and never renegotiates. Measured over twelve runs: through AVAudioEngine the USB PnP mic
+// and the built-in mic both yield 0 frames, while EarPods work only because they carry speakers.
+// Through `AVCaptureDeviceInput` all three capture — 72192 frames from the USB mic at the same
+// ~150ms startup.
 final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private static func defaultInputDeviceID() -> AudioDeviceID? {
         var deviceID = AudioDeviceID(0)
@@ -30,7 +28,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         return deviceID
     }
 
-    /// Name of the system default input device (e.g. "MacBook Pro Microphone").
+    // Name of the system default input device (e.g. "MacBook Pro Microphone").
     static func defaultInputDeviceName() -> String {
         guard let deviceID = defaultInputDeviceID() else { return "" }
 
@@ -46,7 +44,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         else { return "" }
         return name.takeRetainedValue() as String
     }
-    /// Selectable input devices. `uid` is the Core Audio device UID (also AVCaptureDevice.uniqueID).
+    // Selectable input devices. `uid` is the Core Audio device UID (also AVCaptureDevice.uniqueID).
     static func inputDevices() -> [(uid: String, name: String)] {
         AVCaptureDevice.DiscoverySession(
             deviceTypes: [.microphone, .external],
@@ -55,7 +53,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         ).devices.map { (uid: $0.uniqueID, name: $0.localizedName) }
     }
 
-    /// Core Audio device for a UID, so the engine can be pointed at a non-default mic.
+    // Core Audio device for a UID, so the engine can be pointed at a non-default mic.
     private static func deviceID(forUID uid: String) -> AudioDeviceID? {
         var deviceID = AudioDeviceID(0)
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
@@ -74,10 +72,9 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         return deviceID
     }
 
-    /// Some apps — video calls, most often — turn the system input volume down and never put it
-    /// back, and a quiet capture comes back as confident wrong words (measured here: 14/100 gain,
-    /// -40 to -63 dBFS dictations). Behind `AppSettings.restoreMicVolume`, off by default. Only
-    /// ever raises, so a deliberately loud mic is left alone.
+    // Some apps turn the system input volume down and never put it back, and a quiet capture comes
+    // back as confident wrong words (measured: 14/100 gain, -40 to -63 dBFS). Behind
+    // `AppSettings.restoreMicVolume`, off by default, and only ever raises.
     private static func restoreInputVolume(_ deviceID: AudioDeviceID) {
         // ponytail: fixed 75% floor, the level the user confirmed; make it a slider if asked.
         let floor: Float32 = 0.75
@@ -99,9 +96,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         }
     }
 
-    /// Name of the device actually being recorded from — the selection if there is one, otherwise
-    /// the system default. The mic flash and the no-audio notice both name this rather than the
-    /// default, which is a different device whenever a selection is in force.
+    // Name of the device actually being recorded from — the selection if there is one, otherwise the
+    // system default, which is a different device whenever a selection is in force.
     static func currentInputDeviceName() -> String {
         let uid = AppSettings.shared.inputDeviceUID
         if !uid.isEmpty, let device = AVCaptureDevice(uniqueID: uid) { return device.localizedName }
@@ -122,8 +118,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
 
     private let session = AVCaptureSession()
     private let output = AVCaptureAudioDataOutput()
-    /// Buffers arrive here, and the signal accumulators are only ever touched on it. `stop` syncs
-    /// against it before reading them, which is what `removeTap` used to give us for free.
+    // Buffers arrive here, and the signal accumulators are only ever touched on it. `stop` syncs
+    // against it before reading them, which is what `removeTap` used to give us for free.
     private let queue = DispatchQueue(label: "ai.getbluejay.bisprblow.capture")
     private(set) var isRunning = false
 
@@ -138,28 +134,26 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private var clipped = 0
     private var capturedFormat: AVAudioFormat?
 
-    /// Frames captured during the dictation that just ended. Zero means the words went nowhere, and
-    /// the caller must not go on to finalise a recognizer that was never fed — see `finishRecording`.
+    // Frames captured during the dictation that just ended. Zero means the words went nowhere, and
+    // the caller must not go on to finalise a recognizer that was never fed — see `finishRecording`.
     var capturedFrames: Int { queue.sync { frames } }
 
-    /// How long the session keeps running after a dictation ends. `startRunning()` is ~150ms of
-    /// cold CoreAudio setup and was the bulk of the gap between the pill saying "recording"
-    /// and the mic actually capturing (see `ActivationTrace` in `Log.swift`). Staying up across a
-    /// burst of dictations skips it. Not forever, though: a running session holds the microphone,
-    /// and macOS keeps its recording indicator lit for exactly as long as it does.
+    // How long the session keeps running after a dictation ends. `startRunning()` is ~150ms of cold
+    // CoreAudio setup and was most of the gap between the pill saying "recording" and the mic
+    // capturing. Not forever: a running session holds the mic, and macOS keeps its recording
+    // indicator lit for exactly as long.
     private static let warmWindow: TimeInterval = 30
     private var coolDown: DispatchWorkItem?
-    /// The device the warm session is configured for. A changed selection has to be rebuilt rather
-    /// than record the wrong mic.
+    // The device the warm session is configured for. A changed selection has to be rebuilt rather
+    // than record the wrong mic.
     private var warmDeviceUID: String?
 
     override init() {
         super.init()
         output.setSampleBufferDelegate(self, queue: queue)
         // Pin the delivered format rather than take the device's. `measure` and `Transcriber.feed`
-        // both reach for `floatChannelData`, which is nil for anything but non-interleaved float —
-        // so a device that happened to hand us int16 would read as silence, which is the one
-        // failure mode this file exists to make impossible.
+        // both reach for `floatChannelData`, nil for anything but non-interleaved float, so a device
+        // handing us int16 would read as silence.
         output.audioSettings = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVLinearPCMIsFloatKey: true,
@@ -231,8 +225,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         warmDeviceUID = device.uniqueID
     }
 
-    /// Ends capture but leaves the session warm — see `warmWindow`. `isRunning` is what stops audio
-    /// reaching the consumer, so nothing is captured in the meantime.
+    // Ends capture but leaves the session warm — see `warmWindow`. `isRunning` is what stops audio
+    // reaching the consumer, so nothing is captured in the meantime.
     func stop() {
         guard isRunning else { return }
         isRunning = false
@@ -274,8 +268,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         onLevel?(level)
     }
 
-    /// RMS level for the waveform, folded together with the per-dictation quality accumulators so
-    /// the samples are walked once.
+    // RMS level for the waveform, folded together with the per-dictation quality accumulators so
+    // the samples are walked once.
     private func measure(_ buffer: AVAudioPCMBuffer) -> Float {
         guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
         let n = Int(buffer.frameLength)
@@ -299,10 +293,9 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         return min(1, max(0, pow(rms * 26, 0.6)))
     }
 
-    /// One line per dictation. A weak or clipped signal does not come back as silence — it comes back
-    /// as confident wrong words, so it is indistinguishable from a model problem without this. dBFS
-    /// because that is the unit the numbers are judged in: speech wants roughly -30 to -12 dBFS mean,
-    /// and under about -45 is a gain problem no amount of model or prompt work will fix.
+    // One line per dictation. A weak or clipped signal comes back as confident wrong words, not as
+    // silence, so it is indistinguishable from a model problem without this. Speech wants roughly
+    // -30 to -12 dBFS mean; under about -45 is a gain problem no model work will fix.
     private func logSignal() {
         guard frames > 0 else {
             logLine("audio no frames captured")

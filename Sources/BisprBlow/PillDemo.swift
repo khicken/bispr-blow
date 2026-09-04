@@ -1,27 +1,24 @@
 import AppKit
 
-/// Drives the pill through a real release transition and measures where it lands, once per frame.
-///
-/// Three sessions have now tried to fix "the pill jumps" by reading the code and asking Kaleb what
-/// he saw, and two of them shipped a regression. This is `--mic-check` for the pill: the transition
-/// is a 0.32s spring plus a panel resize deferred 0.4s, so the thing to know is what moves and when,
-/// and neither is answerable by reasoning about a static file.
-///
-/// It measures **drawn pixels plus the panel's own origin**, not SwiftUI's layout.
-/// `rotationEffect` leaves the layout size unrotated and the panel is resized by AppKit on a clock
-/// of its own, so a layout probe would miss whichever of the two is at fault. Screen capture would
-/// be the obvious tool and is not available: `CGWindowListCreateImage` is gone in macOS 26 and
-/// ScreenCaptureKit wants a permission this app deliberately does not hold. Rendering our own view
-/// needs neither, and the panel's screen origin is exact from AppKit.
+// Drives the pill through a real release transition and measures where it lands, once per frame.
+// Two attempts at this animation shipped a regression when the only evidence was what the user
+// reported seeing. This is `--mic-check` for the pill: the transition is a 0.32s spring plus a panel
+// resize deferred 0.4s, so the thing to know is what moves and when.
+//
+// It measures DRAWN pixels plus the panel's own origin, not SwiftUI's layout: `rotationEffect`
+// leaves the layout size unrotated and the panel is resized by AppKit on a clock of its own, so a
+// layout probe would miss whichever is at fault. Screen capture is not available —
+// `CGWindowListCreateImage` is gone in macOS 26 and ScreenCaptureKit wants a permission this app
+// deliberately does not hold.
 enum PillDemo {
-    /// Alpha above this counts as pill. The capsule's shadow peaks at 0.35, so this measures the
-    /// bar rather than the glow around it.
+    // Alpha above this counts as pill. The capsule's shadow peaks at 0.35, so this measures the
+    // bar rather than the glow around it.
     private static let opaque: UInt8 = 128
 
     struct Sample {
         let ms: Int
         let state: String
-        /// The pill's drawn edges in screen points, bottom-left origin — the axis the jump is on.
+        // The pill's drawn edges in screen points, bottom-left origin — the axis the jump is on.
         let bottom, top: CGFloat
         let panel: NSRect
     }
@@ -31,11 +28,10 @@ enum PillDemo {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
-        // `--pill-demo leftCentre` picks the edge. It has to be an argument: this binary is not the
-        // installed bundle, so `UserDefaults.standard` is its own domain and it never sees the real
-        // `pillAnchor` — which also means writing it here cannot disturb the user's own setting.
-        // The side anchors are the interesting ones; the bottom anchor hides these bugs, because
-        // there the panel and its child are the same size and every alignment is a no-op at rest.
+        // `--pill-demo leftCentre` picks the edge, and it has to be an argument: this binary is not
+        // the installed bundle, so it never sees the real `pillAnchor` — which also means it cannot
+        // disturb the user's setting. The side anchors are the interesting ones; on the bottom
+        // anchor the panel and its child are the same size and every alignment is a no-op at rest.
         if let raw = CommandLine.arguments.dropFirst().first(
             where: { RecordingPillController.Anchor(rawValue: $0) != nil }) {
             UserDefaults.standard.set(raw, forKey: "pillAnchor")
@@ -52,9 +48,8 @@ enum PillDemo {
 
         var samples: [Sample] = []
         let started = Date()
-        // A real release: hold, speak, let go, and ~476ms later the text lands. That gap is the
-        // measured median post-release latency, and it straddles the 0.4s deferred panel shrink —
-        // which is the whole reason the sequence is worth replaying rather than posed.
+        // A real release: hold, speak, let go, and ~476ms later the text lands. That measured median
+        // gap straddles the 0.4s deferred panel shrink, which is why the sequence is replayed.
         let script: [(TimeInterval, DictationController.State, String)] = [
             (0.60, .recording(locked: false), "recording"),
             (2.00, .processing, "processing"),
@@ -92,9 +87,9 @@ enum PillDemo {
         exit(0)
     }
 
-    /// The pill's top and bottom edge in screen points: the drawn extent inside the panel, offset by
-    /// the panel's own origin. Both halves matter — the capsule animates inside a panel that is
-    /// itself moving and resizing, and either one alone would look stationary.
+    // The pill's top and bottom edge in screen points: the drawn extent inside the panel, offset by
+    // the panel's own origin. Both matter — the capsule animates inside a panel that is itself
+    // moving, and either alone would look stationary.
     @MainActor
     private static func edges(of panel: NSPanel) -> (bottom: CGFloat, top: CGFloat)? {
         guard let view = panel.contentView else { return nil }

@@ -1,12 +1,12 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Inserts text into the focused field of the frontmost app via pasteboard + synthetic ⌘V,
-/// then restores the previous pasteboard contents.
+// Inserts text into the focused field of the frontmost app via pasteboard + synthetic ⌘V,
+// then restores the previous pasteboard contents.
 enum TextInserter {
-    /// Returns false when synthetic events can't be posted (no Accessibility trust):
-    /// the text is left on the clipboard so the user can ⌘V manually.
-    /// `thenReturn` presses Return once the paste has landed — the "dictate and send" binding.
+    // Returns false when synthetic events can't be posted (no Accessibility trust):
+    // the text is left on the clipboard so the user can ⌘V manually.
+    // `thenReturn` presses Return once the paste has landed — the "dictate and send" binding.
     @discardableResult
     static func insert(_ text: String, thenReturn: Bool = false) -> Bool {
         let pasteboard = NSPasteboard.general

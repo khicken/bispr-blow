@@ -1,26 +1,23 @@
 import Carbon.HIToolbox
 import CoreGraphics
 
-/// One bindable trigger: a key (with optional modifiers) or a mouse button.
-///
-/// A standalone modifier key — fn, right ⌘ — is stored as `.key` with no modifier flags and
-/// matched on its keycode alone, whatever else is held down. That is exactly what the fn-only
-/// monitor always did, and it is what makes "hold fn" work while typing.
+// One bindable trigger: a key (with optional modifiers) or a mouse button. A standalone modifier
+// key — fn, right ⌘ — is stored as `.key` with no modifier flags and matched on its keycode alone,
+// whatever else is held down, which is what makes "hold fn" work while typing.
 struct Shortcut: Codable, Equatable, Identifiable {
     enum Trigger: Codable, Equatable {
-        /// Virtual keycode (`kVK_*`).
+        // Virtual keycode (`kVK_*`).
         case key(Int)
-        /// CGEvent button number: 2 = middle, so 2 and up. Left and right stay the user's.
+        // CGEvent button number: 2 = middle, so 2 and up. Left and right stay the user's.
         case mouse(Int)
-        /// Modifiers and nothing else — ⌃⇧ held on its own. It has no keycode of its own, so
-        /// `flags` carries the whole binding and the gesture is that set completing and breaking.
-        /// A *single* modifier stays `.key` instead, because only a keycode tells left ⌃ from
-        /// right ⌃ and bare fn has always matched that way.
+        // Modifiers and nothing else — ⌃⇧ held on its own. It has no keycode, so `flags` carries the
+        // whole binding and the gesture is that set completing and breaking. A SINGLE modifier stays
+        // `.key`, because only a keycode tells left ⌃ from right ⌃.
         case modifiers
     }
 
     var trigger: Trigger
-    /// `CGEventFlags` raw value, already narrowed to `tracked`.
+    // `CGEventFlags` raw value, already narrowed to `tracked`.
     var flags: UInt64 = 0
 
     var id: String { display }
@@ -28,13 +25,13 @@ struct Shortcut: Codable, Equatable, Identifiable {
     static let fn = Shortcut(trigger: .key(kVK_Function))
     static let escape = Shortcut(trigger: .key(kVK_Escape))
 
-    /// The modifier bits worth comparing. Everything else an event carries (numpad,
-    /// non-coalesced, caps lock) is noise that would break an otherwise exact match.
+    // The modifier bits worth comparing. Everything else an event carries (numpad,
+    // non-coalesced, caps lock) is noise that would break an otherwise exact match.
     static let tracked: CGEventFlags = [
         .maskShift, .maskControl, .maskAlternate, .maskCommand, .maskSecondaryFn,
     ]
 
-    /// Modifier keys that can stand alone as a trigger, and the flag each one raises.
+    // Modifier keys that can stand alone as a trigger, and the flag each one raises.
     static let modifierFlags: [Int: CGEventFlags] = [
         kVK_Function: .maskSecondaryFn,
         kVK_Shift: .maskShift, kVK_RightShift: .maskShift,
@@ -56,14 +53,14 @@ struct Shortcut: Codable, Equatable, Identifiable {
         return false
     }
 
-    /// A modifiers-only binding, matched on the whole set held. Exact rather than "contains", so
-    /// ⌃⇧ and ⌃⇧⌘ stay different bindings the way ⌃⇧G and ⌃⇧⌘G do.
+    // A modifiers-only binding, matched on the whole set held. Exact rather than "contains", so
+    // ⌃⇧ and ⌃⇧⌘ stay different bindings the way ⌃⇧G and ⌃⇧⌘G do.
     func matches(modifiers: CGEventFlags) -> Bool {
         guard case .modifiers = trigger, !modifiers.isEmpty else { return false }
         return modifiers.intersection(Self.tracked).rawValue == flags
     }
 
-    /// True when this binding needs the fn key, so the macOS Globe action has to be suppressed.
+    // True when this binding needs the fn key, so the macOS Globe action has to be suppressed.
     var usesFn: Bool {
         if case .key(kVK_Function) = trigger { return true }
         return CGEventFlags(rawValue: flags).contains(.maskSecondaryFn)
@@ -71,7 +68,7 @@ struct Shortcut: Codable, Equatable, Identifiable {
 
     // MARK: - Display
 
-    /// Key-cap text: "fn", "⌃⌥D", "Mouse 4".
+    // Key-cap text: "fn", "⌃⌥D", "Mouse 4".
     var display: String {
         switch trigger {
         case .mouse(let button):
@@ -84,7 +81,7 @@ struct Shortcut: Codable, Equatable, Identifiable {
         }
     }
 
-    /// Apple's order: fn, then ⌃⌥⇧⌘.
+    // Apple's order: fn, then ⌃⌥⇧⌘.
     private static func glyphs(for flags: CGEventFlags) -> String {
         var out = ""
         if flags.contains(.maskSecondaryFn) { out += "fn" }
@@ -103,9 +100,9 @@ struct Shortcut: Codable, Equatable, Identifiable {
         kVK_Command: "⌘", kVK_RightCommand: "Right ⌘",
     ]
 
-    // ponytail: ANSI keycode table. On Dvorak or AZERTY the cap shows the US letter sitting at
-    // that physical position; matching still works because it is keycode-based. Upgrade path is
-    // UCKeyTranslate against the current keyboard layout.
+    // ANSI keycode table. On Dvorak or AZERTY the cap shows the US letter at that physical
+    // position; matching still works because it is keycode-based. Upgrade path is UCKeyTranslate
+    // against the current layout.
     private static let keyNames: [Int: String] = [
         0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V",
         11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T",
@@ -121,8 +118,8 @@ struct Shortcut: Codable, Equatable, Identifiable {
     ]
 }
 
-/// What a binding does. Every action takes a list of bindings, so ⌥Space and mouse 4 can both
-/// start a dictation.
+// What a binding does. Every action takes a list of bindings, so ⌥Space and mouse 4 can both
+// start a dictation.
 enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
     case pushToTalk
     case handsFree
@@ -140,8 +137,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// One line each. This sits above the list you came here to edit, so it says what the action
-    /// does and stops; the longer version was three lines of reading before the first control.
+    // One line each. This sits above the list you came here to edit, so it says what the action
+    // does and stops; the longer version was three lines of reading before the first control.
     var blurb: String {
         switch self {
         case .pushToTalk: return "Hold or double-tap to dictate."
@@ -153,8 +150,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Shipped defaults. fn stays push to talk and Esc stays cancel, so nobody's muscle
-    /// memory breaks on upgrade.
+    // Shipped defaults. fn stays push to talk and Esc stays cancel, so nobody's muscle
+    // memory breaks on upgrade.
     var defaults: [Shortcut] {
         switch self {
         case .pushToTalk: return [.fn]

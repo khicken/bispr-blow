@@ -1,12 +1,9 @@
 import SwiftUI
 
-/// The team's dictation, ranked — words, pace, and streaks, built entirely from counts. The
-/// board never sees anyone's text; that is a property of the database, not of this view.
-///
-/// A section rather than a page, because a leaderboard is something you glance at. It had a nav
-/// row of its own, which meant the one thing on it that changes daily sat behind a click most
-/// people never made — and every state it can be in except "here is the board" was a sentence
-/// telling you to go somewhere else. Home is where it belongs.
+// The team's dictation, ranked — words, pace, and streaks, built entirely from counts. The board
+// never sees anyone's text; that is a property of the database, not of this view. A section rather
+// than a page, because a leaderboard is something you glance at: on a nav row of its own the one
+// thing that changes daily sat behind a click most people never made.
 struct LeaderboardSection: View {
     @ObservedObject var cloud: CloudClient
 
@@ -61,9 +58,7 @@ struct LeaderboardSection: View {
         }
     }
 
-    /// Signed out, this shows the sign-in itself rather than a sentence pointing at another page.
-    /// Telling someone where to go to do a thing, on the screen where they wanted the thing, is a
-    /// step that exists only because the form lived somewhere else.
+    // Signed out, this shows the sign-in itself rather than a sentence pointing at another page.
     @ViewBuilder
     private var content: some View {
         // Both forms sit in a card, because everything else on Home does — the stat tiles and the
@@ -138,7 +133,7 @@ struct LeaderboardSection: View {
     }
 }
 
-/// One member. Your own row wears the accent so it is findable at a glance.
+// One member. Your own row wears the accent so it is findable at a glance.
 private struct LeaderRow: View {
     var themeID = Appearance.current
     let rank: Int

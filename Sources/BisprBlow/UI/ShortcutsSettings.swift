@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// The Shortcuts section of Settings: one row per action, whole row opens the editor.
-/// The editor is a sheet rather than inline because recording a binding takes over the
-/// keyboard, and a modal is the honest way to say so.
+// The Shortcuts section of Settings: one row per action, whole row opens the editor. The editor is a
+// sheet because recording a binding takes over the keyboard, and a modal is the honest way to say so.
 struct ShortcutRows: View {
     @ObservedObject var settings: AppSettings
     @State private var editing: ShortcutAction?
@@ -23,7 +22,7 @@ struct ShortcutRows: View {
     }
 }
 
-/// One action. The whole row is the hit target, per the UI rules.
+// One action. The whole row is the hit target, per the UI rules.
 private struct ShortcutRow: View {
     var themeID = Appearance.current
     let action: ShortcutAction
@@ -65,7 +64,7 @@ private struct ShortcutRow: View {
     }
 }
 
-/// A single keyboard cap: "fn", "⌃⌥D", "Mouse 4".
+// A single keyboard cap: "fn", "⌃⌥D", "Mouse 4".
 struct KeyCap: View {
     var themeID = Appearance.current
     let text: String
@@ -84,13 +83,12 @@ struct KeyCap: View {
     }
 }
 
-/// One row of the editor's list — a bound shortcut, or the row that records a new one. Every
-/// row is the same height and the same inset whatever it holds, because the list gains and
-/// loses rows as you edit it and the ones that stay should not move when it does.
+// One row of the editor's list — a bound shortcut, or the row that records a new one. Every row is
+// the same height and inset whatever it holds, because the list gains and loses rows as you edit it.
 private struct BindingRow<Content: View>: View {
     var themeID = Appearance.current
-    /// Rows that do something on click take the hover fill; a bound shortcut's row does not,
-    /// since only its × is clickable.
+    // Rows that do something on click take the hover fill; a bound shortcut's row does not,
+    // since only its × is clickable.
     var hoverable = false
     @ViewBuilder let content: Content
     @State private var hovering = false
@@ -110,19 +108,17 @@ private struct BindingRow<Content: View>: View {
     }
 }
 
-/// Editor for one action's bindings: remove, record another, reset.
-///
-/// Fixed size, deliberately. Every part of it grows and shrinks as you use it — the blurb runs
-/// one line or three depending on the action, the list gains rows, the recorder swaps a prompt
-/// in for the add row — and a sheet that resizes under the pointer moves the button you were
-/// reaching for. The list is the one part that can overflow, so it is the one part that scrolls.
+// Editor for one action's bindings: remove, record another, reset. Fixed size, deliberately — every
+// part of it grows and shrinks as you use it, and a sheet that resizes under the pointer moves the
+// button you were reaching for. The list is the one part that can overflow, so it is the one part
+// that scrolls.
 struct ShortcutSheet: View {
     var themeID = Appearance.current
     let action: ShortcutAction
     @ObservedObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
     @State private var armed = false
-    /// The combination currently under the user's fingers, mid-record.
+    // The combination currently under the user's fingers, mid-record.
     @State private var holding: Shortcut?
 
     private var bindings: [Shortcut] { settings.shortcuts(for: action) }
@@ -144,8 +140,7 @@ struct ShortcutSheet: View {
             .frame(height: 40, alignment: .top)
 
             // The list is the control. Adding lives as its last row rather than as a button below,
-            // so there is one place to click to change a binding instead of a dead box plus a
-            // button beside it.
+            // so there is one place to click to change a binding.
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(bindings) { shortcut in
@@ -168,16 +163,15 @@ struct ShortcutSheet: View {
                         BindingRow {
                             HStack(spacing: 8) {
                                 // What is under your fingers right now, drawn in the same cap the
-                                // saved binding will use, so recording shows the result rather
-                                // than describing it. It lands when you let go.
+                                // saved binding will use, so recording shows the result rather than
+                                // describing it. It lands when you let go.
                                 if let holding {
                                     KeyCap(text: holding.display)
                                     Text("release to save")
                                         .font(.bj(12))
                                 } else {
-                                    // The dot belongs to the waiting state only: it says the app
-                                    // is listening for you. Once you are holding keys the cap
-                                    // says that already, and a pulsing dot beside it is decoration.
+                                    // The dot belongs to the waiting state only: once you are
+                                    // holding keys the cap says that already.
                                     Image(systemName: "record.circle")
                                         .font(.bj(11, weight: .bold))
                                         .symbolEffect(.pulse)
@@ -214,9 +208,9 @@ struct ShortcutSheet: View {
 
             // One primary action, bottom right, where every macOS sheet puts it.
             HStack(spacing: 8) {
-                // Always present, dimmed when there is nothing to undo. It used to appear only
-                // once the bindings differed, which meant the footer gained a control the first
-                // time you edited anything — the row you were reading changed shape under you.
+                // Always present, dimmed when there is nothing to undo. Appearing only once the
+                // bindings differed made the footer gain a control the first time you edited
+                // anything, changing the row you were reading under you.
                 Button("Reset to default") {
                     settings.resetToDefault(action)
                 }
@@ -237,8 +231,8 @@ struct ShortcutSheet: View {
         .onDisappear { ShortcutMonitor.shared.endCapture() }
     }
 
-    /// The monitor's own event tap does the capturing: it already sees every key and mouse
-    /// button system-wide, and while armed it swallows them so nothing else reacts.
+    // The monitor's own event tap does the capturing: it already sees every key and mouse
+    // button system-wide, and while armed it swallows them so nothing else reacts.
     private func arm() {
         armed = true
         holding = nil

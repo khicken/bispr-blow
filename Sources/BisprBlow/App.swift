@@ -1,12 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Runs one async call to completion from a synchronous CLI entry point.
-///
-/// `Task.detached` and not `Task`: `main()` on a `@main` type is MainActor-isolated, so a plain
-/// `Task` inherits that isolation and can only run when the main thread yields — which the
-/// semaphore below guarantees it never will. That deadlocks outright rather than running slowly,
-/// and it presents as a hung model with no log output at all, which is a bad afternoon.
+// Runs one async call to completion from a synchronous CLI entry point. `Task.detached` and not
+// `Task`: `main()` on a `@main` type is MainActor-isolated, so a plain `Task` inherits that isolation
+// and can only run when the main thread yields — which the semaphore never lets it do. It deadlocks
+// outright and presents as a hung model with no log output.
 private final class ResultBox<V>: @unchecked Sendable { var value: V? }
 
 private func awaitSync<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
@@ -24,11 +22,10 @@ enum Main {
             SelfCheck.run()
             return
         }
-        // Drives the real `AudioRecorder` for two seconds and reports what arrived, because the
-        // alternative is finding out at the cursor. A dictation cannot be triggered without the
-        // keyboard, so before this the capture path was the one part of the app that could only be
-        // tested by asking Kaleb — which is how an input-only mic capturing nothing shipped twice.
-        // Exercises the selected device, so run it after changing the mic in Settings.
+        // Drives the real `AudioRecorder` for two seconds and reports what arrived. A dictation
+        // needs the keyboard, so before this the capture path could only be tested by asking the
+        // user — which is how an input-only mic capturing nothing shipped twice. Exercises the
+        // selected device, so run it after changing the mic in Settings.
         if CommandLine.arguments.contains("--mic-check") {
             let recorder = AudioRecorder()
             print("device: \(AudioRecorder.currentInputDeviceName())")
@@ -48,9 +45,9 @@ enum Main {
                              : "FAIL — no audio captured")
             exit(frames > 0 ? 0 : 1)
         }
-        // Replays a release transition and measures the pill's drawn position every 8ms, because
-        // the alternative is asking Kaleb what he saw — which is how two attempts at this animation
-        // shipped a regression. Same idea as `--mic-check`: make the thing observable first.
+        // Replays a release transition and measures the pill's drawn position every 8ms. Two
+        // attempts at this animation shipped a regression when the only evidence was what the user
+        // reported seeing. Same idea as `--mic-check`: make the thing observable first.
         if CommandLine.arguments.contains("--pill-demo") {
             PillDemo.run()
         }
@@ -67,9 +64,8 @@ enum Main {
             return
         }
         // The dictionary respeller alone, against the real dictionary, one line of stdin per case.
-        // It exists because vocabulary corruption has now shipped twice and neither time was
-        // reachable from a test: the damage happens after the model, so `--clean` hides it behind
-        // an endpoint and `--finish` never calls this at all.
+        // Vocabulary corruption has shipped twice and neither time was reachable from a test: the
+        // damage happens after the model, so `--clean` hides it and `--finish` never calls this.
         if CommandLine.arguments.contains("--vocab") {
             let vocab = AppSettings.shared.vocabulary
             while let line = readLine(strippingNewline: true) {
@@ -77,8 +73,8 @@ enum Main {
             }
             return
         }
-        // Everything `clean` does to a model's reply after the HTTP call, so bench/bench.py
-        // scores the text that would land at the cursor instead of the raw model output.
+        // Everything `clean` does to a model's reply after the call, so bench/bench.py scores the
+        // text that would land at the cursor.
         // stdin: {"raw", "cleaned", "lowTouch"?, "draftTerms"?} → stdout: {"text", "lossy", "reworded"}.
         if CommandLine.arguments.contains("--finish") {
             let input = (try? JSONSerialization.jsonObject(
@@ -87,9 +83,8 @@ enum Main {
             let result = LLMCleaner.sanitize(input["cleaned"] as? String ?? "",
                                             fallback: LLMCleaner.ruleClean(raw))
             let lowTouch = input["lowTouch"] as? Bool ?? false
-            // The same guard set the app runs, from the same function, because these two lists had
-            // drifted: this one never ran `losesContent`, so the bench was scoring a laxer app than
-            // the one that ships. `reason` is reported so a bench run says which guard fired.
+            // The same guard set the app runs, from the same function: these two lists had drifted,
+            // and this one never ran `losesContent`, so the bench scored a laxer app than ships.
             let why = LLMCleaner.rejection(
                 result, raw: raw, lowTouch: lowTouch,
                 allowed: LLMCleaner.allowedTerms(vocabulary: AppSettings.shared.vocabulary,
@@ -101,8 +96,7 @@ enum Main {
             print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!)
             return
         }
-        // The whole cleanup path against a live endpoint — resolution, prompt, guards, and the
-        // escalation retry — so guard-triggered escalation can be exercised without dictating.
+        // The whole cleanup path against a live endpoint — resolution, prompt, guards, escalation.
         // stdin: {"raw", "bundleID"?, "appName"?} → stdout: {"text", "provider"}.
         if CommandLine.arguments.contains("--clean") {
             let input = (try? JSONSerialization.jsonObject(
@@ -111,9 +105,8 @@ enum Main {
                                      appName: input["appName"] as? String ?? "Terminal",
                                      windowTitle: "")
             let cleaner = LLMCleaner()
-            // Warm first, as the app does at launch: a cold model load eats the whole deadline,
-            // so without this every long case reports a deadline miss instead of exercising the
-            // guards and the escalation the seam exists to verify.
+            // Warm first, as the app does at launch: a cold model load eats the whole deadline, so
+            // without this every long case reports a deadline miss instead of exercising the guards.
             let result: (text: String, provider: String) = awaitSync {
                 await cleaner.warmUp()
                 return await cleaner.clean(input["raw"] as? String ?? "", context: context)
@@ -123,23 +116,20 @@ enum Main {
             return
         }
         // Whether accounts are switched on, and where they point. Worth a seam because the answer
-        // used to depend on a per-user `defaults write`: `ready` was true on the machine where
-        // someone had run it and false in every installed copy, and nothing printed either way.
+        // used to depend on a per-user `defaults write`, with nothing printed either way.
         if CommandLine.arguments.contains("--cloud-check") {
             print("ready=\(CloudConfig.ready)")
             print("url=\(CloudConfig.url?.absoluteString ?? "none")")
             print("key=\(CloudConfig.anonKey.isEmpty ? "none" : String(CloudConfig.anonKey.prefix(18)) + "…")")
             print("callback=\(CloudConfig.callbackURL)")
             print("session=\(CloudClient.storedSessionEmail().map { "signed in as \($0)" } ?? "signed out")")
-            // Everything above is our own config and cannot tell you the project is unconfigured.
-            // Three sessions in a row asked Kaleb "is the schema applied?" and probed by hand with
-            // curl; these are those probes. The tell is PGRST205: a table that exists but denies
+            // Everything above is our own config and cannot tell you the project is unconfigured;
+            // these are the probes that can. The tell is PGRST205: a table that exists but denies
             // the anon role answers `[]`, so a missing table and an RLS-denied one look nothing
             // alike. Anon-key GETs only — no session needed, and nothing here mails anybody.
             if let base = CloudConfig.url, CloudConfig.ready {
-                // appendingPathComponent percent-encodes a `?`, which turns a query into part of
-                // the table name and answers PGRST205 for a table that exists — the exact false
-                // negative this command is here to prevent. Build the URL, don't concatenate it.
+                // appendingPathComponent percent-encodes a `?`, which folds the query into the
+                // table name and answers PGRST205 for a table that exists. Build the URL.
                 let get: @Sendable (String, [URLQueryItem]) -> String = { path, query in
                     var components = URLComponents(url: base.appendingPathComponent(path),
                                                    resolvingAgainstBaseURL: false)!
@@ -160,9 +150,9 @@ enum Main {
                     settings.contains("\"\($0)\":true")
                 }
                 print("providers=\(enabled.isEmpty ? "none" : enabled.joined(separator: ","))")
-                // The real names, from db/schema.sql. An earlier list here said teams and
-                // team_members, which this schema has never had — so it reported MISSING for
-                // tables nobody was ever going to create.
+                // The real names, from db/schema.sql. An earlier list said teams and team_members,
+                // which this schema has never had, so it reported MISSING for tables nobody will
+                // create.
                 for table in ["users", "orgs", "org_members", "invites",
                               "dictations", "dictation_texts", "leaderboard"] {
                     let body = get("rest/v1/\(table)", [
@@ -174,14 +164,11 @@ enum Main {
             }
             return
         }
-        // Sign-in end to end against the live project, because until now the only way to run it
-        // was to click it, and nobody could. Drives the real CloudClient — the same requestCode
-        // and signIn the sheet calls — so a break here is a break in the app.
-        //
-        // Two invocations rather than one prompting for the code: `--sign-in <email>` mails it,
-        // `--sign-in <email> <code>` spends it. The code arrives out of band, in a mail client,
-        // so there is nothing to pipe. Note this mails a real person a real code; it is not a
-        // probe to run casually, unlike --cloud-check, which touches nobody.
+        // Sign-in end to end against the live project, driving the real CloudClient — the same
+        // requestCode and signIn the sheet calls. Two invocations rather than one prompting for the
+        // code: `--sign-in <email>` mails it, `--sign-in <email> <code>` spends it, since the code
+        // arrives out of band. This mails a real person a real code; unlike --cloud-check it is not
+        // a probe to run casually.
         if let flag = CommandLine.arguments.firstIndex(of: "--sign-in") {
             let rest = CommandLine.arguments.dropFirst(flag + 1)
             guard let email = rest.first else {
@@ -214,8 +201,8 @@ enum Main {
             return
         }
         // Drives the real `ModelDownloader` against Hugging Face and prints progress. The installer
-        // no longer ships the Accurate weights, so this is the only way anyone gets them — worth a
-        // seam, because before this existed the whole path had been read and never once run.
+        // no longer ships the Accurate weights, so this is the only way anyone gets them — and the
+        // path had been read and never once run before this existed.
         if CommandLine.arguments.contains("--download-accurate") {
             let downloader = ModelDownloader.shared
             print("downloading \(ModelDownloader.modelName)…")
@@ -237,15 +224,10 @@ enum Main {
             return
         }
         // In-process completions for bench/bench.py, which otherwise only speaks HTTP and so cannot
-        // measure the engine that replaces it.
-        //
-        // A *loop* over NDJSON rather than one completion per invocation, and that is the whole point:
-        // a fresh process per case would reload the model every time and report cold-load latency,
-        // which is precisely the cost LM Studio was absorbing for free. Comparing a cold in-process
-        // load against a warm server would answer the wrong question. One process, model loaded once,
-        // every case warm — the same conditions the app runs in.
-        //
-        // stdin: one {"model", "messages"} object per line → stdout: one {"content", "ms"} per line.
+        // measure the engine that replaces it. A LOOP over NDJSON rather than one completion per
+        // invocation, and that is the point: a fresh process per case would reload the model every
+        // time and report cold-load latency against a warm server. One process, model loaded once.
+        // stdin: one {"model", "messages"} per line → stdout: one {"content", "ms"} per line.
         if CommandLine.arguments.contains("--complete") {
             while let line = readLine(strippingNewline: true) {
                 guard !line.isEmpty,
@@ -313,10 +295,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Keeps `systemIsDark` true to the OS so the System theme actually follows it. KVO on
-    /// `effectiveAppearance` rather than the AppleInterfaceThemeChanged notification: that one
-    /// fires before the app has taken the new appearance, so reading it back lands on the old
-    /// value about half the time.
+    // Keeps `systemIsDark` true to the OS so the System theme follows it. KVO on
+    // `effectiveAppearance` rather than AppleInterfaceThemeChanged: that one fires before the app
+    // has taken the new appearance, so reading it back lands on the old value about half the time.
     private func watchSystemAppearance() {
         appearanceObserver = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { app, _ in
             let dark = app.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -373,8 +354,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Nothing in the UI offers Quit, but ⌘Q should still work while a window is focused —
-    /// an accessory app gets no main menu, and therefore no key equivalent, unless one is set.
+    // Nothing in the UI offers Quit, but ⌘Q should still work while a window is focused —
+    // an accessory app gets no main menu, and therefore no key equivalent, unless one is set.
     private func setupQuitShortcut() {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "Quit BisprBlow",
@@ -390,11 +371,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboard.show()
     }
 
-    /// The sign-in link in the emailed code lands here — `bisprblow://auth-callback` with the
-    /// tokens in the fragment (`CFBundleURLTypes` in Info.plist registers the scheme). The Google
-    /// sheet does not: `ASWebAuthenticationSession` intercepts its own callback, so this is only
-    /// the email half. A failure shows the dashboard anyway — an expired link has to say so
-    /// somewhere, and the sign-in card is where the user was headed.
+    // The sign-in link in the emailed code lands here — `bisprblow://auth-callback` with the tokens
+    // in the fragment (registered via CFBundleURLTypes). The Google sheet does not:
+    // `ASWebAuthenticationSession` intercepts its own callback. A failure shows the dashboard
+    // anyway, since an expired link has to say so somewhere.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let callback = urls.first(where: { $0.scheme == CloudConfig.callbackScheme })
         else { return }
@@ -405,7 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `open BisprBlow.app` while running (or Dock/Launchpad click) reopens the dashboard.
+    // `open BisprBlow.app` while running (or Dock/Launchpad click) reopens the dashboard.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         dashboard.show()
         return true
