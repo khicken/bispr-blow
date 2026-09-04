@@ -385,7 +385,10 @@ rate that decides this guard did not move. The one-character slack keeps the mor
 exists for (`regions` → `region`) and drops the coincidences.
 
 **The cleanup deadline scales with the transcript** (`deadlineMs(words:)`,
-400ms + 6ms/word). A flat budget is wrong in both directions: measured on
+900ms + 6ms/word capped at 2500 for Fast, 2000ms + 15ms/word capped at 6000 for
+Accurate — read the function, this line has been stale before: it said 400ms for
+long enough that `bench/results.md`, which prints the real figure in its header,
+disagreed with it in the repo). A flat budget is wrong in both directions: measured on
 qwen3-0.6b, twelve words clean in 0.20s and 240 words in 1.51s, so a flat 450ms
 sent every long dictation — the content that most needs the model — to the rules
 path. Nobody minds 1.5s after speaking for ninety seconds. Missing the deadline
