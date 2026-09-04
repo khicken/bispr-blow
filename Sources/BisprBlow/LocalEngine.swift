@@ -47,17 +47,20 @@ actor LocalEngine {
     }
 
     /// Directories scanned for models, in preference order. The home one is where a hand-placed or
-    /// downloaded model lands; the root one is where the installer's weight payloads go, since a
-    /// `.pkg` cannot write to `~` without switching the whole install to the user domain — which
-    /// would drag the app out of /Applications with it. LM Studio's directory is read too so a
-    /// machine that already has weights is not asked for them twice.
+    /// downloaded model lands and stays first, so it still wins. The bundle one is what lets the
+    /// app be dragged out of a .dmg and work: with the Fast weights inside `Contents/Resources`
+    /// there is no write outside /Applications, which was the *only* remaining reason the
+    /// installer had to be a .pkg. The /Library one is still read, because a machine that took
+    /// the .pkg already has weights there and must not be asked to download them again. LM
+    /// Studio's directory is read for the same reason.
     private static var searchRoots: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
             home.appendingPathComponent("Library/Application Support/BisprBlow/models"),
+            Bundle.main.resourceURL?.appendingPathComponent("models"),
             URL(fileURLWithPath: "/Library/Application Support/BisprBlow/models"),
             home.appendingPathComponent(".lmstudio/models"),
-        ]
+        ].compactMap { $0 }
     }
 
     /// Every GGUF on disk, as (id, file). The id is the filename without its extension so the

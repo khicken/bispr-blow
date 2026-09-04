@@ -39,6 +39,19 @@ mkdir -p "$APP/Contents/Frameworks"
 cp -R .build/arm64-apple-macosx/release/llama.framework "$APP/Contents/Frameworks/"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/BisprBlow"
 
+# BUNDLE_WEIGHTS=1 puts the Fast weights inside the bundle, which is what dmg.sh needs and what
+# a .pkg does not: with them here the app writes nothing outside /Applications, so it can simply be
+# dragged out of a disk image. Off by default because it makes every local build 400 MB and the
+# weights are already in ~/Library, which searchRoots reads first anyway. It must happen BEFORE
+# signing — anything added afterwards breaks the seal.
+if [ -n "${BUNDLE_WEIGHTS:-}" ]; then
+    FAST_SRC="$HOME/Library/Application Support/BisprBlow/models/Qwen3-0.6B-MLX-4bit"
+    [ -d "$FAST_SRC" ] || { echo "Missing weights: $FAST_SRC" >&2; exit 1; }
+    mkdir -p "$APP/Contents/Resources/models"
+    cp -R "$FAST_SRC" "$APP/Contents/Resources/models/"
+    echo "Bundled Fast weights ($(du -sh "$FAST_SRC" | cut -f1))."
+fi
+
 # A Developer ID cert wins when the machine has one: it is the only signature that opens on a
 # stranger's Mac, and notarization requires it plus the hardened runtime. Everything else is the
 # local-iteration path, where the point of a stable identity is only that TCC keeps its grants.

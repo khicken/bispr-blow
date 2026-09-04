@@ -168,11 +168,29 @@ to AppKit rather than layering workarounds.
 `./package.sh` builds `.build/BisprBlow.pkg`. `./build.sh` is still the local iteration path and
 package.sh calls it, so the bundle is assembled in exactly one place.
 
-**It is a .pkg because the weights go to `/Library`, and that is now the only reason.** It used to be
-because the installer had a question to ask — which weights — and a .dmg is drag-and-drop with no UI.
-That question is gone (see below), so `customize` is `never` and Installer shows a bare Install
-button. What still needs a .pkg is the write outside /Applications; a .dmg would have to make the app
-place the weights itself on first launch.
+**There is now a .dmg too, and it is the one to put behind a download link — `./dmg.sh`.** The .pkg
+existed because the Fast weights had to be written to `/Library`, which a disk image cannot do. That
+is no longer forced: `BUNDLE_WEIGHTS=1 ./build.sh` copies the 335 MB Fast model into
+`Contents/Resources/models`, `LocalEngine.searchRoots` reads that directory, and the app then writes
+nothing outside /Applications. 316 MB compressed, against the .pkg's 310 MB. Measured, not reasoned:
+with `~/Library/Application Support/BisprBlow/models` moved aside, the installed bundle still lists
+`Qwen3-0.6B-MLX-4bit` and `--clean` returns `"provider":"On-device"` — so a machine that has never
+held weights gets real cleanup rather than silent `ruleClean`.
+
+The copy happens BEFORE `codesign`, because anything added afterwards breaks the seal, and
+`BUNDLE_WEIGHTS` is off by default so ordinary iteration does not build a 400 MB bundle for nothing.
+`searchRoots` still reads `/Library` and still reads home first, so a machine that took the .pkg is
+never asked to download weights it already has, and a hand-placed model still wins over both.
+
+**package.sh stays.** Nothing about the .pkg became wrong — it is still the right shape for a
+/Library install, and the weights-payload verification below is still how you check it. What changed
+is that it is no longer the *only* shape.
+
+**Neither one opens on a stranger's Mac yet, and the .dmg makes that worse rather than better.** A
+disk image downloaded through a browser carries a quarantine flag, so Gatekeeper refuses the app
+outright — the failure is a dialog about an unverified developer, not a warning you can click past.
+That is the missing Developer ID membership, not a packaging bug; do not try to fix it by telling
+people to run `xattr -d com.apple.quarantine`.
 
 **The Fast weights are not deselectable, and that is not timidity.** Fast means the smallest model
 installed, so a machine holding only the 1.7B resolves *Fast* to it as well — the Writing setting
