@@ -2,117 +2,8 @@ import AuthenticationServices
 import Foundation
 import Security
 
-/// The Supabase project every cloud feature talks to, named in exactly one place.
-///
-/// The project is compiled in, and it has to be: both values used to live only in the defaults
-/// domain, which is per-user — so accounts worked on the machine where someone had run `defaults
-/// write` and were silently switched off for everyone who installed the .pkg. `ready` was true
-/// for the author and false for every user, which is the worst shape a feature flag can have.
-/// The anon key belongs in the binary by design: it is publishable, and db/policies.sql gives the
-/// anon role nothing at all.
-///
-/// The defaults keys still win when set, which is how you point a build at another project:
-///
-///     defaults write ai.getbluejay.bisprblow cloudURL https://<project>.supabase.co
-///     defaults write ai.getbluejay.bisprblow cloudAnonKey <anon key>
-///
-/// Setting `cloudURL` to something unparseable is the way to turn accounts off entirely: the app
-/// is then exactly what it was before they existed — signed out, local-only, no network.
-enum CloudConfig {
-    static let defaultURL = "https://qprsavobltijpuhwqrhw.supabase.co"
-    static let defaultAnonKey = "sb_publishable_5gxuMbpd5SWLKPjw4voD4A_Xjzu3ygi"
-
-    static var url: URL? {
-        let stored = AppSettings.shared.cloudURL.trimmingCharacters(in: .whitespaces)
-        let raw = stored.isEmpty ? defaultURL : stored
-        guard let url = URL(string: raw), url.scheme == "https" else { return nil }
-        return url
-    }
-
-    static var anonKey: String {
-        let stored = AppSettings.shared.cloudAnonKey.trimmingCharacters(in: .whitespaces)
-        return stored.isEmpty ? defaultAnonKey : stored
-    }
-
-    static var ready: Bool { url != nil && !anonKey.isEmpty }
-
-    /// The scheme Supabase redirects back to after Google. Declared in Info.plist as a
-    /// CFBundleURLTypes entry, and registered in the project's allowed redirect URLs — the
-    /// redirect is refused by Supabase if it is not on that list.
-    static let callbackScheme = "bisprblow"
-    static var callbackURL: String { "\(callbackScheme)://auth-callback" }
-}
-
-/// Who is signed in, kept in the Keychain — never in UserDefaults, which anything running as the
-/// user can read back as a plist.
-struct CloudSession: Codable {
-    var accessToken: String
-    var refreshToken: String
-    var expiresAt: Date
-    var userID: UUID
-    var email: String
-}
-
-struct CloudOrg: Equatable {
-    let id: UUID
-    let name: String
-    let role: String
-    var isOwner: Bool { role == "owner" }
-}
-
-struct OrgMember: Decodable, Identifiable {
-    let userID: UUID
-    let displayName: String
-    let role: String
-    var id: UUID { userID }
-
-    enum CodingKeys: String, CodingKey {
-        case userID = "user_id", displayName = "display_name", role
-    }
-}
-
-struct LeaderboardRow: Decodable, Identifiable {
-    let userID: UUID
-    let displayName: String
-    let words: Int
-    let wpm: Double?
-    let dayStreak: Int
-    var id: UUID { userID }
-
-    enum CodingKeys: String, CodingKey {
-        case userID = "user_id", displayName = "display_name", words, wpm
-        case dayStreak = "day_streak"
-    }
-}
-
-struct CloudError: LocalizedError {
-    let message: String
-    var errorDescription: String? { message }
-
-    /// Supabase's own messages ("invite code is not valid") are already the right words to show;
-    /// everything else collapses to one generic line, because status codes and endpoint names are
-    /// not information a user acts on.
-    /// The log line is above the parse, not in the fallthrough: a body that *does* carry a message
-    /// is the case that reaches the user, so it is the case worth having a trace of. "Bad Gateway"
-    /// arrived from Supabase's gateway as a parseable message and logged nothing at all. `endpoint`
-    /// is the URL path only — a query string carries the email address.
-    static func from(_ data: Data, status: Int, endpoint: String) -> CloudError {
-        logLine("cloud request failed endpoint=\(endpoint) status=\(status) "
-            + "body=\(String(data: data, encoding: .utf8) ?? "")")
-        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            for key in ["message", "msg", "error_description"] {
-                if let text = object[key] as? String, !text.isEmpty {
-                    return CloudError(message: text)
-                }
-            }
-        }
-        return CloudError(message: "That didn't work. Try again in a moment.")
-    }
-}
-
-/// Auth and PostgREST over URLSession — no SDK, no new dependency. All state lives here:
-/// `session` (persisted to the Keychain) and `org` (fetched, one org per person; the first
-/// joined wins if there are somehow several).
+// Auth and PostgREST over URLSession — no SDK, no new dependency. All state lives here: `session`
+// (persisted to the Keychain) and `org` (one org per person; the first joined wins).
 @MainActor
 final class CloudClient: ObservableObject {
     static let shared = CloudClient()
@@ -126,9 +17,9 @@ final class CloudClient: ObservableObject {
 
     // MARK: - Auth
 
-    /// Whether the project has a Google client configured. The sign-in view hides its Google button
-    /// until this is true, so the button can never be one that cannot succeed. Failing quietly to
-    /// `false` is the right default: a hidden button is a smaller wrong than a broken one.
+    // Whether the project has a Google client configured. The sign-in view hides its Google button
+    // until this is true, so the button can never be one that cannot succeed. Failing quietly to
+    // `false` is right: a hidden button is a smaller wrong than a broken one.
     @Published private(set) var googleEnabled = false
 
     func refreshProviders() async {
@@ -142,16 +33,12 @@ final class CloudClient: ObservableObject {
         googleEnabled = external["google"] as? Bool ?? false
     }
 
-    /// Step one of signing in: an email with a one-time code.
-    ///
-    /// `redirect_to` is here for the *link* half of that email, which we do not ask for and cannot
-    /// stop: GoTrue's Magic Link template renders `{{ .ConfirmationURL }}` unless the project's
-    /// template is changed, and that URL resolves against Site URL — `http://localhost:3000` on an
-    /// untouched project. So the mail arrived pointing at a web server that does not exist, which
-    /// is exactly what Kaleb reported. GoTrue reads this off the query string rather than the body
-    /// (`utilities.GetReferrer`), which is why `auth` takes query items at all. With it the link
-    /// lands on `bisprblow://auth-callback` and `AppDelegate` finishes the sign-in — so both halves
-    /// of the email now work, whichever the template happens to render.
+    // Step one of signing in: an email with a one-time code. `redirect_to` is for the LINK half of
+    // that email, which we do not ask for and cannot stop: GoTrue's Magic Link template renders
+    // `{{ .ConfirmationURL }}` unless the project's template is changed, and that resolves against
+    // Site URL — `http://localhost:3000` on an untouched project. GoTrue reads this off the query
+    // string (`utilities.GetReferrer`), which is why `auth` takes query items at all. With it the
+    // link lands on `bisprblow://auth-callback` and `AppDelegate` finishes the sign-in.
     func requestCode(email: String) async throws {
         _ = try await auth("otp", json: ["email": email, "create_user": true],
                            query: [.init(name: "redirect_to", value: CloudConfig.callbackURL)])
@@ -164,13 +51,10 @@ final class CloudClient: ObservableObject {
         await refreshOrg()
     }
 
-    /// Google, in a system browser sheet. Supabase answers `authorize` with a redirect to Google
-    /// and, once that is done, to `bisprblow://auth-callback` carrying the tokens in the URL
-    /// fragment — so nothing here posts credentials, and the app never sees the password.
-    ///
-    /// Requires a Google client configured in the project's Google provider and this callback in
-    /// its redirect allow-list. Until that exists Supabase answers with an error, which arrives
-    /// as `CloudError` in its own words and leaves the emailed-code path untouched.
+    // Google, in a system browser sheet: Supabase redirects to Google and then to
+    // `bisprblow://auth-callback` with the tokens in the URL fragment, so nothing here posts
+    // credentials. Requires a Google client configured in the project and this callback in its
+    // redirect allow-list; until then Supabase answers with an error in its own words.
     func signInWithGoogle() async throws {
         guard let base = CloudConfig.url else { throw CloudError(message: "Accounts aren't set up.") }
         var components = URLComponents(
@@ -179,19 +63,17 @@ final class CloudClient: ObservableObject {
             .init(name: "provider", value: "google"),
             .init(name: "redirect_to", value: CloudConfig.callbackURL),
         ]
-        // Asked before the sheet opens, because a provider that is not configured answers this URL
-        // with a JSON error *page* rather than a redirect — so without this the user gets a browser
-        // window full of `{"code":400,...}` and closing it looks like they changed their mind.
-        // Measured against the live project while Google was still unconfigured:
-        // "Unsupported provider: provider is not enabled".
+        // Asked before the sheet opens, because an unconfigured provider answers this URL with a
+        // JSON error PAGE rather than a redirect, so the user would get a browser window full of
+        // `{"code":400,...}`. Measured against the live project: "Unsupported provider: provider is
+        // not enabled".
         try await checkProviderEnabled(components.url!)
         try await signIn(callback: try await WebAuth.run(url: components.url!,
                                                          scheme: CloudConfig.callbackScheme))
     }
 
-    /// A `bisprblow://auth-callback` URL becomes a session. Two things arrive here: the tail of the
-    /// Google sheet, and the app being opened by the link in a sign-in email (see `requestCode`).
-    /// One path for both, so a link that works in the browser cannot stop working in the mail.
+    // A `bisprblow://auth-callback` URL becomes a session. Two things arrive here: the tail of the
+    // Google sheet, and the app opened by the link in a sign-in email. One path for both.
     func signIn(callback: URL) async throws {
         let tokens = try Self.tokens(fromCallback: callback)
         let who = try await user(accessToken: tokens.accessToken)
@@ -203,8 +85,8 @@ final class CloudClient: ObservableObject {
         await refreshOrg()
     }
 
-    /// Whether `authorize` will redirect rather than refuse. A success here is Google's own consent
-    /// page, which is exactly what the sheet is about to load anyway.
+    // Whether `authorize` will redirect rather than refuse. A success here is Google's own consent
+    // page, which the sheet is about to load anyway.
     private func checkProviderEnabled(_ url: URL) async throws {
         var request = URLRequest(url: url)
         request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
@@ -215,12 +97,10 @@ final class CloudClient: ObservableObject {
         }
     }
 
-    /// The redirect's fragment, which is where Supabase puts the tokens — `#access_token=...&
-    /// refresh_token=...&expires_in=3600`. An `error_description` arrives the same way and is the
-    /// server's own wording, so it is shown rather than replaced.
-    ///
-    /// Pure and `nonisolated` so SelfCheck can exercise it; it is a parser, and it is the only part
-    /// of the Google path testable without a configured Google client.
+    // The redirect's fragment, where Supabase puts the tokens — `#access_token=...&refresh_token=...
+    // &expires_in=3600`. An `error_description` arrives the same way and is shown as-is. Pure and
+    // `nonisolated` so SelfCheck can exercise it: it is the only part of the Google path testable
+    // without a configured Google client.
     nonisolated static func tokens(fromCallback url: URL) throws
         -> (accessToken: String, refreshToken: String, expiresIn: Double) {
         let fragment = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment ?? ""
@@ -268,8 +148,8 @@ final class CloudClient: ObservableObject {
         SyncEngine.shared.noteOrgChanged()
     }
 
-    /// Issues a code for one teammate's email — the code alone is inert without it (policies.sql).
-    /// Handing the code over is the inviter's job (paste it in Slack); nothing is emailed.
+    // Issues a code for one teammate's email — the code alone is inert without it (policies.sql).
+    // Handing it over is the inviter's job; nothing is emailed.
     func createInvite(email: String) async throws -> String {
         guard let org, let session else { throw CloudError(message: "Join a team first.") }
         let code = Self.newInviteCode()
@@ -293,8 +173,8 @@ final class CloudClient: ObservableObject {
         return try JSONDecoder().decode([OrgMember].self, from: data)
     }
 
-    /// Which org this account belongs to, if any. Safe to call repeatedly; failures leave `org`
-    /// as it was and are logged rather than shown — every caller has a working signed-out state.
+    // Which org this account belongs to, if any. Safe to call repeatedly; failures leave `org` as it
+    // was and are logged rather than shown.
     func refreshOrg() async {
         guard let session else { return }
         do {
@@ -332,8 +212,8 @@ final class CloudClient: ObservableObject {
         return try JSONDecoder().decode([LeaderboardRow].self, from: data)
     }
 
-    /// Batch upsert keyed on the client-minted entry UUID, so retries are free and a push can
-    /// never duplicate a dictation.
+    // Batch upsert keyed on the client-minted entry UUID, so retries are free and a push can never
+    // duplicate a dictation.
     func upsertDictations(_ rows: [[String: Any]]) async throws {
         guard !rows.isEmpty else { return }
         _ = try await rest("POST", "rest/v1/dictations", json: rows,
@@ -348,22 +228,22 @@ final class CloudClient: ObservableObject {
 
     // MARK: - Plumbing
 
-    /// Who the stored session belongs to, read straight from the Keychain. `nonisolated` so
-    /// `--cloud-check` can ask without hopping to the MainActor: `awaitSync` blocks the main thread,
-    /// so a hop there from a CLI path deadlocks outright and reads as a hang, not an error.
+    // Who the stored session belongs to, read straight from the Keychain. `nonisolated` so
+    // `--cloud-check` can ask without hopping to the MainActor: `awaitSync` blocks the main thread,
+    // so a hop from a CLI path deadlocks and reads as a hang.
     nonisolated static func storedSessionEmail() -> String? {
         Keychain.load()
             .flatMap { try? JSONDecoder().decode(CloudSession.self, from: $0) }
             .map(\.email)
     }
 
-    /// 8 characters from an alphabet with no 0/O, 1/I/L — a code someone reads out loud.
+    // 8 characters from an alphabet with no 0/O, 1/I/L — a code someone reads out loud.
     nonisolated static func newInviteCode() -> String {
         let alphabet = Array("23456789ABCDEFGHJKMNPQRSTUVWXYZ")
         return String((0..<8).map { _ in alphabet.randomElement()! })
     }
 
-    /// `unsafe` in name only: ISO8601DateFormatter is documented thread-safe.
+    // `unsafe` in name only: ISO8601DateFormatter is documented thread-safe.
     nonisolated(unsafe) static let iso: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -414,9 +294,8 @@ final class CloudClient: ObservableObject {
         return data
     }
 
-    /// A valid bearer token, refreshed just before it expires. A refresh the server rejects means
-    /// the session is gone (revoked, or long dead), so the app returns to signed out rather than
-    /// wedging every request behind a token that can never work.
+    // A valid bearer token, refreshed just before it expires. A refresh the server rejects means the
+    // session is gone, so the app returns to signed out rather than wedging every request.
     private func accessToken() async throws -> String {
         guard let current = session else { throw CloudError(message: "Sign in first.") }
         if current.expiresAt > Date().addingTimeInterval(60) { return current.accessToken }
@@ -456,9 +335,9 @@ final class CloudClient: ObservableObject {
               email: token.user.email ?? fallbackEmail)
     }
 
-    /// The one place a session is built and stored. The OAuth redirect hands back three token
-    /// values in a URL fragment and no user object at all, so the identity arrives separately —
-    /// which is why this takes the pieces rather than a response body.
+    // The one place a session is built and stored. The OAuth redirect hands back three token values
+    // in a URL fragment and no user object, so the identity arrives separately — which is why this
+    // takes the pieces rather than a response body.
     private func adopt(accessToken: String, refreshToken: String, expiresIn: Double,
                        userID: UUID, email: String) {
         let fresh = CloudSession(accessToken: accessToken,
@@ -470,9 +349,8 @@ final class CloudClient: ObservableObject {
         if let data = try? JSONEncoder().encode(fresh) { Keychain.save(data) }
     }
 
-    /// Who a bare access token belongs to. Asked of the server rather than decoded out of the JWT:
-    /// the payload does carry `sub` and `email`, but reading identity out of a token this app has
-    /// not verified is trusting a string, and this is one request through the same path as the rest.
+    // Who a bare access token belongs to. Asked of the server rather than decoded out of the JWT:
+    // reading identity out of a token this app has not verified is trusting a string.
     private func user(accessToken: String) async throws -> (id: UUID, email: String) {
         guard let base = CloudConfig.url else { throw CloudError(message: "Accounts aren't set up.") }
         var request = URLRequest(url: base.appendingPathComponent("auth/v1/user"))
@@ -487,7 +365,7 @@ final class CloudClient: ObservableObject {
     }
 }
 
-/// One generic-password item holding the session JSON.
+// One generic-password item holding the session JSON.
 private enum Keychain {
     private static var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
@@ -516,13 +394,10 @@ private enum Keychain {
     }
 }
 
-/// `ASWebAuthenticationSession` as one `await`. The session has to outlive the call that starts it
-/// or the sheet closes immediately, and its delegate is a separate object, so both are held here
-/// until the callback lands.
-///
-/// `prefersEphemeralWebBrowserSession` is false on purpose: a signed-in Google in Safari is the
-/// difference between a click and typing a password, and the point of this button is that it is
-/// faster than the emailed code.
+// `ASWebAuthenticationSession` as one `await`. The session has to outlive the call that starts it
+// or the sheet closes immediately, and its delegate is a separate object, so both are held here
+// until the callback lands. `prefersEphemeralWebBrowserSession` is false on purpose: a signed-in
+// Google in Safari is the difference between a click and typing a password.
 @MainActor
 private final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
     private static var live: WebAuth?
