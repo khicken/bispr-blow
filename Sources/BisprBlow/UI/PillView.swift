@@ -176,10 +176,27 @@ struct PillView: View {
             // panel is permanently hover-sized, and a `contentShape(Rectangle())` on it sprang the
             // pill open with the pointer up to 34pt from anything drawn. `PillHitRegion` tracks
             // `capsuleSize`, so it only ever grows while hovering.
-            .contentShape(PillHitRegion(size: capsuleSize,
-                                        alignment: model.anchor.contentAlignment))
-            .onHover { hovering = $0 }
+            .contentShape(hitRegion)
+            // …and `onHover` does NOT respect that shape. It tracks the view's BOUNDS, so the
+            // narrowing above only ever applied to the drag. Measured on rightCentre with the
+            // cursor warped across the panel: the pill opened anywhere in x=1310…1342 and
+            // y=411…513 — the whole 36x110 content box — while the drawn sliver was 9x42 at
+            // x=1333…1342, y=439…481. Nine times the area, all of it invisible.
+            // `onContinuousHover` hands over the pointer, so one shape now decides both.
+            .onContinuousHover { phase in
+                guard case .active(let point) = phase else {
+                    hovering = false
+                    return
+                }
+                hovering = hitRegion.path(in: CGRect(origin: .zero, size: box)).contains(point)
+            }
             .padding(Self.margin)
+    }
+
+    // What is drawn, what can be grabbed, and what opens the pill — one shape, because they were
+    // able to disagree and did.
+    private var hitRegion: PillHitRegion {
+        PillHitRegion(size: capsuleSize, alignment: model.anchor.contentAlignment)
     }
 
     // What rides on the capsule. Only this cross-fades; the shape underneath it morphs.

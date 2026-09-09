@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 // `BisprBlow --self-check`: asserts the text logic that silently loses user words if it breaks.
 // `precondition`, not `assert` — release builds strip asserts.
@@ -392,8 +393,27 @@ enum SelfCheck {
         checkCloudSync()
         checkAccurateResolution()
         checkVersionCompare()
+        checkPillHitRegion()
 
         print("self-check passed")
+    }
+
+    // The pill opens on the sliver you can see, and nothing else. `onHover` ignores
+    // `contentShape`, so for a while the shape below narrowed the drag and left the hover on the
+    // full content box: measured on rightCentre, the pill sprang open with the pointer 23pt to the
+    // left of anything drawn and anywhere down a 103pt strip where 42pt was visible.
+    private static func checkPillHitRegion() {
+        // Idle, side-anchored: a 42x9 sliver parked at the top of a 110x36 box.
+        let box = CGRect(x: 0, y: 0, width: 110, height: 36)
+        let region = PillHitRegion(size: CGSize(width: 42, height: 9), alignment: .top).path(in: box)
+        precondition(region.contains(CGPoint(x: 55, y: 4)), "the middle of the sliver must open it")
+        // The three directions the old bounds-based hover was wrong in, all invisible space.
+        precondition(!region.contains(CGPoint(x: 55, y: 25)), "below the sliver must not")
+        precondition(!region.contains(CGPoint(x: 10, y: 4)), "left of the sliver must not")
+        precondition(!region.contains(CGPoint(x: 100, y: 4)), "right of the sliver must not")
+        // Hovering grows it to the whole row, which is what lets the pointer reach the buttons.
+        let open = PillHitRegion(size: CGSize(width: 110, height: 36), alignment: .top).path(in: box)
+        precondition(open.contains(CGPoint(x: 55, y: 25)), "once open, the whole row holds it open")
     }
 
     // The update banner appears only when this says so, and it is wrong in the direction that
