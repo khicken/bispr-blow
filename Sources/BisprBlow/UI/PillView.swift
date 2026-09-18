@@ -9,6 +9,9 @@ final class PillModel: ObservableObject {
     let onOpenDashboard: (DashboardView.Section) -> Void
     // Reports the pill's drawn size so the panel can shrink to it.
     var onSize: ((CGSize) -> Void)?
+    // Reports the capsule actually on screen, in panel coordinates, so the panel can hand every
+    // point outside it back to the app underneath.
+    var onDrawnRect: ((CGRect) -> Void)?
     // Which edge the pill is parked on. Drives the 90° turn on the side anchors.
     @Published var anchor: RecordingPillController.Anchor = .bottomCentre
     // Screen coordinates of the pointer while dragging the pill to a new place.
@@ -127,6 +130,7 @@ struct PillView: View {
                 Divider()
                 Button("Quit") { NSApp.terminate(nil) }
             }
+            .onChange(of: drawnRect, initial: true) { _, rect in model.onDrawnRect?(rect) }
             .onChange(of: targetSize, initial: true) { _, size in
                 model.onSize?(size)
                 // The panel is now the recording bar's size — the frame the reveal animates from.
@@ -176,10 +180,35 @@ struct PillView: View {
             // panel is permanently hover-sized, and a `contentShape(Rectangle())` on it sprang the
             // pill open with the pointer up to 34pt from anything drawn. `PillHitRegion` tracks
             // `capsuleSize`, so it only ever grows while hovering.
-            .contentShape(PillHitRegion(size: capsuleSize,
-                                        alignment: model.anchor.contentAlignment))
-            .onHover { hovering = $0 }
+            .contentShape(hitRegion)
+            // …and `onHover` does NOT respect that shape. It tracks the view's BOUNDS, so the
+            // narrowing above only ever applied to the drag. Measured on rightCentre with the
+            // cursor warped across the panel: the pill opened anywhere in x=1310…1342 and
+            // y=411…513 — the whole 36x110 content box — while the drawn sliver was 9x42 at
+            // x=1333…1342, y=439…481. Nine times the area, all of it invisible.
+            // `onContinuousHover` hands over the pointer, so one shape now decides both.
+            .onContinuousHover { phase in
+                guard case .active(let point) = phase else {
+                    hovering = false
+                    return
+                }
+                hovering = hitRegion.path(in: CGRect(origin: .zero, size: box)).contains(point)
+            }
             .padding(Self.margin)
+    }
+
+    // What is drawn, what can be grabbed, and what opens the pill — one shape, because they were
+    // able to disagree and did.
+    private var hitRegion: PillHitRegion {
+        PillHitRegion(size: capsuleSize, alignment: model.anchor.contentAlignment)
+    }
+
+    // The same capsule, placed on the panel. The panel is bigger than this in every idle frame, and
+    // a borderless panel takes the clicks on the difference whatever the SwiftUI shape says, so the
+    // controller turns everything outside this rect back into clicks on the app underneath.
+    private var drawnRect: CGRect {
+        model.anchor.panelRect(hitRegion.rect(in: CGRect(origin: .zero, size: box)),
+                               box: box, margin: Self.margin)
     }
 
     // What rides on the capsule. Only this cross-fades; the shape underneath it morphs.
@@ -309,6 +338,12 @@ struct PillHitRegion: Shape {
     let alignment: Alignment
 
     func path(in rect: CGRect) -> Path {
+        Capsule().path(in: self.rect(in: rect))
+    }
+
+    // The same region as a rect. The panel needs it in its own coordinates, and a second copy of
+    // this placement is exactly the kind of duplicate that let the hover and the drag disagree.
+    func rect(in rect: CGRect) -> CGRect {
         let x: CGFloat = switch alignment.horizontal {
         case .leading: rect.minX
         case .trailing: rect.maxX - size.width
@@ -319,7 +354,7 @@ struct PillHitRegion: Shape {
         case .bottom: rect.maxY - size.height
         default: rect.midY - size.height / 2
         }
-        return Capsule().path(in: CGRect(x: x, y: y, width: size.width, height: size.height))
+        return CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 }
 

@@ -33,7 +33,8 @@ final class RecordingPillController {
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.ignoresMouseEvents = false
+        // Click-through until the view reports where the capsule is; see `refreshClickThrough`.
+        panel.ignoresMouseEvents = true
 
         // The panel must be exactly as big as the pill draws: a borderless panel swallows every
         // click in its frame at the window-server level, so a fixed 360x56 panel around a 42x9
@@ -74,6 +75,11 @@ final class RecordingPillController {
         overlay = PlacementOverlayController(model: placement)
         model.onDragChanged = { [weak self] point in self?.dragChanged(to: point) }
         model.onDragEnded = { [weak self] point in self?.dragEnded(at: point) }
+        model.onDrawnRect = { [weak self] rect in
+            self?.drawnRect = rect
+            self?.refreshClickThrough()
+        }
+        installMouseMonitors()
 
         repositionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.reposition()
@@ -91,6 +97,64 @@ final class RecordingPillController {
     private var repositionTimer: Timer?
     private var visibility = Set<AnyCancellable>()
     private var isHidden = false
+
+    // MARK: - Click-through
+
+    // Where the capsule is drawn inside the panel, reported by the view. The panel is much bigger
+    // than this: the idle panel is permanently sized for the hover row (see the note in `init` on
+    // why it cannot be resized on hover), so a 42x9 sliver sits in a 122x48 window.
+    private var drawnRect: CGRect?
+    private var monitors: [Any] = []
+
+    // A borderless panel takes every click inside its frame at the window-server level, whatever
+    // shape SwiftUI hit-tests against, so narrowing `contentShape` stopped the pill OPENING on the
+    // dead space without giving those points back — the app underneath still never saw them. There
+    // is no per-region version of that: a window either takes mouse events or it does not. So the
+    // panel takes them only while the pointer is on the capsule, and is click-through the rest of
+    // the time, which is every point the user cannot see anything at.
+    //
+    // Driven from mouse monitors rather than the view's own hover, because the view stops being
+    // told anything the moment the panel goes click-through — it cannot report the pointer coming
+    // back. `onDrawnRect` re-runs this too, so the panel closes again the moment the pill shrinks
+    // under a pointer that has stopped moving.
+    private func installMouseMonitors() {
+        let types: NSEvent.EventTypeMask = [
+            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+        ]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: types, handler: { [weak self] _ in
+            self?.refreshClickThrough()
+        }) {
+            monitors.append(global)
+        }
+        // The global monitor sees only what goes to other apps, so once the panel is live the
+        // pointer's own movement over it is ours. Returns the event untouched.
+        if let local = NSEvent.addLocalMonitorForEvents(matching: types, handler: { [weak self] event in
+            self?.refreshClickThrough()
+            return event
+        }) {
+            monitors.append(local)
+        }
+    }
+
+    private func refreshClickThrough() {
+        // Placing: the DragGesture is hosted in this panel, so taking its events away mid-gesture
+        // ends the drag on the spot — the same reason the panel fades instead of ordering out.
+        if placement.placing {
+            panel.ignoresMouseEvents = false
+            return
+        }
+        guard let rect = drawnRect else { return }
+        panel.ignoresMouseEvents = !Self.capsule(rect, in: panel.frame).contains(NSEvent.mouseLocation)
+    }
+
+    // The drawn capsule in screen coordinates. The view reports y-down from the panel's top-left;
+    // screens are y-up from the bottom.
+    static func capsule(_ rect: CGRect, in frame: CGRect) -> PillCapsule {
+        PillCapsule(rect: CGRect(x: frame.minX + rect.minX,
+                                 y: frame.maxY - rect.maxY,
+                                 width: rect.width, height: rect.height))
+    }
 
     // Where the user parked the pill. The Dock, the menu bar extras and the frontmost app compete
     // for the same edges, so this is a preference rather than a constant.
@@ -143,6 +207,22 @@ final class RecordingPillController {
             case .leftCentre: NSPoint(x: frame.minX + inset, y: frame.midY - size.height / 2)
             case .rightCentre: NSPoint(x: frame.maxX - size.width - inset, y: frame.midY - size.height / 2)
             }
+        }
+
+        // A rect in the pill's UNROTATED layout box, placed on the panel that draws it. Both are
+        // y-down from the top-left, the way SwiftUI lays out. On a side edge the pill turns 90° and
+        // its panel is the transpose, so the capsule hugging the top of the box comes out against
+        // the parked screen edge: the rect turns with it and swaps its width and height.
+        func panelRect(_ rect: CGRect, box: CGSize, margin: CGFloat) -> CGRect {
+            guard isVertical else { return rect.offsetBy(dx: margin, dy: margin) }
+            let offset = CGPoint(x: rect.midX - box.width / 2, y: rect.midY - box.height / 2)
+            let turned = rotation < 0
+                ? CGPoint(x: offset.y, y: -offset.x)   // -90°, leftCentre
+                : CGPoint(x: -offset.y, y: offset.x)   // +90°, rightCentre
+            let size = CGSize(width: rect.height, height: rect.width)
+            return CGRect(x: box.height / 2 + turned.x - size.width / 2 + margin,
+                          y: box.width / 2 + turned.y - size.height / 2 + margin,
+                          width: size.width, height: size.height)
         }
 
         // Exactly where the pill lands here, so the target the user sees while placing is the shape
@@ -202,6 +282,7 @@ final class RecordingPillController {
         panel.alphaValue = 1
         overlay?.setVisible(false, on: screen)
         model.noteDragEnded()
+        defer { refreshClickThrough() }
         let frame = Self.layoutFrame(screen)
         guard let target = Anchor.containing(point, in: frame), target != anchor else { return }
         anchor = target
@@ -210,6 +291,7 @@ final class RecordingPillController {
         panel.setFrame(NSRect(origin: target.origin(size: settled, in: frame), size: settled),
                        display: true, animate: true)
         panel.contentView?.frame = NSRect(origin: .zero, size: settled)
+        refreshClickThrough()
     }
 
     // Follow the pill's declared size so the panel never claims mouse events the pill cannot use.
@@ -294,10 +376,32 @@ final class RecordingPillController {
         // The 2s reposition timer runs whether or not the pill is meant to be on screen, so without
         // this it would order a hidden pill straight back to the front.
         if !isHidden { panel.orderFrontRegardless() }
+        // The capsule moved with the panel, so what the pointer is over has changed.
+        refreshClickThrough()
+    }
+
+    deinit {
+        monitors.forEach(NSEvent.removeMonitor)
     }
 
     func setHidden(_ hidden: Bool) {
         isHidden = hidden
         if hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+    }
+}
+
+// A rect with fully rounded ends: the shape `PillHitRegion` draws, in screen coordinates. The
+// corners matter, because on the open row they are 18pt of panel that is not pill. Named rather
+// than reusing SwiftUI's `Capsule`, which is a view and cannot answer this.
+struct PillCapsule {
+    let rect: CGRect
+
+    func contains(_ point: CGPoint) -> Bool {
+        guard rect.contains(point) else { return false }
+        let radius = min(rect.width, rect.height) / 2
+        // Inside the straight middle, or inside one of the two end circles.
+        let x = min(max(point.x, rect.minX + radius), rect.maxX - radius)
+        let y = min(max(point.y, rect.minY + radius), rect.maxY - radius)
+        return hypot(point.x - x, point.y - y) <= radius
     }
 }
