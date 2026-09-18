@@ -62,12 +62,24 @@ class InProcessEngine:
         return reply["content"]
 
 
-def app_prompts():
-    """Both prompt variants the app sends, {"default": [...], "lowTouch": [...]}."""
+def app_prompts(override=None):
+    """Both prompt variants the app sends, {"default": [...], "lowTouch": [...]}.
+
+    `override` is a JSON file of the same shape, so a prompt can be measured without rebuilding
+    the app. A file that carries only one variant keeps the binary's own for the other, which is
+    what lets a sweep change the coding prompt alone and still score the chat cases fairly.
+    """
     if not BINARY.exists():
         raise SystemExit(f"build first: ./build.sh  (missing {BINARY})")
     out = subprocess.run([str(BINARY), "--print-prompt"], capture_output=True, text=True)
-    return json.loads(out.stdout)
+    prompts = json.loads(out.stdout)
+    if override:
+        supplied = json.loads(Path(override).read_text())
+        unknown = set(supplied) - set(prompts)
+        if unknown:
+            raise SystemExit(f"unknown prompt variant(s): {sorted(unknown)}")
+        prompts.update(supplied)
+    return prompts
 
 
 def is_low_touch(case):
@@ -199,16 +211,21 @@ def main():
                         help="inprocess drives the binary's --complete loop instead of LM Studio")
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--out", default=str(Path(__file__).parent / "results.md"))
+    parser.add_argument("--prompt-file",
+                        help="JSON of {default: [...], lowTouch: [...]} replacing the binary's")
+    parser.add_argument("--cases", default=str(Path(__file__).parent / "cases.json"))
+    parser.add_argument("--label", help="names the run in the report header")
     args = parser.parse_args()
 
-    cases = json.loads((Path(__file__).parent / "cases.json").read_text())
-    prompts = app_prompts()
+    cases = json.loads(Path(args.cases).read_text())
+    prompts = app_prompts(args.prompt_file)
     engine = InProcessEngine() if args.engine == "inprocess" else None
     models = args.models or (engine.models() if engine else loaded_models())
     def deadline(case):
         return min(2500, args.deadline_base + args.deadline_per_word * len(case["raw"].split()))
 
-    print(f"{len(models)} model(s), {len(cases)} cases, {args.reps} reps, nothink={args.nothink}, "
+    print(f"{args.label or 'app prompt'}: {len(models)} model(s), {len(cases)} cases, "
+          f"{args.reps} reps, nothink={args.nothink}, "
           f"deadline={args.deadline_base}ms+{args.deadline_per_word}ms/word\n")
 
     rows, details = [], []
