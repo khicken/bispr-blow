@@ -29,6 +29,35 @@ Build, install, and relaunch with `./build.sh`. It installs one copy to
 Run `.build/release/BisprBlow --self-check` after touching the cleanup or
 dictionary text logic.
 
+## Shipping rules
+
+One person uses this app and one person writes it, so there is no reviewer to wait
+for and no branch to protect. Finish a change, review it, push it to main. A commit
+sitting on a local branch helps nobody here, and the longer it sits the more the
+next change has to reason around it.
+
+Before pushing, run `./build.sh` and `.build/release/BisprBlow --self-check`, then
+launch a code review subagent over the diff. Its brief is narrow on purpose:
+
+- Cut the change to the smallest thing that does the job. A line that is not needed
+  to make it work is a line to delete.
+- Reuse what is already here. A second way to do something the app already does is
+  the debt, whatever it costs to write.
+- Take out what the change replaced. A superseded function, setting, or comment left
+  behind is what makes the next reader guess which one is live.
+- Every comment must say something the code cannot. Delete the rest.
+- Name the dead ends. An abstraction with one caller, a flag nobody sets, a guard
+  that cannot fire.
+
+It is a reviewer, not an author: it reports, and the findings get fixed before the
+push, not after. If it finds nothing, push. Push to main directly, with no pull
+request and no waiting to be asked. Do not push a build that fails, a self-check
+that fails, or a change whose findings are still open.
+
+The exceptions are anything the user has to judge rather than read: a new UI
+surface, a change to what gets inserted at the cursor, or anything touching signing,
+packaging, or the accounts endpoints. Those stop for them.
+
 ## UI rules
 
 The person using this app is dictating, not administering it. Most of them will
