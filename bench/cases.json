@@ -422,5 +422,52 @@
   ],
   "retain": 0.7,
   "note": "Real dictation: 'X underscore audio' survived as words. The symbols rule had no underscore example, and at 0.6B the examples are the rule."
+ },
+ {
+  "name": "mishear_frontend_link",
+  "app": "Claude (coding)",
+  "raw": "what's the front number through on the cycle",
+  "must_include": [
+   "frontend",
+   "locally"
+  ],
+  "must_exclude": [
+   "front number",
+   "cycle"
+  ],
+  "retain": 0.2,
+  "note": "Reported live. Spoken: 'what's the frontend link to run this locally?'. The recognizer lost the words, so repairing this needs the cleanup stage to guess from acoustic neighbours."
+ },
+ {
+  "name": "mishear_control_plain",
+  "app": "Claude (coding)",
+  "raw": "can you check the front door is locked before you leave",
+  "must_include": [
+   "front door",
+   "locked"
+  ],
+  "must_exclude": [
+   "frontend",
+   "locally"
+  ],
+  "retain": 0.8,
+  "note": "Negative control for the repair cases. Same acoustic neighbourhood, nothing wrong with it. A prompt that repairs mishears must leave this alone."
+ },
+ {
+  "name": "mishear_dev_prod",
+  "app": "Terminal (coding)",
+  "raw": "push it to proud not devin and then check the mid where sentry",
+  "must_include": [
+   "prod",
+   "dev",
+   "middleware",
+   "Sentry"
+  ],
+  "must_exclude": [
+   "proud",
+   "devin"
+  ],
+  "retain": 0.4,
+  "note": "The mishears named in long_ramble, as their own case: dev/prod heard as devin/proud, middleware as 'mid where'."
  }
 ]
