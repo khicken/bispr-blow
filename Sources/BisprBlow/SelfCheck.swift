@@ -394,6 +394,7 @@ enum SelfCheck {
         checkAccurateResolution()
         checkVersionCompare()
         checkPillHitRegion()
+        checkPillClickThrough()
 
         print("self-check passed")
     }
@@ -414,6 +415,43 @@ enum SelfCheck {
         // Hovering grows it to the whole row, which is what lets the pointer reach the buttons.
         let open = PillHitRegion(size: CGSize(width: 110, height: 36), alignment: .top).path(in: box)
         precondition(open.contains(CGPoint(x: 55, y: 25)), "once open, the whole row holds it open")
+    }
+
+    // Every point of the panel the pill is not drawn on belongs to the app underneath. A borderless
+    // panel takes all of them at the window-server level, so the pill lives in a window nine times
+    // its own area and the difference has to be handed back by turning the whole panel
+    // click-through. This checks the two halves of that: where the capsule sits on the panel, and
+    // whether a screen point is on it.
+    private static func checkPillClickThrough() {
+        let box = CGSize(width: 110, height: 36)
+        let sliver = PillHitRegion(size: CGSize(width: 42, height: 9), alignment: .bottom)
+            .rect(in: CGRect(origin: .zero, size: box))
+        // Parked at the bottom: the panel is the box plus a 6pt shadow margin, and the sliver sits
+        // against the bottom of it.
+        let flat = RecordingPillController.Anchor.bottomCentre.panelRect(sliver, box: box, margin: 6)
+        precondition(flat == CGRect(x: 40, y: 33, width: 42, height: 9), "\(flat)")
+        // Parked on the right: the pill turns 90°, so the same sliver is 9 wide and 42 tall, and it
+        // hugs the right edge of a 48x122 panel rather than the bottom of a 122x48 one.
+        let top = PillHitRegion(size: CGSize(width: 42, height: 9), alignment: .top)
+            .rect(in: CGRect(origin: .zero, size: box))
+        let right = RecordingPillController.Anchor.rightCentre.panelRect(top, box: box, margin: 6)
+        precondition(right == CGRect(x: 33, y: 40, width: 9, height: 42), "\(right)")
+        // …and the left edge is its mirror, 6pt in from the other side.
+        let left = RecordingPillController.Anchor.leftCentre.panelRect(top, box: box, margin: 6)
+        precondition(left == CGRect(x: 6, y: 40, width: 9, height: 42), "\(left)")
+
+        // A panel parked bottom-centre, 122x48, with its bottom-left corner at (500, 100).
+        let frame = CGRect(x: 500, y: 100, width: 122, height: 48)
+        let capsule = RecordingPillController.capsule(flat, in: frame)
+        // The sliver is the bottom 9pt of the panel, and screen y runs the other way.
+        precondition(capsule.contains(CGPoint(x: 561, y: 110)), "the middle of the sliver is the pill")
+        // The dead space this whole change exists to give back: above the sliver, and out to either
+        // side of it, all of it inside the panel and none of it drawn.
+        precondition(!capsule.contains(CGPoint(x: 561, y: 135)), "25pt above the sliver is not")
+        precondition(!capsule.contains(CGPoint(x: 510, y: 110)), "left of the sliver is not")
+        precondition(!capsule.contains(CGPoint(x: 615, y: 110)), "right of the sliver is not")
+        // The rounded ends are not corners: the far corner of the sliver's own rect misses it.
+        precondition(!capsule.contains(CGPoint(x: 540.2, y: 106.2)), "the capsule ends are round")
     }
 
     // The update banner appears only when this says so, and it is wrong in the direction that
