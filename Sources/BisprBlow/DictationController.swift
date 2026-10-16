@@ -39,12 +39,37 @@ final class DictationController: ObservableObject {
     private var sessionGeneration = 0
     // Set by the "dictate and send" binding: press Return once the text is in.
     private var sendEnter = false
-    // Set by the "voice command" binding: act on the app that was in front at the press.
-    private var commandApp: NSRunningApplication?
+    // A voice-command session runs what was said each time the speaker pauses, so a held press runs
+    // one command and a double-tapped one stays on and keeps acting until it is tapped off.
+    private var isCommand = false
+    // Settled words not yet run, and whether any arrived: the SFSpeechRecognizer fallback never
+    // settles anything mid-session, so its whole transcript runs at release instead.
+    private var commandPending = ""
+    private var commandSettledAny = false
+    private var commandSnapshot = ""
+    private var commandHeardAt = Date()
+    private var commandPauseTimer: Timer?
+    private var commandQueue: Task<Void, Never>?
+    // Bumped by Esc and by every new session; a queued command checks it before each step, since
+    // cancelling the newest Task does not reach the ones it is waiting behind.
+    private var commandEpoch = 0
+    private static let commandPause: TimeInterval = 0.8
 
     func start() {
         transcriber.onPartial = { [weak self] text in
-            self?.partialText = text
+            guard let self else { return }
+            partialText = text
+            // Settling repeats the same words; only new words mean the speaker is still talking.
+            if isCommand, text != commandSnapshot {
+                commandSnapshot = text
+                commandHeardAt = Date()
+            }
+        }
+        transcriber.onFinal = { [weak self] settled in
+            guard let self, isCommand, !settled.isEmpty else { return }
+            // Settled chunks arrive trimmed, so "go to" and "LinkedIn" need their space put back.
+            commandPending += commandPending.isEmpty ? settled : " " + settled
+            commandSettledAny = true
         }
         monitor.onStart = { [weak self] action in
             Task { @MainActor in self?.beginRecording(action) }
@@ -129,7 +154,17 @@ final class DictationController: ObservableObject {
         ActivationTrace.mark("onStart")
         sessionGeneration += 1
         sendEnter = action == .pressEnter
-        commandApp = action == .command ? NSWorkspace.shared.frontmostApplication : nil
+        isCommand = action == .command
+        if isCommand {
+            commandPending = ""
+            commandSettledAny = false
+            commandSnapshot = ""
+            commandHeardAt = Date()
+            commandEpoch += 1
+            commandPauseTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.runCommandIfPaused() }
+            }
+        }
         capturedContext = ContextDetector.current()
         let device = AudioRecorder.currentInputDeviceName()
         if device != UserDefaults.standard.string(forKey: "lastMicName") {
@@ -173,6 +208,7 @@ final class DictationController: ObservableObject {
                 try recorder.start()
             } catch {
                 self.lastError = "Microphone unavailable: \(error.localizedDescription)"
+                self.endCommandSession(runningRestOf: nil)
                 self.state = .idle
                 return
             }
@@ -195,6 +231,7 @@ final class DictationController: ObservableObject {
         // left the pill spinning until the app was force-quit. Silence is a failure the user has to
         // be told about.
         guard recorder.capturedFrames > 0 else {
+            endCommandSession(runningRestOf: nil)
             logLine("dictation discarded: no audio captured")
             sessionGeneration += 1
             Task { await transcriber.cancelSession() }
@@ -207,19 +244,21 @@ final class DictationController: ObservableObject {
 
         let context = capturedContext ?? ContextDetector.current()
         let generation = sessionGeneration
+        // Captured now: Esc while this finalizes ends the session, and must not turn a command into typed text.
+        let wasCommand = isCommand
         Task {
             let released = Date()
             let raw = await transcriber.finishSession()
             let transcribeMs = Date().timeIntervalSince(released) * 1000
             guard self.sessionGeneration == generation else { return }
-            guard !raw.isEmpty else {
+            if wasCommand {
+                self.endCommandSession(runningRestOf: raw)
+                await self.commandQueue?.value
                 self.state = .idle
                 self.partialText = ""
                 return
             }
-            if let app = self.commandApp {
-                self.commandApp = nil
-                await self.runCommand(raw, in: app)
+            guard !raw.isEmpty else {
                 self.state = .idle
                 self.partialText = ""
                 return
@@ -259,6 +298,10 @@ final class DictationController: ObservableObject {
 
     private func cancelRecording() {
         CorrectionWatcher.cancel()
+        // Esc stops a command session outright, including commands heard but not yet run.
+        commandEpoch += 1
+        commandQueue?.cancel()
+        endCommandSession(runningRestOf: nil)
         guard case .recording = state else { return }
         sessionGeneration += 1
         recorder.stop()
@@ -323,47 +366,96 @@ final class DictationController: ObservableObject {
         }
     }
 
+    private func runCommandIfPaused() {
+        guard Date().timeIntervalSince(commandHeardAt) >= Self.commandPause,
+              !VoiceCommand.isUnfinished(commandPending) else { return }
+        queueCommand(commandPending)
+        commandPending = ""
+    }
+
+    private func queueCommand(_ said: String) {
+        let said = VoiceCommand.withoutLeadingJoint(said)
+        guard !said.isEmpty else { return }
+        let previous = commandQueue, epoch = commandEpoch
+        commandQueue = Task { [weak self] in
+            await previous?.value
+            await self?.runCommand(said, epoch: epoch)
+        }
+    }
+
+    // Release runs whatever has settled since the last pause; the fallback recognizer, which
+    // settles nothing early, hands over its whole transcript here.
+    private func endCommandSession(runningRestOf heard: String?) {
+        commandPauseTimer?.invalidate()
+        commandPauseTimer = nil
+        if isCommand, let heard { queueCommand(commandSettledAny ? commandPending : heard) }
+        commandPending = ""
+        isCommand = false
+    }
+
     // The front app's screen is read, one element in it is acted on, and anything Jev is unsure of
     // is asked about rather than done. Labels stay out of the log: they are someone's screen.
-    private func runCommand(_ spoken: String, in app: NSRunningApplication) async {
+    private func runCommand(_ spoken: String, epoch: Int) async {
         guard AppSettings.shared.voiceCommands else {
             showNotice("Turn on Voice commands in Settings")
             return
         }
+        for (index, step) in VoiceCommand.steps(in: spoken).enumerated() {
+            // The last step changed the screen; the app needs a beat to draw it before it is read again.
+            if index > 0 { try? await Task.sleep(for: .milliseconds(400)) }
+            guard epoch == commandEpoch, let app = NSWorkspace.shared.frontmostApplication,
+                  await runStep(step, in: app, epoch: epoch)
+            else { return }
+        }
+    }
+
+    // True when the step was done; false when it was asked about or failed, which ends the chain.
+    private func runStep(_ spoken: String, in app: NSRunningApplication, epoch: Int) async -> Bool {
         let readStarted = Date()
         let elements = await Task.detached { ScreenElements.read(app: app) }.value
+        guard epoch == commandEpoch else { return false }
         let readMs = Int(Date().timeIntervalSince(readStarted) * 1000)
         if let target = VoiceCommand.appNamed(in: spoken, among: elements) {
             logLine("command app-switch read=\(readMs)ms")
-            if !VoiceCommand.perform(target, spoken: spoken) { showNotice("Couldn't switch to \(target.label)") }
-            return
+            guard VoiceCommand.perform(target, spoken: spoken) else {
+                showNotice("Couldn't switch to \(target.label)")
+                return false
+            }
+            return true
         }
         do {
             let pickStarted = Date()
             let pick = try await VoiceCommand.pick(spoken, among: elements, appName: app.localizedName ?? "the app in front")
+            guard epoch == commandEpoch else { return false }
             logLine("command read=\(readMs)ms jev=\(Int(Date().timeIntervalSince(pickStarted) * 1000))ms choices=\(elements.count) confidence=\(pick.confidence)")
             guard pick.confidence >= VoiceCommand.confidentEnough, !VoiceCommand.needsConfirmation(pick.element) else {
                 let pid = app.processIdentifier
                 showNotice("\(pick.confidence >= VoiceCommand.confidentEnough ? "Press" : "Did you mean") \(pick.element.label)?", for: 8,
                            action: ("Do it", { [weak self] in
                                // The element belongs to the app the command was said in; elsewhere it presses nothing sensible.
-                               guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                               guard epoch == self?.commandEpoch,
+                                     NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
                                      VoiceCommand.perform(pick.element, spoken: spoken)
                                else { self?.showNotice("Couldn't do that: \(pick.element.label)"); return }
                            }))
-                return
+                return false
             }
-            if !VoiceCommand.perform(pick.element, spoken: spoken) {
+            guard VoiceCommand.perform(pick.element, spoken: spoken) else {
                 showNotice("Couldn't do that: \(pick.element.label)")
+                return false
             }
+            return true
         } catch VoiceCommand.Failure.noKey {
             showNotice("Voice commands need a TypeSafe key in your Keychain")
         } catch VoiceCommand.Failure.keyRejected {
             showNotice("TypeSafe rejected the key in your Keychain")
         } catch {
+            // Esc cancels the request in flight; that is the user stopping, not Jev failing.
+            guard epoch == commandEpoch else { return false }
             logLine("command failed error=\(error.localizedDescription)")
             showNotice("Couldn't reach Jev")
         }
+        return false
     }
 
     // MARK: - Permissions
