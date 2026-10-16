@@ -139,7 +139,6 @@ private struct LeaderRow: View {
     let rank: Int
     let row: LeaderboardRow
     let isMe: Bool
-    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -148,13 +147,7 @@ private struct LeaderRow: View {
                 .monospacedDigit()
                 .foregroundStyle(rank == 1 ? Theme.blue : Theme.inkSubtle)
                 .frame(width: 22, alignment: .center)
-            ZStack {
-                Circle().fill(Theme.blueSoft)
-                Text(String(row.displayName.prefix(1)).uppercased())
-                    .font(.bj(12.5, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-            }
-            .frame(width: 28, height: 28)
+            InitialCircle(letter: String(row.displayName.prefix(1)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(isMe ? "\(row.displayName) (you)" : row.displayName)
                     .font(.bj(13, weight: .medium))
@@ -191,8 +184,5 @@ private struct LeaderRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10)
             .fill(isMe ? Theme.blueSoft : Theme.tableHeader))
-        .scaleEffect(hovering ? 1.008 : 1)
-        .onHover { hovering = $0 }
-        .animation(.bjHover, value: hovering)
     }
 }

@@ -167,7 +167,7 @@ struct ShortcutSheet: View {
                                 // describing it. It lands when you let go.
                                 if let holding {
                                     KeyCap(text: holding.display)
-                                    Text("release to save")
+                                    Text("Release to save")
                                         .font(.bj(12))
                                 } else {
                                     // The dot belongs to the waiting state only: once you are
@@ -211,12 +211,11 @@ struct ShortcutSheet: View {
                 // Always present, dimmed when there is nothing to undo. Appearing only once the
                 // bindings differed made the footer gain a control the first time you edited
                 // anything, changing the row you were reading under you.
-                Button("Reset to default") {
+                Button("Reset") {
                     settings.resetToDefault(action)
                 }
                 .buttonStyle(QuietButtonStyle())
                 .disabled(bindings == action.defaults)
-                .opacity(bindings == action.defaults ? 0.35 : 1)
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(CapsuleButtonStyle())

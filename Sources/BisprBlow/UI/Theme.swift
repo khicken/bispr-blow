@@ -195,13 +195,19 @@ enum Theme {
             : NSAppearance(named: appearance.isDark ? .darkAqua : .aqua)
     }
 
-    static func logo(_ name: String) -> NSImage? { asset(name, extension: "svg") }
+    // A copy of the cached logo: the menu bar sets `isTemplate` and `size` on the one it gets.
+    static func logo(_ name: String) -> NSImage? {
+        cached(name, extension: "svg")?.copy() as? NSImage
+    }
 
     // Brand imagery. Cached: these are photographs, and a SwiftUI body can run many times a second.
-    static func image(_ name: String) -> NSImage? {
-        if let hit = imageCache[name] { return hit }
-        let loaded = asset(name, extension: "jpg")
-        imageCache[name] = loaded
+    static func image(_ name: String) -> NSImage? { cached(name, extension: "jpg") }
+
+    private static func cached(_ name: String, extension ext: String) -> NSImage? {
+        let key = "\(name).\(ext)"
+        if let hit = imageCache[key] { return hit }
+        let loaded = asset(name, extension: ext)
+        imageCache[key] = loaded
         return loaded
     }
 
@@ -240,17 +246,16 @@ extension Appearance {
     static var current: Appearance { AppSettings.shared.appearance }
 }
 
-// Uppercase micro-label for section headers.
+// Section header, in sentence case.
 struct SectionLabel: View {
     var themeID = Appearance.current
     let text: String
     init(_ text: String) { self.text = text }
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.bj(10.5, weight: .semibold))
-            .tracking(0.9)
-            .foregroundStyle(Theme.inkSubtle)
+        Text(text)
+            .font(.bj(12, weight: .semibold))
+            .foregroundStyle(Theme.inkTertiary)
     }
 }
 
@@ -273,9 +278,11 @@ extension View {
     // Fade + rise on first appearance; `delay` staggers siblings.
     func appearIn(_ delay: Double = 0) -> some View { modifier(AppearIn(delay: delay)) }
 
-    // Pointing-hand cursor over this view.
-    func handCursor() -> some View {
-        overlay(HandCursorRect().allowsHitTesting(false))
+    // Pointing-hand cursor over this view. Off for a disabled control.
+    func handCursor(_ enabled: Bool = true) -> some View {
+        overlay {
+            if enabled { HandCursorRect().allowsHitTesting(false) }
+        }
     }
 }
 
@@ -325,17 +332,31 @@ struct CapsuleButtonStyle: ButtonStyle {
     var tint: Color = Theme.blue
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.bj(13, weight: .medium))
-            .foregroundStyle(filled ? .white : Theme.ink)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
-            .background(Capsule().fill(filled ? tint : Theme.surfaceActive))
-            .contentShape(Capsule())
-            .handCursor()
-            .opacity(configuration.isPressed ? 0.8 : 1)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(.bjSnap, value: configuration.isPressed)
+        Styled(configuration: configuration, filled: filled, tint: tint)
+    }
+
+    // A View reads `isEnabled` reliably; a ButtonStyle property does not.
+    private struct Styled: View {
+        var themeID = Appearance.current
+        let configuration: ButtonStyleConfiguration
+        let filled: Bool
+        let tint: Color
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.bj(13, weight: .medium))
+                .foregroundStyle(filled ? .white : Theme.ink)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .background(Capsule().fill(filled ? tint : Theme.surfaceActive))
+                .contentShape(Capsule())
+                .handCursor(isEnabled)
+                .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
+                .scaleEffect(configuration.isPressed ? 0.95 : 1)
+                .animation(.bjSnap, value: configuration.isPressed)
+                .animation(.bjHover, value: isEnabled)
+        }
     }
 }
 
@@ -343,19 +364,30 @@ struct CapsuleButtonStyle: ButtonStyle {
 struct QuietButtonStyle: ButtonStyle {
     var themeID = Appearance.current
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.bj(12))
-            .foregroundStyle(Theme.inkSubtle)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(configuration.isPressed ? Theme.surfaceActive : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 6))
-            .handCursor()
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.bjSnap, value: configuration.isPressed)
+        Styled(configuration: configuration)
+    }
+
+    private struct Styled: View {
+        var themeID = Appearance.current
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.bj(12))
+                .foregroundStyle(Theme.inkSubtle)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(configuration.isPressed ? Theme.surfaceActive : .clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .handCursor(isEnabled)
+                .opacity(isEnabled ? 1 : 0.4)
+                .scaleEffect(configuration.isPressed ? 0.94 : 1)
+                .animation(.bjSnap, value: configuration.isPressed)
+        }
     }
 }
 
