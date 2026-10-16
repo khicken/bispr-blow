@@ -83,11 +83,6 @@ final class DictationController: ObservableObject {
         }
     }
 
-    var isLocked: Bool {
-        if case .recording(let locked) = state { return locked }
-        return false
-    }
-
     // `--pill-demo` only: replays a release transition with no mic, no model and no event tap, so
     // the pill's animation can be measured instead of described.
     func demoState(_ state: State) { self.state = state }

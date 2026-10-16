@@ -401,10 +401,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    @objc private func openDashboard() {
-        dashboard.show()
-    }
-
     // The sign-in link in the emailed code lands here — `bisprblow://auth-callback` with the tokens
     // in the fragment (registered via CFBundleURLTypes). The Google sheet does not:
     // `ASWebAuthenticationSession` intercepts its own callback. A failure shows the dashboard
