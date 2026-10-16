@@ -61,7 +61,7 @@ final class DictationController: ObservableObject {
         // Until Accessibility is granted, auto-insert and shortcut interception are degraded —
         // keep a persistent hint on the pill and clear it the moment the grant lands.
         if !AXIsProcessTrusted() {
-            notice = "Grant Accessibility for auto-insert"
+            notice = "Allow Accessibility to insert text"
             axPollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, AXIsProcessTrusted() else { return }

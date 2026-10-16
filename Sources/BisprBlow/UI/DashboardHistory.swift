@@ -5,16 +5,17 @@ import SwiftUI
 
 struct HistoryView: View {
     @ObservedObject var history: HistoryStore
+    @State private var confirmClear = false
 
     var body: some View {
         Page(title: "History") {
             if history.entries.isEmpty {
-                EmptyHint(text: "Dictations show up here.")
+                EmptyHint(text: "No dictations yet. \(AppSettings.shared.holdHint).")
             } else {
                 HStack {
-                    SectionLabel("\(history.entries.count) dictations")
+                    SectionLabel(history.entries.count == 1 ? "1 dictation" : "\(history.entries.count) dictations")
                     Spacer()
-                    Button("Clear all") { history.clear() }
+                    Button("Clear all") { confirmClear = true }
                         .buttonStyle(QuietButtonStyle())
                 }
                 VStack(spacing: 6) {
@@ -28,6 +29,12 @@ struct HistoryView: View {
                 }
                 .animation(.bjSnap, value: history.entries.map(\.id))
             }
+        }
+        .alert("Clear all dictations?", isPresented: $confirmClear) {
+            Button("Clear all", role: .destructive) { history.clear() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can't be undone.")
         }
     }
 }
@@ -85,8 +92,8 @@ struct HistoryRow: View {
         )
         .contentShape(Rectangle())
         .handCursor()
-        .scaleEffect(copied ? 0.99 : hovering ? 1.02 : 1)
-        .shadow(color: Theme.ink.opacity(hovering ? 0.10 : 0), radius: hovering ? 12 : 7, y: hovering ? 5 : 2)
+        .scaleEffect(copied ? 0.99 : hovering ? 1.008 : 1)
+        .shadow(color: Theme.ink.opacity(hovering ? 0.08 : 0), radius: 10, y: 4)
         .onTapGesture {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(entry.cleaned, forType: .string)

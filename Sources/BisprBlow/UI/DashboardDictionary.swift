@@ -38,6 +38,7 @@ struct DictionaryView: View {
     @State private var recentFirst = false
     @State private var generating = false
     @State private var note: String?
+    @State private var confirmClear = false
     @AppStorage("dictionaryIntroDismissed") private var introDismissed = false
     private let cleaner = LLMCleaner()
 
@@ -72,6 +73,14 @@ struct DictionaryView: View {
             terms
             packs
         }
+        .alert("Clear the dictionary?", isPresented: $confirmClear) {
+            Button("Clear all", role: .destructive) {
+                withAnimation(.bjSnap) { settings.dictionary = [] }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can't be undone.")
+        }
     }
 
     // MARK: Intro
@@ -81,12 +90,10 @@ struct DictionaryView: View {
     private var intro: some View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 11) {
-                (Text("It spells the way ")
-                 + Text("you").italic()
-                 + Text(" do."))
+                Text("Teach it your words")
                     .font(.bj(29, weight: .semibold, design: .serif))
                     .foregroundStyle(.white)
-                Text("Add the names, tools, and jargon you say out loud and BisprBlow will spell them right instead of guessing. Teammate names come from the Team page.")
+                Text("Add the names, tools, and jargon you say often.")
                     .font(.bj(13))
                     .foregroundStyle(.white.opacity(0.82))
                     .lineSpacing(2.5)
@@ -108,7 +115,7 @@ struct DictionaryView: View {
             .padding(26)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(introBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             Button {
                 withAnimation(.bjSoft) { introDismissed = true }
@@ -159,11 +166,11 @@ struct DictionaryView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                TextField("Add a word or a name, or several separated by commas", text: $newWord)
+                TextField("Add words, separated by commas", text: $newWord)
                     .textFieldStyle(.plain)
                     .font(.bj(13))
                     .padding(10)
-                    .background(fieldBackground)
+                    .background(FieldBackground())
                     .onSubmit(addWord)
                 // Return adds the literal words. Asking a model for thirty terms is slower to do by
                 // accident, so it costs a click.
@@ -180,7 +187,7 @@ struct DictionaryView: View {
                         } else {
                             Image(systemName: "sparkles").font(.bj(10.5))
                         }
-                        Text("Add the words people use around “\(topic)”")
+                        Text("Add words related to “\(topic)”")
                             .font(.bj(12))
                     }
                     .foregroundStyle(generating ? Theme.inkSubtle : Theme.blue)
@@ -189,7 +196,7 @@ struct DictionaryView: View {
                 .buttonStyle(.plain)
                 .handCursor()
                 .disabled(generating)
-                .help("Asks the local model which words people use when they talk about this, and adds them all.")
+                .help("Asks the local model for related terms.")
                 .padding(.leading, 2)
                 .transition(.opacity)
             }
@@ -225,24 +232,22 @@ struct DictionaryView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(fieldBackground)
+                    .background(FieldBackground())
                     Button(recentFirst ? "Newest" : "A–Z") {
                         withAnimation(.bjSnap) { recentFirst.toggle() }
                     }
                     .buttonStyle(QuietButtonStyle())
                     .help(recentFirst ? "Sort alphabetically" : "Sort newest first")
-                    Button("Clear all") {
-                        withAnimation(.bjSnap) { settings.dictionary = [] }
-                    }
+                    Button("Clear all") { confirmClear = true }
                     .buttonStyle(QuietButtonStyle())
                 }
             }
             .animation(.bjSoft, value: listIsLong)
 
             if settings.dictionary.isEmpty {
-                EmptyHint(text: "Nothing here yet. Add a word, or start from a pack below.")
+                EmptyHint(text: "No words yet. Add one or pick a pack.")
             } else if shown.isEmpty {
-                Text("No term matches “\(search)”.")
+                Text("No matches for “\(search)”.")
                     .font(.bj(13))
                     .foregroundStyle(Theme.inkTertiary)
                     .padding(.vertical, 6)
@@ -254,10 +259,12 @@ struct DictionaryView: View {
                     rows(trailingInset: 10)
                 }
                 .frame(height: 340)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tableHeader))
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tableHeader))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
                 rows()
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tableHeader))
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tableHeader))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
         }
     }
@@ -279,7 +286,7 @@ struct DictionaryView: View {
     // no typing, which is why they stay on the page rather than folding into the field above.
     private var packs: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SectionLabel("Starter packs")
+            SectionLabel("Packs")
             WrapStack(spacing: 8) {
                 ForEach(VocabPacks.all, id: \.name) { pack in
                     let missing = missingCount(pack.terms)
@@ -302,12 +309,6 @@ struct DictionaryView: View {
                 }
             }
         }
-    }
-
-    private var fieldBackground: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(Theme.field)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
     }
 
     private func missingCount(_ terms: [String]) -> Int {
@@ -341,9 +342,9 @@ struct DictionaryView: View {
             let added = settings.dictionary.count - before
             note = switch added {
             case 0 where terms.isEmpty:
-                "No model reachable. Start LM Studio and try this again."
+                "No model running. Start LM Studio and try again."
             case 0:
-                "Every term for “\(topic)” is already in the dictionary."
+                "All terms for “\(topic)” are already here."
             default:
                 nil
             }

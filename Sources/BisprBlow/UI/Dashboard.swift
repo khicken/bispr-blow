@@ -249,7 +249,7 @@ struct BrandLockup: View {
     var body: some View {
         HStack(spacing: 9) {
             TimelineView(.animation(minimumInterval: 1 / 30, paused: !live)) { ctx in
-                LogoView(name: "Symbol_Black", size: 18)
+                LogoView(name: Appearance.current.isDark ? "Symbol_White" : "Symbol_Black", size: 18)
                     .rotationEffect(.degrees(ctx.date.timeIntervalSinceReferenceDate * 115))
             }
             .frame(width: 18, height: 18)
@@ -280,8 +280,7 @@ struct LogoView: View {
     }
 }
 
-// Shared page scaffold: big title, optional subtitle, one optional action on the title line. The
-// action sits on the title's baseline so the page's primary verb is always in the same place.
+// Shared page scaffold: big title, optional subtitle, then the page's sections.
 struct Page<Content: View>: View {
     var themeID = Appearance.current
     let title: String
@@ -290,18 +289,19 @@ struct Page<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(title)
-                        .font(.bj(27, weight: .semibold))
-                        .tracking(-0.4)
+                        .font(.bj(30, weight: .bold))
+                        .tracking(-0.6)
                         .foregroundStyle(Theme.ink)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.bj(13))
+                            .font(.bj(13.5))
                             .foregroundStyle(Theme.inkTertiary)
                     }
                 }
+                .padding(.bottom, 4)
                 .appearIn()
                 content()
                     .appearIn(0.07)

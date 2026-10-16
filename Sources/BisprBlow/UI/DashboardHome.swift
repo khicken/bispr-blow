@@ -47,11 +47,15 @@ struct HomeView: View {
         Page(title: greeting, subtitle: subtitle) {
             UpdateBanner()
 
-            HStack(spacing: 12) {
+            // One strip with hairlines between the figures: three tiles read as three buttons.
+            HStack(spacing: 0) {
                 StatCard(value: "\(history.totalWords)", label: "Words")
-                StatCard(value: averageWPM > 0 ? "\(averageWPM)" : "0", label: "Avg WPM")
+                StatDivider()
+                StatCard(value: "\(averageWPM)", label: "Words per minute")
+                StatDivider()
                 StatCard(value: "\(streakDays)", label: "Day streak")
             }
+            .card(padding: 18)
 
             LeaderboardSection(cloud: CloudClient.shared)
 
@@ -114,24 +118,33 @@ struct StatCard: View {
     var themeID = Appearance.current
     let value: String
     let label: String
-    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.bj(27, weight: .semibold))
+                .font(.bj(32, weight: .bold))
                 .monospacedDigit()
-                .tracking(-0.4)
+                .tracking(-0.8)
                 .foregroundStyle(Theme.ink)
                 .contentTransition(.numericText())   // digits roll as stats update
                 .animation(.bjSoft, value: value)
-            SectionLabel(label)
+            Text(label)
+                .font(.bj(12))
+                .foregroundStyle(Theme.inkSubtle)
         }
-        .card()
-        .scaleEffect(hovering ? 1.015 : 1)
-        .shadow(color: Theme.ink.opacity(hovering ? 0.07 : 0), radius: 8, y: 3)
-        .onHover { hovering = $0 }
-        .animation(.bjHover, value: hovering)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 4)
+    }
+}
+
+private struct StatDivider: View {
+    var themeID = Appearance.current
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.border.opacity(0.6))
+            .frame(width: 1, height: 40)
+            .padding(.trailing, 18)
     }
 }
 
@@ -140,15 +153,16 @@ struct EmptyHint: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 12) {
             Image(systemName: "waveform")
-                .font(.bj(12))
+                .font(.bj(13, weight: .medium))
                 .foregroundStyle(Theme.blue)
-                .symbolEffect(.variableColor.iterative, options: .repeating)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Theme.blueSoft))
             Text(text)
                 .font(.bj(13))
                 .foregroundStyle(Theme.inkTertiary)
         }
-        .card()
+        .card(padding: 18)
     }
 }
