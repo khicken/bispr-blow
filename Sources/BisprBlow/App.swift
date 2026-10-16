@@ -353,7 +353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            if let logo = Theme.logo("Symbol_Black") {
+            // A copy, since the cached logo is shared with the dashboard.
+            if let logo = Theme.logo("Symbol_Black")?.copy() as? NSImage {
                 logo.size = NSSize(width: 18, height: 18)
                 logo.isTemplate = true  // adapts to menu bar light/dark
                 button.image = logo

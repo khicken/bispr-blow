@@ -696,13 +696,9 @@ Xcode's multi-GB Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`
 plus a metallib step in build.sh, re-run on every MLX bump. MLX looks for it beside
 the executable first, so that step is a file copy rather than a bundle.
 
-**The in-process dependency is pinned by revision, not version, and must be.**
-LocalLLMClient's llama.cpp C target uses `unsafeFlags`, which SwiftPM refuses in a
-dependency resolved by version ("contains unsafe build flags"). A revision carries
-the same permission with none of the drift their README's `branch: "main"` would
-bring. Its umbrella header also hard-errors unless the importing target sets
-`.interoperabilityMode(.Cxx)`, so C++ interop propagates to the whole app target.
-It works with SwiftUI and AppKit; do not remove that setting.
+**The in-process dependency is pinned by revision, not version.** The fork that
+carries the KV-cache fixes has no tag past 0.5.0, so a revision is the only stable
+reference to it.
 
 **Never block the main thread waiting on a `Task` in a CLI path.** `main()` on a
 `@main` type is MainActor-isolated, so a plain `Task` inherits that isolation and

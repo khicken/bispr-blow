@@ -342,7 +342,7 @@ struct DictionaryView: View {
             let added = settings.dictionary.count - before
             note = switch added {
             case 0 where terms.isEmpty:
-                "No model running. Start LM Studio and try again."
+                "No model available. Download one in Settings."
             case 0:
                 "All terms for “\(topic)” are already here."
             default:

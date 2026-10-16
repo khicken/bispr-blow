@@ -195,10 +195,7 @@ enum Theme {
             : NSAppearance(named: appearance.isDark ? .darkAqua : .aqua)
     }
 
-    // A copy of the cached logo: the menu bar sets `isTemplate` and `size` on the one it gets.
-    static func logo(_ name: String) -> NSImage? {
-        cached(name, extension: "svg")?.copy() as? NSImage
-    }
+    static func logo(_ name: String) -> NSImage? { cached(name, extension: "svg") }
 
     // Brand imagery. Cached: these are photographs, and a SwiftUI body can run many times a second.
     static func image(_ name: String) -> NSImage? { cached(name, extension: "jpg") }

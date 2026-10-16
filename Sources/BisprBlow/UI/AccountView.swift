@@ -38,11 +38,11 @@ struct AccountSection: View {
             CardDivider()
 
             ToggleRow("Back up dictation stats",
-                      help: "Syncs word counts and timings for your team's leaderboard.",
+                      help: "Syncs word counts for your team, never your words.",
                       isOn: $settings.syncStats)
             if settings.syncStats {
                 ToggleRow("Back up dictation text",
-                          help: "Saves your dictations to your account. Only you can see them.",
+                          help: "Saves your dictations. Only you can see them.",
                           isOn: $settings.syncTexts)
             }
         }
@@ -110,6 +110,7 @@ struct TeamCloudSection: View {
                 }
             }
             .buttonStyle(QuietButtonStyle())
+            .disabled(busy != nil)
             // Puts the text, not the hover fill, on the field's left edge.
             .padding(.leading, -8)
             noteLine
@@ -315,7 +316,7 @@ struct SignInView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if showsBlurb {
-                Text("Sign in to back up your stats and join a team.")
+                Text("Sign in to back up stats and join a team.")
                     .font(.bj(12))
                     .foregroundStyle(Theme.inkSubtle)
             }

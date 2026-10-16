@@ -31,7 +31,7 @@ struct SettingsView: View {
                         permissionRow("Accessibility")
                     }
                     if !inputMonitoringGranted {
-                        permissionRow("Input Monitoring")
+                        permissionRow("Input Monitoring", hint: "Needed for shortcuts")
                     }
                 }
             }
@@ -115,7 +115,7 @@ struct SettingsView: View {
                           help: "A click when the mic opens and when text lands.",
                           isOn: $settings.soundsEnabled)
                 ToggleRow("Check for updates",
-                          help: "Checks GitHub at launch. Installs nothing.",
+                          help: "Checks GitHub at launch. Sends nothing about you.",
                           isOn: $settings.checkForUpdates)
             }
 
@@ -143,7 +143,7 @@ struct SettingsView: View {
                     .padding(.horizontal, 11)
                     .padding(.vertical, 3)
                 ToggleRow("Keep mic volume up",
-                          help: "Call apps often turn the mic down. This turns it back up.",
+                          help: "Turns the mic back up after call apps lower it.",
                           isOn: $settings.restoreMicVolume)
             }
 
@@ -246,13 +246,18 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func permissionRow(_ name: String) -> some View {
+    private func permissionRow(_ name: String, hint: String? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(Theme.red)
             Text(name)
                 .font(.bj(13, weight: .medium))
                 .foregroundStyle(Theme.ink)
+            if let hint {
+                Text(hint)
+                    .font(.bj(12))
+                    .foregroundStyle(Theme.inkSubtle)
+            }
         }
     }
 
