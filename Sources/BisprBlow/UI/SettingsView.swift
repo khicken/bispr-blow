@@ -118,8 +118,16 @@ struct SettingsView: View {
                           help: "A click when the mic opens and one when the text lands.",
                           isOn: $settings.soundsEnabled)
                 ToggleRow("Voice commands",
-                          help: "Hold your Voice command shortcut and say what to do, like \"open my DMs\" or \"create a new issue\". What you said, the names and text of the buttons, fields and menus in the app in front, and the names of your open apps are sent to TypeSafe to pick which one you mean. Anything like delete, send or pay asks you first.",
+                          help: "Hold your Voice command shortcut and say what to do, like \"open my DMs\", \"scroll down\" or \"create a new issue\". TypeSafe receives what you said, the app's name, window title and web address, the names and short descriptions of the buttons, fields and menus in the app in front (in Chrome, of the page too, if remote debugging is allowed), and the names of your installed apps, to pick what you mean. Never what is typed in fields or anything from password fields. Anything like delete, send or pay asks you first.",
                           isOn: $settings.voiceCommands)
+                ToggleRow("Listen for “Hey Jay”",
+                          help: "Say \"Hey Jay\" and then what to do, with no shortcut. The mic stays on while it listens, so the mic indicator stays lit. Speech is turned into text on this Mac, and only what follows \"Jay\", plus what you say in the few seconds after it answers, is acted on. That is sent to TypeSafe with the same details as Voice commands: the app's name, window title and web address, the names and short descriptions of the buttons, fields and menus in the app in front (in Chrome, of the page too, if remote debugging is allowed), and your installed apps' names. Never what is typed in fields or anything from password fields. Delete, send, pay, pressing Return and the like ask first, and only a tap on Do it answers yes, so nobody else in earshot can. Say \"Jay sleep\" to turn the mic off until you use the shortcut.",
+                          isOn: $settings.jayMode)
+                    .disabled(!settings.voiceCommands)
+                ToggleRow("Spoken replies",
+                          help: "Jay answers out loud, like \"Done\" or \"Which one?\". Off, the answer only shows beside the bar.",
+                          isOn: $settings.jaySpeaks)
+                    .disabled(!settings.voiceCommands)
                 ToggleRow("Tell me when there's a new version",
                           help: "Asks GitHub once at launch whether a newer release is out, and shows a line on Home if there is. Nothing is downloaded or installed for you, and nothing about you is sent.",
                           isOn: $settings.checkForUpdates)

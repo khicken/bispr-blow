@@ -3,42 +3,69 @@ import Carbon.HIToolbox
 
 // Inserts text into the focused field of the frontmost app via pasteboard + synthetic ⌘V,
 // then restores the previous pasteboard contents.
+@MainActor
 enum TextInserter {
+    // Let the pasteboard write commit before synthesizing the paste.
+    private static let commitDelay: Duration = .milliseconds(100)
+    // Return goes after the paste, on its own delay: sending before the field has the text submits an empty message.
+    private static let returnDelay: Duration = .milliseconds(120)
+    // Slow Electron apps read the clipboard late.
+    private static let restoreDelay: Duration = .milliseconds(600)
+    private static var lastPaste: Task<Void, Never>?
+
     // Returns false when synthetic events can't be posted (no Accessibility trust):
     // the text is left on the clipboard so the user can ⌘V manually.
     // `thenReturn` presses Return once the paste has landed — the "dictate and send" binding.
     @discardableResult
     static func insert(_ text: String, thenReturn: Bool = false) -> Bool {
-        let pasteboard = NSPasteboard.general
         guard AXIsProcessTrusted() else {
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
             return false
         }
-        let saved = pasteboard.string(forType: .string)
-
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        // Hint clipboard managers to ignore this transient write.
-        pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-
-        // Let the pasteboard write commit before synthesizing the paste.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            postCmdV()
-            // Return goes after the paste, on its own delay: sending before the field has the
-            // text submits an empty message.
-            if thenReturn {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { postKey(CGKeyCode(kVK_Return)) }
-            }
-            // Restore after the paste lands; slow Electron apps read the clipboard late.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                pasteboard.clearContents()
-                if let saved {
-                    pasteboard.setString(saved, forType: .string)
-                }
-            }
-        }
+        Task { await paste(text, thenReturn: thenReturn) }
         return true
+    }
+
+    // Back once the field has the text, so what comes next sees it; the clipboard restore carries on behind.
+    static func insertAndWait(_ text: String) async -> Bool {
+        guard AXIsProcessTrusted() else { return insert(text) }
+        await paste(text, thenReturn: false)
+        try? await Task.sleep(for: returnDelay)
+        return true
+    }
+
+    // One paste at a time: two in flight each save the other's text as the user's clipboard. Returns once
+    // ⌘V is posted; the next paste still waits for the restore.
+    private static func paste(_ text: String, thenReturn: Bool) async {
+        let previous = lastPaste
+        let pasted = Task {
+            await previous?.value
+            let pasteboard = NSPasteboard.general
+            let saved = pasteboard.string(forType: .string)
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            // Hint clipboard managers to ignore this transient write.
+            pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+            let ours = pasteboard.changeCount
+            try? await Task.sleep(for: commitDelay)
+            postCmdV()
+            if thenReturn {
+                try? await Task.sleep(for: returnDelay)
+                postKey(CGKeyCode(kVK_Return))
+            }
+            return (saved, ours)
+        }
+        lastPaste = Task {
+            let (saved, ours) = await pasted.value
+            try? await Task.sleep(for: restoreDelay)
+            let pasteboard = NSPasteboard.general
+            // Something the user copied meanwhile is theirs to keep.
+            guard pasteboard.changeCount == ours else { return }
+            pasteboard.clearContents()
+            if let saved { pasteboard.setString(saved, forType: .string) }
+        }
+        _ = await pasted.value
     }
 
     private static func postCmdV() {

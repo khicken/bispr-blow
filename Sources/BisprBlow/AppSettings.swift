@@ -103,6 +103,15 @@ final class AppSettings: ObservableObject {
     @Published var voiceCommands: Bool {
         didSet { defaults.set(voiceCommands, forKey: "voiceCommands") }
     }
+    // Listen for "Hey Jay" with no shortcut held. Off by default: it keeps the mic on. Only acts while
+    // voice commands are on too.
+    @Published var jayMode: Bool {
+        didSet { defaults.set(jayMode, forKey: "jayMode") }
+    }
+    // Jay answers out loud ("Done", "Which one?") as well as beside the bar.
+    @Published var jaySpeaks: Bool {
+        didSet { defaults.set(jaySpeaks, forKey: "jaySpeaks") }
+    }
     // One request to api.github.com at launch, asking whether a newer release is out. On by
     // default: an update nobody hears about is the same as no update, and an opt-in check that
     // nobody finds is dead code. Off, nothing is asked and nothing is sent — and it is the only
@@ -260,6 +269,8 @@ final class AppSettings: ObservableObject {
         endWithPeriod = defaults.bool(forKey: "endWithPeriod")
         restoreMicVolume = defaults.bool(forKey: "restoreMicVolume")
         voiceCommands = defaults.bool(forKey: "voiceCommands")
+        jayMode = defaults.bool(forKey: "jayMode")
+        jaySpeaks = defaults.object(forKey: "jaySpeaks") as? Bool ?? true
         checkForUpdates = defaults.object(forKey: "checkForUpdates") as? Bool ?? true
         appearance = Self.appearance(stored: defaults.string(forKey: "appearance"))
         if let data = defaults.data(forKey: "bindings"),

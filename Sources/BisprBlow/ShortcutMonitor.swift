@@ -21,6 +21,8 @@ final class ShortcutMonitor {
     // locked == true when stopping a hands-free session.
     var onStop: ((_ locked: Bool) -> Void)?
     var onCancel: (() -> Void)?
+    // Work running outside a shortcut session that the cancel binding should still stop (a Jay command).
+    var hasWorkToCancel: (() -> Bool)?
     // Fired when a double-tap upgrades the session to hands-free.
     var onLock: (() -> Void)?
 
@@ -261,6 +263,8 @@ final class ShortcutMonitor {
             if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
             return pass
         case .flagsChanged, .keyDown, .keyUp:
+            // Keys Jay posts itself (Esc, ⌘S…) are for the app in front, never a binding.
+            guard event.getIntegerValueField(.eventSourceUnixProcessID) != Int64(getpid()) else { return pass }
             let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
             if capture(type: type, keyCode: code, mouseButton: nil, flags: event.flags) { return nil }
             if type == .flagsChanged, let (action, down) = comboEdge(flags: event.flags) {
@@ -346,7 +350,7 @@ final class ShortcutMonitor {
                 return swallowedCancelDown
             }
             // Esc is the shipped default: only eat it while there is something to throw away.
-            guard sessionIsLive else { return false }
+            guard sessionIsLive || hasWorkToCancel?() == true else { return false }
             cancelSession()
             swallowedCancelDown = true
             return true
