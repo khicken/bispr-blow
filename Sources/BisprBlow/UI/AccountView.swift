@@ -136,7 +136,7 @@ struct TeamCloudSection: View {
             }
             if org.isOwner {
                 HStack(spacing: 8) {
-                    field("Teammate's email", text: $inviteEmail, width: 260, submit: invite)
+                    field("Teammate's email", text: $inviteEmail, submit: invite)
                     Button(action: invite) { label("Invite", for: .invite) }
                         .buttonStyle(CapsuleButtonStyle(filled: false))
                         .disabled(busy != nil || inviteEmail.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -179,14 +179,14 @@ struct TeamCloudSection: View {
         .animation(.bjSoft, value: inviteCode)
     }
 
-    private func field(_ prompt: String, text: Binding<String>, width: CGFloat = 220,
+    private func field(_ prompt: String, text: Binding<String>,
                        submit: @escaping () -> Void) -> some View {
         TextField(prompt, text: text)
             .textFieldStyle(.plain)
             .font(.bj(13))
             .padding(10)
             .background(FieldBackground())
-            .frame(maxWidth: width)
+            .frame(maxWidth: .infinity)
             .onSubmit(submit)
     }
 
@@ -326,7 +326,7 @@ struct SignInView: View {
                     .font(.bj(13))
                     .padding(10)
                     .background(FieldBackground())
-                    .frame(maxWidth: 260)
+                    .frame(maxWidth: .infinity)
                     .onSubmit(submit)
                 if codeSent {
                     TextField("Code", text: $code)
@@ -357,17 +357,18 @@ struct SignInView: View {
                     .foregroundStyle(Theme.inkSubtle)
             }
             HStack(spacing: 10) {
-                Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
+                Rectangle().fill(Theme.border.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: 1)
                 Text("or")
                     .font(.bj(11))
                     .foregroundStyle(Theme.inkTertiary)
-                Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
+                Rectangle().fill(Theme.border.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: 1)
             }
             Button(action: google) {
                 HStack(spacing: 7) {
                     LogoView(name: "Google_G", size: 14)
                     Text("Continue with Google")
                 }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(CapsuleButtonStyle(filled: false))
             .disabled(busy)
