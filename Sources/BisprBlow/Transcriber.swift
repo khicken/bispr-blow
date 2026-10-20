@@ -16,7 +16,7 @@ final class Transcriber {
         }
     }
 
-    // Volatile (in-progress) text, for live UI feedback.
+    // The whole session so far, settled and in-progress text together.
     var onPartial: ((String) -> Void)?
 
     private var analyzer: SpeechAnalyzer?

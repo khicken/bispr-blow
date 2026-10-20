@@ -249,16 +249,49 @@ enum Main {
             for word in WisprImport.add(words, to: .shared) { print(word) }
             return
         }
-        // What a voice command would see in a running app, as JSON to a file. Launch it with
-        // `open -n BisprBlow.app --args` so Accessibility trusts it as the app, not as a terminal.
+        // What a voice command would see in a running app (a bundle id, or a pid when two processes
+        // share one), as JSON to a file. Launch it with
+        // `open -g -n /Applications/BisprBlow.app --args` so Accessibility trusts it as the app, not
+        // as a terminal, with the target app in front and an absolute output path.
         if let flag = CommandLine.arguments.firstIndex(of: "--dump-elements"), CommandLine.arguments.count > flag + 2 {
             let bundleID = CommandLine.arguments[flag + 1], output = CommandLine.arguments[flag + 2]
-            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { exit(1) }
+            // A dev tool's headless Chrome shares the bundle id, draws no window and has no Dock icon; the real
+            // one can be drawing its window in another Space.
+            let windowOwners = Set((CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? [])
+                .compactMap { $0[kCGWindowOwnerPID as String] as? pid_t })
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            let byPID = pid_t(bundleID).flatMap(NSRunningApplication.init(processIdentifier:))
+            guard let app = byPID ?? running.first(where: { windowOwners.contains($0.processIdentifier) })
+                    ?? running.first(where: { $0.activationPolicy == .regular }) ?? running.first else { exit(1) }
             let started = Date()
-            let elements = ScreenElements.read(app: app)
-            let report: [String: Any] = ["trusted": AXIsProcessTrusted(), "ms": Int(Date().timeIntervalSince(started) * 1000),
-                                         "labels": elements.map(\.label)]
-            try? JSONSerialization.data(withJSONObject: report, options: .prettyPrinted).write(to: URL(fileURLWithPath: output))
+            var snapshot = awaitSync { await ScreenElements.snapshot(app: app) }
+            // The first Chrome read only starts the DevTools connection; Chrome then asks the user to allow it,
+            // so keep reading until it is allowed or the consent window closes.
+            for _ in 0..<35 where ChromeDevTools.isEnabled && bundleID == "com.google.Chrome" && snapshot.source != .chrome {
+                Thread.sleep(forTimeInterval: 1)
+                snapshot = awaitSync { await ScreenElements.snapshot(app: app) }
+            }
+            let dump = ScreenDump(trusted: AXIsProcessTrusted(), ms: Int(Date().timeIntervalSince(started) * 1000), snapshot: snapshot)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try? encoder.encode(dump).write(to: URL(fileURLWithPath: output))
+            return
+        }
+        // Scores Jay against recorded screens (bench/jay). `--live` also acts in TextEdit and
+        // Calculator, or in the apps `--live-apps id,id` names, so it needs the same `open -g -n`
+        // launch as --dump-elements, absolute paths, and a RunLoop rather than `awaitSync`: acting is @MainActor.
+        if let flag = CommandLine.arguments.firstIndex(of: "--jay-eval"), CommandLine.arguments.count > flag + 2 {
+            let cases = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+            let report = URL(fileURLWithPath: CommandLine.arguments[flag + 2])
+            let isLive = CommandLine.arguments.contains("--live")
+            let liveApps = CommandLine.arguments.firstIndex(of: "--live-apps")
+                .flatMap { CommandLine.arguments.count > $0 + 1 ? Set(CommandLine.arguments[$0 + 1].split(separator: ",").map(String.init)) : nil }
+            Task { @MainActor in
+                await JayEval.run(casesURL: cases, reportURL: report, isLive: isLive || liveApps != nil,
+                                  liveBundleIDs: liveApps ?? JayEval.liveBundleIDs)
+                exit(0)
+            }
+            RunLoop.main.run()
             return
         }
         // Every model on disk, one id per line, so bench/bench.py can enumerate the in-process

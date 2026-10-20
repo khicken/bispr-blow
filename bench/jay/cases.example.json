@@ -1,0 +1,20 @@
+[
+  {
+    "id": "safari-scroll-down",
+    "command": "scroll down",
+    "snapshot": "screens/com.apple.Safari.json",
+    "expect": { "intent": "do", "actions": ["system:scrollDown"] }
+  },
+  {
+    "id": "slack-open-dms",
+    "command": "go to my DMs",
+    "snapshot": "screens/com.tinyspeck.slackmacgap.json",
+    "expect": { "intent": "do", "actions": ["press:DMs (tab)"] }
+  },
+  {
+    "id": "slack-open-safari",
+    "command": "open Safari",
+    "snapshot": "screens/com.tinyspeck.slackmacgap.json",
+    "expect": { "intent": "do", "actions": ["app:com.apple.Safari"] }
+  }
+]

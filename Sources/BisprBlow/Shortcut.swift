@@ -148,7 +148,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         // this the editor reads as though the feature were unavailable rather than already working.
         case .handsFree: return "Press to start, again to finish. Or double-tap push to talk."
         case .pressEnter: return "Push to talk, then presses Return."
-        case .command: return "Hold, say what to do in the app in front, release."
+        case .command: return "Hold, say what to do, release. Double-tap to keep listening."
         case .cancel: return "Throw away the current dictation."
         }
     }

@@ -151,6 +151,26 @@ extension SelfCheck {
         precondition(VoiceCommand.textToType(in: "Search Slack for metronome") == "metronome")
         precondition(VoiceCommand.textToType(in: "click into the message box") == nil)
         precondition(VoiceCommand.textToType(in: "open the typescript file") == nil)
+
+        precondition(VoiceCommand.steps(in: "open Slack and go to my DMs") == ["open Slack", "go to my DMs"])
+        precondition(VoiceCommand.steps(in: "open Linear, then create a new issue") == ["open Linear", "create a new issue"])
+        precondition(VoiceCommand.steps(in: "type salt and pepper") == ["type salt and pepper"])
+        precondition(VoiceCommand.steps(in: "look up cats and dogs") == ["look up cats and dogs"])
+
+        precondition(VoiceCommand.webAddress(for: "go to LinkedIn")?.absoluteString == "https://duckduckgo.com/?q=%5CLinkedIn")
+        precondition(VoiceCommand.webAddress(for: "open github.com.")?.absoluteString == "https://github.com")
+        precondition(VoiceCommand.webAddress(for: "search the web for swift actors")?.absoluteString == "https://duckduckgo.com/?q=swift%20actors")
+        precondition(VoiceCommand.webAddress(for: "search for C++ & Rust")?.absoluteString == "https://duckduckgo.com/?q=C%2B%2B%20%26%20Rust")
+
+        // A pause after "go to" or "and" is a breath, not the end of the command.
+        precondition(VoiceCommand.isUnfinished("go to"))
+        precondition(VoiceCommand.isUnfinished("open Slack and"))
+        precondition(!VoiceCommand.isUnfinished("go to LinkedIn."))
+        precondition(VoiceCommand.withoutLeadIn("and then go to my DMs") == "go to my DMs")
+        precondition(VoiceCommand.withoutLeadIn("Um, can you go to railway?") == "go to railway?")
+        precondition(VoiceCommand.withoutLeadIn("Okay, please just open traces, please.") == "open traces")
+        precondition(VoiceCommand.withoutLeadIn("solve it") == "solve it")
+        precondition(VoiceCommand.withoutLeadIn("Okay.") == "Okay." && VoiceCommand.withoutLeadIn("Okay. Go back.") == "Go back.")
     }
 
     // The field's own name is context too, and it leads: in an empty message box it is all there is.
