@@ -15,7 +15,7 @@ enum TextInserter {
             pasteboard.setString(text, forType: .string)
             return false
         }
-        let saved = pasteboard.string(forType: .string)
+        let saved = savedItems(pasteboard)
 
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -33,12 +33,36 @@ enum TextInserter {
             // Restore after the paste lands; slow Electron apps read the clipboard late.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 pasteboard.clearContents()
-                if let saved {
-                    pasteboard.setString(saved, forType: .string)
-                }
+                if !saved.isEmpty { pasteboard.writeObjects(saved) }
             }
         }
         return true
+    }
+
+    // Every type of every item, so a copied image, file or rich text survives the paste. Promised
+    // and dynamic types are skipped: their provider is gone after the restore. Over the cap, only the
+    // plain text is kept, since reading a type makes the source app render it now.
+    private static func savedItems(_ pasteboard: NSPasteboard) -> [NSPasteboardItem] {
+        let cap = 20_000_000
+        var total = 0
+        var items: [NSPasteboardItem] = []
+        for item in pasteboard.pasteboardItems ?? [] {
+            let copy = NSPasteboardItem()
+            for type in item.types where !type.rawValue.hasPrefix("dyn.")
+                && !type.rawValue.contains("promise") {
+                guard let data = item.data(forType: type) else { continue }
+                total += data.count
+                guard total <= cap else {
+                    guard let string = pasteboard.string(forType: .string) else { return [] }
+                    let text = NSPasteboardItem()
+                    text.setString(string, forType: .string)
+                    return [text]
+                }
+                copy.setData(data, forType: type)
+            }
+            if !copy.types.isEmpty { items.append(copy) }
+        }
+        return items
     }
 
     private static func postCmdV() {

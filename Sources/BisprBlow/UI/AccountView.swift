@@ -38,11 +38,11 @@ struct AccountSection: View {
             CardDivider()
 
             ToggleRow("Back up dictation stats",
-                      help: "Word counts and timings sync to your account, and count toward your team's leaderboard. Never the words themselves.",
+                      help: "Syncs word counts for your team, never your words.",
                       isOn: $settings.syncStats)
             if settings.syncStats {
-                ToggleRow("Include what you said",
-                          help: "Keeps the text of each dictation with your account too. Only you can read it — teammates never see it.",
+                ToggleRow("Back up dictation text",
+                          help: "Saves your dictations. Only you can see them.",
                           isOn: $settings.syncTexts)
             }
         }
@@ -63,8 +63,11 @@ struct TeamCloudSection: View {
     @State private var inviteFor = ""
     @State private var codeCopied = false
     @State private var memberNames: [String] = []
-    @State private var busy = false
+    @State private var creating = false
+    @State private var busy: Action?
     @State private var note: String?
+
+    private enum Action { case create, join, invite }
 
     var body: some View {
         Group {
@@ -81,50 +84,50 @@ struct TeamCloudSection: View {
         }
     }
 
+    // One form at a time: joining is the common case, so starting a team is the quiet link.
     private var joinOrCreate: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("A team shares a leaderboard of word counts — never of words. Joining one is what puts you on it.")
-                .font(.bj(12))
-                .foregroundStyle(Theme.inkSubtle)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(creating ? "Start a team" : "Join your team")
+                .font(.bj(15, weight: .semibold))
+                .foregroundStyle(Theme.ink)
             HStack(spacing: 8) {
-                TextField("Team name", text: $teamName)
-                    .textFieldStyle(.plain)
-                    .font(.bj(13))
-                    .padding(10)
-                    .background(FieldBackground())
-                    .frame(maxWidth: 220)
-                    .onSubmit(createTeam)
-                Button("Create a team", action: createTeam)
-                    .buttonStyle(CapsuleButtonStyle(filled: false))
-                    .disabled(busy || teamName.trimmingCharacters(in: .whitespaces).isEmpty)
+                if creating {
+                    field("Team name", text: $teamName, submit: createTeam)
+                    Button(action: createTeam) { label("Create", for: .create) }
+                        .buttonStyle(CapsuleButtonStyle())
+                        .disabled(busy != nil || teamName.trimmingCharacters(in: .whitespaces).isEmpty)
+                } else {
+                    field("Invite code", text: $joinCode, submit: joinTeam)
+                    Button(action: joinTeam) { label("Join", for: .join) }
+                        .buttonStyle(CapsuleButtonStyle())
+                        .disabled(busy != nil || joinCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
-            HStack(spacing: 8) {
-                TextField("Invite code", text: $joinCode)
-                    .textFieldStyle(.plain)
-                    .font(.bj(13))
-                    .padding(10)
-                    .background(FieldBackground())
-                    .frame(maxWidth: 220)
-                    .onSubmit(joinTeam)
-                Button("Join", action: joinTeam)
-                    .buttonStyle(CapsuleButtonStyle(filled: false))
-                    .disabled(busy || joinCode.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button(creating ? "Join with a code" : "Start a new team") {
+                withAnimation(.bjSnap) {
+                    creating.toggle()
+                    note = nil
+                }
             }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(busy != nil)
+            // Puts the text, not the pressed fill, on the field's left edge.
+            .padding(.leading, -8)
             noteLine
         }
     }
 
     private func team(_ org: CloudOrg) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
                 InitialCircle(letter: String(org.name.prefix(1)))
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(org.name)
-                        .font(.bj(13, weight: .medium))
+                        .font(.bj(15, weight: .semibold))
                         .foregroundStyle(Theme.ink)
                     if !memberNames.isEmpty {
                         Text(memberNames.joined(separator: ", "))
-                            .font(.bj(11))
+                            .font(.bj(12))
                             .foregroundStyle(Theme.inkSubtle)
                             .lineLimit(2)
                     }
@@ -133,16 +136,10 @@ struct TeamCloudSection: View {
             }
             if org.isOwner {
                 HStack(spacing: 8) {
-                    TextField("Teammate's email", text: $inviteEmail)
-                        .textFieldStyle(.plain)
-                        .font(.bj(13))
-                        .padding(10)
-                        .background(FieldBackground())
-                        .frame(maxWidth: 260)
-                        .onSubmit(invite)
-                    Button("Invite", action: invite)
+                    field("Teammate's email", text: $inviteEmail, submit: invite)
+                    Button(action: invite) { label("Invite", for: .invite) }
                         .buttonStyle(CapsuleButtonStyle(filled: false))
-                        .disabled(busy || inviteEmail.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(busy != nil || inviteEmail.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let inviteCode {
                     // The row is the copy button, like history rows.
@@ -154,21 +151,21 @@ struct TeamCloudSection: View {
                             withAnimation(.bjSoft) { codeCopied = false }
                         }
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 10) {
                             Text(inviteCode)
-                                .font(.bj(13, weight: .semibold))
+                                .font(.bj(14, weight: .semibold))
                                 .monospaced()
                                 .foregroundStyle(Theme.ink)
-                            Text("for \(inviteFor) — send it to them yourself")
+                            Text("Send this to \(inviteFor)")
                                 .font(.bj(12))
                                 .foregroundStyle(Theme.inkSubtle)
                             Spacer()
-                            Text(codeCopied ? "Copied" : "Click to copy")
-                                .font(.bj(11))
-                                .foregroundStyle(codeCopied ? Theme.green : Theme.inkSubtle)
+                            Text(codeCopied ? "Copied" : "Copy")
+                                .font(.bj(12, weight: .medium))
+                                .foregroundStyle(codeCopied ? Theme.green : Theme.blue)
                         }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, 10)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.surfaceActive.opacity(0.6)))
                         .contentShape(Rectangle())
                     }
@@ -182,12 +179,24 @@ struct TeamCloudSection: View {
         .animation(.bjSoft, value: inviteCode)
     }
 
+    private func field(_ prompt: String, text: Binding<String>,
+                       submit: @escaping () -> Void) -> some View {
+        TextField(prompt, text: text)
+            .bjField()
+            .frame(maxWidth: .infinity)
+            .onSubmit(submit)
+    }
+
+    private func label(_ title: String, for action: Action) -> some View {
+        BusyLabel(title: title, busy: busy == action)
+    }
+
     // MARK: - Actions
 
     private func createTeam() {
         let name = teamName.trimmingCharacters(in: .whitespaces)
-        guard !busy, !name.isEmpty else { return }
-        run {
+        guard busy == nil, !name.isEmpty else { return }
+        run(.create) {
             try await cloud.createOrg(named: name)
             teamName = ""
             await loadMembers()
@@ -196,8 +205,8 @@ struct TeamCloudSection: View {
 
     private func joinTeam() {
         let code = joinCode.trimmingCharacters(in: .whitespaces).uppercased()
-        guard !busy, !code.isEmpty else { return }
-        run {
+        guard busy == nil, !code.isEmpty else { return }
+        run(.join) {
             try await cloud.joinOrg(code: code)
             joinCode = ""
             await loadMembers()
@@ -206,8 +215,8 @@ struct TeamCloudSection: View {
 
     private func invite() {
         let address = inviteEmail.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !busy, !address.isEmpty else { return }
-        run {
+        guard busy == nil, !address.isEmpty else { return }
+        run(.invite) {
             inviteCode = try await cloud.createInvite(email: address)
             inviteFor = address
             inviteEmail = ""
@@ -219,12 +228,12 @@ struct TeamCloudSection: View {
     }
 
     // One shape for every async action: clear the note, show the error if there is one.
-    private func run(_ work: @escaping () async throws -> Void) {
-        busy = true
+    private func run(_ action: Action, _ work: @escaping () async throws -> Void) {
+        busy = action
         note = nil
         Task { @MainActor in
             do { try await work() } catch { note = error.localizedDescription }
-            busy = false
+            busy = nil
         }
     }
 
@@ -277,6 +286,30 @@ struct FieldBackground: View {
     }
 }
 
+extension View {
+    func bjField() -> some View {
+        textFieldStyle(.plain)
+            .font(.bj(13))
+            .padding(10)
+            .background(FieldBackground())
+    }
+}
+
+// A button title with a spinner beside it while its action runs.
+struct BusyLabel: View {
+    let title: String
+    let busy: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if busy {
+                ProgressView().controlSize(.small)
+            }
+            Text(title)
+        }
+    }
+}
+
 // Signing in, in one place: Settings shows it inside the Account group, the Team page as the whole
 // page, and two copies of this drifted apart the moment either was touched. It says "sign in or
 // create an account" because that is literally one call — `requestCode` passes `create_user: true`,
@@ -290,39 +323,38 @@ struct SignInView: View {
     @State private var email = ""
     @State private var code = ""
     @State private var codeSent = false
-    @State private var busy = false
+    @State private var busy: Action?
     @State private var note: String?
+
+    private enum Action { case email, google }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if showsBlurb {
-                Text("Sign in or create an account to back up your stats and share a leaderboard with your team.")
+                Text("Sign in to back up stats and join a team.")
                     .font(.bj(12))
                     .foregroundStyle(Theme.inkSubtle)
             }
             HStack(spacing: 8) {
                 TextField("you@company.com", text: $email)
-                    .textFieldStyle(.plain)
-                    .font(.bj(13))
-                    .padding(10)
-                    .background(FieldBackground())
-                    .frame(maxWidth: 260)
+                    .bjField()
+                    .frame(maxWidth: .infinity)
                     .onSubmit(submit)
                 if codeSent {
                     TextField("Code", text: $code)
-                        .textFieldStyle(.plain)
-                        .font(.bj(13))
                         .monospacedDigit()
-                        .padding(10)
-                        .background(FieldBackground())
+                        .bjField()
                         .frame(width: 100)
                         .onSubmit(submit)
                         .transition(.opacity)
                 }
-                Button(codeSent ? "Sign in" : "Email me a code", action: submit)
-                    .buttonStyle(CapsuleButtonStyle())
-                    .disabled(busy || trimmedEmail.isEmpty
-                              || (codeSent && code.trimmingCharacters(in: .whitespaces).isEmpty))
+                Button(action: submit) {
+                    // Only the email button spins: the Google button stays as Google draws it.
+                    BusyLabel(title: codeSent ? "Sign in" : "Email me a code", busy: busy == .email)
+                }
+                .buttonStyle(CapsuleButtonStyle())
+                .disabled(busy != nil || trimmedEmail.isEmpty
+                          || (codeSent && code.trimmingCharacters(in: .whitespaces).isEmpty))
             }
             if codeSent {
                 Text("Check \(trimmedEmail) for a code.")
@@ -330,20 +362,21 @@ struct SignInView: View {
                     .foregroundStyle(Theme.inkSubtle)
             }
             HStack(spacing: 10) {
-                Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
+                Rectangle().fill(Theme.border.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: 1)
                 Text("or")
                     .font(.bj(11))
                     .foregroundStyle(Theme.inkTertiary)
-                Rectangle().fill(Theme.border.opacity(0.6)).frame(width: 34, height: 1)
+                Rectangle().fill(Theme.border.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: 1)
             }
             Button(action: google) {
                 HStack(spacing: 7) {
                     LogoView(name: "Google_G", size: 14)
                     Text("Continue with Google")
                 }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(CapsuleButtonStyle(filled: false))
-            .disabled(busy)
+            .disabled(busy != nil)
             if let note {
                 Text(note)
                     .font(.bj(11.5))
@@ -358,8 +391,8 @@ struct SignInView: View {
     }
 
     private func submit() {
-        guard !busy, !trimmedEmail.isEmpty else { return }
-        run {
+        guard busy == nil, !trimmedEmail.isEmpty else { return }
+        run(.email) {
             if codeSent {
                 try await cloud.signIn(email: trimmedEmail,
                                        code: code.trimmingCharacters(in: .whitespaces))
@@ -373,19 +406,19 @@ struct SignInView: View {
     }
 
     private func google() {
-        guard !busy else { return }
-        run { try await cloud.signInWithGoogle() }
+        guard busy == nil else { return }
+        run(.google) { try await cloud.signInWithGoogle() }
     }
 
     // Closing the Google sheet is a decision, not a failure, so it leaves no red line behind.
-    private func run(_ work: @escaping () async throws -> Void) {
-        busy = true
+    private func run(_ action: Action, _ work: @escaping () async throws -> Void) {
+        busy = action
         note = nil
         Task { @MainActor in
             do { try await work() }
             catch is CancellationError {}
             catch { note = error.localizedDescription }
-            busy = false
+            busy = nil
         }
     }
 

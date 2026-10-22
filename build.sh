@@ -61,12 +61,6 @@ if [ -n "$VERSION" ]; then
 fi
 cp AppIcon.icns "$APP/Contents/Resources/"
 
-# llama.framework resolves via @loader_path beside the CLI binary, so `swift build` output runs
-# fine while an installed bundle without its own copy dies at launch: "Library not loaded".
-mkdir -p "$APP/Contents/Frameworks"
-cp -R .build/arm64-apple-macosx/release/llama.framework "$APP/Contents/Frameworks/"
-install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/BisprBlow"
-
 # BUNDLE_WEIGHTS=1 puts the Fast weights inside the bundle, which is what dmg.sh needs and what
 # a .pkg does not: with them here the app writes nothing outside /Applications, so it can simply be
 # dragged out of a disk image. Off by default because it makes every local build 400 MB and the
@@ -106,9 +100,6 @@ else
         echo "Signing ad-hoc — the trust step needs GUI approval, so permissions will re-prompt."
     fi
 fi
-# Nested code first, and it gets the hardened runtime too — notarization rejects a bundle whose
-# framework does not carry it. Entitlements go on the app alone.
-codesign --force -s "$SIGN_ID" "${HARDEN[@]+"${HARDEN[@]}"}" "$APP/Contents/Frameworks/llama.framework"
 codesign --force -s "$SIGN_ID" "${HARDEN[@]+"${HARDEN[@]}"}" \
     ${DEVID:+--entitlements BisprBlow.entitlements} \
     --identifier ai.getbluejay.bisprblow "$APP"

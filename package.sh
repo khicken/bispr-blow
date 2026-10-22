@@ -36,8 +36,7 @@ pkgbuild --component .build/BisprBlow.app --install-location /Applications \
     --identifier ai.getbluejay.bisprblow.app --version "$VERSION" "$OUT/app.pkg" >/dev/null
 
 # `--filter` excludes, so naming every other model is how Fast alone gets kept — and no payload has
-# to copy gigabytes into a staging tree. Any GGUF on disk is excluded the same way: it is the
-# fallback for the metallib the check above guarantees.
+# to copy gigabytes into a staging tree.
 filters=()
 for d in "$MODELS"/*; do
     [ "$(basename "$d")" = "$FAST" ] || filters+=(--filter "$(basename "$d")")

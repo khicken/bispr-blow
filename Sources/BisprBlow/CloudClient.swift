@@ -279,7 +279,8 @@ final class CloudClient: ObservableObject {
     }
 
     // A valid bearer token, refreshed just before it expires. A refresh the server rejects means the
-    // session is gone, so the app returns to signed out rather than wedging every request.
+    // session is gone, so the app returns to signed out rather than wedging every request. Being
+    // offline, rate limited or a 5xx keeps the session for the next try.
     private func accessToken() async throws -> String {
         guard let current = session else { throw CloudError(message: "Sign in first.") }
         if current.expiresAt > Date().addingTimeInterval(60) { return current.accessToken }
@@ -287,7 +288,7 @@ final class CloudClient: ObservableObject {
             let data = try await auth("token?grant_type=refresh_token",
                                       json: ["refresh_token": current.refreshToken])
             try adopt(tokenData: data, fallbackEmail: current.email)
-        } catch {
+        } catch let error as CloudError where [400, 401, 403].contains(error.status) {
             session = nil
             org = nil
             Keychain.delete()

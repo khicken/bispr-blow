@@ -2,7 +2,8 @@ import Foundation
 
 // Cleans raw dictation via a local LLM, with a deterministic rule-based fallback so dictation
 // always produces output even with no model available.
-final class LLMCleaner {
+// An actor because the launch warm-up and the first dictation can both write `resolved`.
+actor LLMCleaner {
     struct Endpoint {
         // Empty baseURL means in-process inference rather than HTTP. Only `complete` cares;
         // prompts, guards, deadline and bench are transport-independent.

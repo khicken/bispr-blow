@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 // Runs one async call to completion from a synchronous CLI entry point. `Task.detached` and not
@@ -310,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var toast: ToastController!
     private var dashboard: DashboardWindowController!
     private var statusItem: NSStatusItem!
+    private var tooltipUpdates: AnyCancellable?
     private var quitMenu: NSMenu!
     private var appearanceObserver: NSKeyValueObservation?
 
@@ -365,7 +367,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            if let logo = Theme.logo("Symbol_Black") {
+            // A copy, since the cached logo is shared with the dashboard.
+            if let logo = Theme.logo("Symbol_Black")?.copy() as? NSImage {
                 logo.size = NSSize(width: 18, height: 18)
                 logo.isTemplate = true  // adapts to menu bar light/dark
                 button.image = logo
@@ -382,11 +385,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        let settings = AppSettings.shared
-        let hint = settings.holdHint
-        let lock = settings.shortcuts(for: .pushToTalk).isEmpty ? "" : ", double-tap to lock"
-        statusItem.button?.toolTip = "BisprBlow · \(hint.prefix(1).lowercased())\(hint.dropFirst())"
-            + "\(lock).\nRight-click to quit."
+        // Rebuilt when a shortcut is rebound, since the tooltip names it.
+        tooltipUpdates = AppSettings.shared.$bindings.receive(on: RunLoop.main).sink { [weak self] _ in
+            let settings = AppSettings.shared
+            let hint = settings.holdHint
+            let lock = settings.shortcuts(for: .pushToTalk).isEmpty ? "" : ", double-tap to lock"
+            self?.statusItem.button?.toolTip = "BisprBlow · \(hint.prefix(1).lowercased())\(hint.dropFirst())"
+                + "\(lock).\nRight-click to quit."
+        }
     }
 
     @objc private func statusItemClicked() {
@@ -411,10 +417,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mainMenu = NSMenu()
         mainMenu.addItem(item)
         NSApp.mainMenu = mainMenu
-    }
-
-    @objc private func openDashboard() {
-        dashboard.show()
     }
 
     // The sign-in link in the emailed code lands here — `bisprblow://auth-callback` with the tokens

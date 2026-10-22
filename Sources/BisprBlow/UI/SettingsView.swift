@@ -23,18 +23,15 @@ struct SettingsView: View {
         Page(title: "Settings") {
             // Only shown while something actually needs the user's attention.
             if !micGranted || !axTrusted || !inputMonitoringGranted {
-                settingsGroup("Needs attention") {
+                settingsGroup("Allow in Privacy & Security") {
                     if !micGranted {
-                        permissionRow("Microphone", hint: "System Settings, Privacy & Security, Microphone")
+                        permissionRow("Microphone")
                     }
                     if !axTrusted {
-                        permissionRow("Accessibility", hint: "System Settings, Privacy & Security, Accessibility")
+                        permissionRow("Accessibility")
                     }
                     if !inputMonitoringGranted {
-                        permissionRow("Input Monitoring",
-                                      hint: settings.fnIsBound
-                                        ? "Needed to capture the fn key"
-                                        : "Needed to capture your shortcuts")
+                        permissionRow("Input Monitoring", hint: "Needed for shortcuts")
                     }
                 }
             }
@@ -98,7 +95,7 @@ struct SettingsView: View {
                           help: "Names, acronyms, and your dictionary keep their capitals.",
                           isOn: $settings.lowercaseSentences)
                 ToggleRow("End with a period",
-                          help: "Off, the period on the very end is dropped, so a dictated word or two lands bare. Question marks and sentences inside keep their punctuation.",
+                          help: "When off, only the final period is dropped.",
                           isOn: $settings.endWithPeriod)
             }
 
@@ -106,22 +103,22 @@ struct SettingsView: View {
             // System and Notifications; there are four of them, so they are one card.
             settingsGroup("App", padding: 5) {
                 ToggleRow("Open at login",
-                          help: "Starts BisprBlow when you log in, so the shortcut works without opening anything.",
+                          help: "Starts BisprBlow when you log in.",
                           isOn: $settings.launchAtLogin)
-                ToggleRow("Show the bar at all times",
-                          help: "Off, the floating bar only appears while you are dictating.",
+                ToggleRow("Always show the bar",
+                          help: "When off, the bar shows only while you dictate.",
                           isOn: $settings.alwaysShowPill)
                 ToggleRow("Show in the Dock",
-                          help: "The menu bar icon is always there either way.",
+                          help: "The menu bar icon always shows.",
                           isOn: $settings.showInDock)
-                ToggleRow("Play a sound when dictation starts and ends",
-                          help: "A click when the mic opens and one when the text lands.",
+                ToggleRow("Play sounds",
+                          help: "A click when the mic opens and when text lands.",
                           isOn: $settings.soundsEnabled)
                 ToggleRow("Voice commands",
-                          help: "Hold your Voice command shortcut and say what to do, like \"open my DMs\" or \"create a new issue\". What you said, the names and text of the buttons, fields and menus in the app in front, and the names of your open apps are sent to TypeSafe to pick which one you mean. Anything like delete, send or pay asks you first.",
+                          help: "Hold your voice command shortcut and say what to do. Sends your words, its button and field names, and your open app names to TypeSafe. Asks before delete, send or pay.",
                           isOn: $settings.voiceCommands)
-                ToggleRow("Tell me when there's a new version",
-                          help: "Asks GitHub once at launch whether a newer release is out, and shows a line on Home if there is. Nothing is downloaded or installed for you, and nothing about you is sent.",
+                ToggleRow("Check for updates",
+                          help: "Checks GitHub at launch. Sends nothing about you.",
                           isOn: $settings.checkForUpdates)
             }
 
@@ -148,8 +145,8 @@ struct SettingsView: View {
                     .frame(height: 1)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 3)
-                ToggleRow("Keep the mic loud enough",
-                          help: "Video call apps often turn the microphone down and leave it there, which makes dictation mishear. Turns it back up before each dictation. Never turns it down.",
+                ToggleRow("Keep mic volume up",
+                          help: "Turns the mic back up after call apps lower it.",
                           isOn: $settings.restoreMicVolume)
             }
 
@@ -165,19 +162,21 @@ struct SettingsView: View {
                                 .frame(width: 34, height: 34)
                         }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Bring over what Wispr Flow learned")
+                            Text("Import from Wispr Flow")
                                 .font(.bj(13, weight: .medium))
                                 .foregroundStyle(Theme.ink)
-                            Text(wisprImportResult ?? "Your dictionary, and the names you corrected there.")
+                            Text(wisprImportResult ?? "Your dictionary and corrected names.")
                                 .font(.bj(12))
                                 .foregroundStyle(Theme.inkSubtle)
                         }
                         Spacer(minLength: 12)
-                        Button(isImportingWispr ? "Importing…" : "Import", action: importFromWispr)
-                            .buttonStyle(CapsuleButtonStyle())
-                            .disabled(isImportingWispr)
+                        Button(action: importFromWispr) {
+                            BusyLabel(title: "Import", busy: isImportingWispr)
+                        }
+                        .buttonStyle(CapsuleButtonStyle())
+                        .disabled(isImportingWispr)
                     }
-                    .help("Reads Wispr Flow's data and leaves it as it is.")
+                    .help("Leaves Wispr Flow's data unchanged.")
                 }
             }
 
@@ -189,13 +188,13 @@ struct SettingsView: View {
                 }
             }
         }
-        .alert("Accurate needs a bigger model", isPresented: $askToDownload) {
+        .alert("Download the Accurate model?", isPresented: $askToDownload) {
             Button("Download") {
                 downloader.start { withAnimation(.bjSnap) { settings.cleanup = .accurate } }
             }
             Button("Not now", role: .cancel) {}
         } message: {
-            Text("It's a 1.8 GB download, and it keeps going while you work. BisprBlow writes with Fast until it finishes, then switches over.")
+            Text("It's 1.8 GB. Fast stays on until it finishes.")
         }
         .onChange(of: settings.cleanup) { _, _ in
             // Load the mode's model and prime the prompt-prefix cache now, server-side, so the
@@ -235,7 +234,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func settingsGroup(_ title: String, padding: CGFloat = 16,
                                @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 10) {
             SectionLabel(title)
             VStack(alignment: .leading, spacing: padding < 10 ? 1 : 10) {
                 content()
@@ -245,16 +244,18 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func permissionRow(_ name: String, hint: String) -> some View {
+    private func permissionRow(_ name: String, hint: String? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(Theme.red)
             Text(name)
                 .font(.bj(13, weight: .medium))
                 .foregroundStyle(Theme.ink)
-            Text(hint)
-                .font(.bj(12))
-                .foregroundStyle(Theme.inkSubtle)
+            if let hint {
+                Text(hint)
+                    .font(.bj(12))
+                    .foregroundStyle(Theme.inkSubtle)
+            }
         }
     }
 
@@ -264,7 +265,7 @@ struct SettingsView: View {
             ProgressView(value: fraction)
                 .progressViewStyle(.linear)
                 .frame(maxWidth: 180)
-            Text("Getting the Accurate model, \(Int(fraction * 100))%")
+            Text("Downloading Accurate, \(Int(fraction * 100))%")
                 .font(.bj(11))
                 .foregroundStyle(Theme.inkSubtle)
             Spacer()
@@ -409,14 +410,14 @@ struct ThemeSwatch: View {
                 .padding(.vertical, 9)
             }
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.cream))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.cream))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(selected ? Theme.blue : Theme.border,
                             lineWidth: selected ? 2 : 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
         .handCursor()

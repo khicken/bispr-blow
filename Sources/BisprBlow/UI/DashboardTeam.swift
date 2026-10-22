@@ -15,8 +15,7 @@ struct TeamPage: View {
         if !CloudConfig.ready {
             TeamView(settings: settings)
         } else if cloud.session == nil {
-            Page(title: "Team",
-                 subtitle: "Sign in to share a leaderboard, and to keep your teammates' names spelled right.") {
+            Page(title: "Team", subtitle: "Sign in to join your team.") {
                 SignInView(cloud: cloud, showsBlurb: false)
                     .card(padding: 16)
             }
@@ -36,34 +35,30 @@ struct TeamView: View {
     var body: some View {
         // What it does, not how it works: a teammate list is worth having because a name you say out
         // loud comes back spelled wrong until it is in here.
-        Page(title: "Team", subtitle: "Teammate names get spelled right when you dictate them.") {
+        Page(title: "Team", subtitle: "Names you add here get spelled right.") {
             if let cloud {
                 TeamCloudSection(cloud: cloud)
-                    .card(padding: 16)
+                    .card(padding: 18)
             }
-            HStack(spacing: 8) {
-                TextField("Name", text: $newName)
-                    .textFieldStyle(.plain)
-                    .font(.bj(13))
-                    .padding(10)
-                    .background(fieldBackground)
-                    .frame(maxWidth: 220)
-                    .onSubmit(addMember)
-                TextField("Role (optional)", text: $newRole)
-                    .textFieldStyle(.plain)
-                    .font(.bj(13))
-                    .padding(10)
-                    .background(fieldBackground)
-                    .frame(maxWidth: 220)
-                    .onSubmit(addMember)
-                Button("Add", action: addMember)
-                    .buttonStyle(CapsuleButtonStyle())
+            VStack(alignment: .leading, spacing: 10) {
+                SectionLabel("Names")
+                HStack(spacing: 8) {
+                    TextField("Name", text: $newName)
+                        .bjField()
+                        .frame(maxWidth: .infinity)
+                        .onSubmit(addMember)
+                    TextField("Role (optional)", text: $newRole)
+                        .bjField()
+                        .frame(maxWidth: .infinity)
+                        .onSubmit(addMember)
+                    Button("Add", action: addMember)
+                        .buttonStyle(CapsuleButtonStyle())
+                        .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
 
             if settings.teamMembers.isEmpty {
-                // The state, then the control, like the Dictionary page's empty hint. The subtitle
-                // above already carries the why.
-                EmptyHint(text: "Nothing here yet. Add a name above.")
+                EmptyHint(text: "No names yet.")
             } else {
                 VStack(spacing: 6) {
                     ForEach(settings.teamMembers) { member in
@@ -79,12 +74,6 @@ struct TeamView: View {
                 .animation(.bjSnap, value: settings.teamMembers.map(\.id))
             }
         }
-    }
-
-    private var fieldBackground: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(Theme.field)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
     }
 
     private func addMember() {
@@ -106,13 +95,7 @@ struct TeamRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ZStack {
-                Circle().fill(Theme.blueSoft)
-                Text(String(member.name.prefix(1)).uppercased())
-                    .font(.bj(12.5, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-            }
-            .frame(width: 28, height: 28)
+            InitialCircle(letter: String(member.name.prefix(1)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(member.name)
                     .font(.bj(13, weight: .medium))
@@ -133,11 +116,11 @@ struct TeamRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .handCursor()
+                .help("Remove \(member.name)")
             }
         }
         .card(padding: 11)
-        .scaleEffect(hovering ? 1.012 : 1)
-        .shadow(color: Theme.ink.opacity(hovering ? 0.07 : 0), radius: 8, y: 3)
         .onHover { hovering = $0 }
         .animation(.bjHover, value: hovering)
     }

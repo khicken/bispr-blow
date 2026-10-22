@@ -297,15 +297,6 @@ certificates, which is why the fallback path still ships today. Do not "simplify
 and a hardened runtime is what notarization requires. Not the App Sandbox: the event tap and
 inserting text into arbitrary apps do not survive it.
 
-**A hardened runtime turns on library validation, so `llama.framework` must carry the same Team ID
-as the app.** Signing the framework with one identity and the app with another gives dyld
-"different Team IDs" and the app dies at launch before `main`. Measured: the self-signed cert has no
-Team ID at all, so it cannot be used to test this path — signing both halves with it reproduces the
-crash and means nothing. The real check is an `Apple Development` cert, a proper
-Apple-issued cert with a team: with it, hardened runtime + entitlements gives `--self-check` passing,
-`codesign --verify --deep --strict` clean, and `--mic-check` capturing 88064 frames. That is as far
-as this can be verified before the Developer ID exists.
-
 ## Accounts rules
 
 **The Supabase project's dashboard settings are in `db/SETUP.md`, and sign-in is broken without
@@ -672,10 +663,8 @@ recall/quality at 0.19s median over the 26 cases, against LM Studio's 96%/85% at
 LM Studio was uninstalled on that result; the weights moved to
 `Application Support/BisprBlow/models`. GGUF quants were tried first and lost on
 quality, not speed (Q4_K_M 77%, Q8_0 78-81% — the quantization itself, not sampling;
-repeat-penalty was tested and ruled out). The llama.cpp backend still reads any GGUF on
-disk, and is what a machine without the metallib falls back to — but no GGUF ships in the
-installer and none is left on this machine, so that path is code without weights behind it.
-A machine that loses its metallib gets `ruleClean`, not a slower model.
+repeat-penalty was tested and ruled out). The app no longer reads GGUF files at all, so
+`llama.framework` is gone from the bundle. A machine that loses its metallib gets `ruleClean`.
 
 **MLX aborts the process — no throw, no fallback — without `mlx.metallib` beside the
 executable.** The name is `mlx.metallib`, NOT `default.metallib`: the first path
@@ -694,35 +683,16 @@ miss returns rules while the abandoned generation finishes quietly and is discar
 The cost is that the actor stays busy until it settles, which the 16k-char runaway
 ceiling bounds.
 
-The fork carries prompt-prefix KV caches for BOTH backends now (token-level diff,
-trim at divergence, prefill only the tail): llama.cpp got it first, MLX measured
-363ms → 39ms on identical calls and ~70-100ms on varied transcripts.
+The fork carries a prompt-prefix KV cache for MLX (token-level diff, trim at
+divergence, prefill only the tail), measured 363ms → 39ms on identical calls and
+~70-100ms on varied transcripts.
 
-**mlx-swift cannot be built by `swift build`.** Its own README says SwiftPM on the
-command line cannot compile the Metal shaders. Worse, a missing `default.metallib`
-makes MLX **abort the process** rather than throw, so the fallback to LM Studio or
-rules never runs and the app dies on the first dictation — any `onDevice` endpoint
-backed by MLX has to be gated on the metallib existing. Getting MLX working needs
-Xcode's multi-GB Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`)
-plus a metallib step in build.sh, re-run on every MLX bump. MLX looks for it beside
-the executable first, so that step is a file copy rather than a bundle. This is the
-trade to weigh: MLX is the fast runtime, llama.cpp is the portable one that builds.
-
-**The in-process dependency is pinned by revision, not version, and must be.**
-LocalLLMClient's llama.cpp C target uses `unsafeFlags`, which SwiftPM refuses in a
-dependency resolved by version ("contains unsafe build flags"). A revision carries
-the same permission with none of the drift their README's `branch: "main"` would
-bring. Its umbrella header also hard-errors unless the importing target sets
-`.interoperabilityMode(.Cxx)`, so C++ interop propagates to the whole app target.
-It works with SwiftUI and AppKit; do not remove that setting.
+**The in-process dependency is pinned by revision, not version.** The fork that
+carries the KV-cache fixes has no tag past 0.5.0, so a revision is the only stable
+reference to it.
 
 **Never block the main thread waiting on a `Task` in a CLI path.** `main()` on a
 `@main` type is MainActor-isolated, so a plain `Task` inherits that isolation and
 can never run while a semaphore holds the main thread. It deadlocks outright with no
 log output, which reads exactly like a hung model. `App.swift`'s `awaitSync` uses
 `Task.detached` for this reason.
-
-Known rough edges before `onDevice` can ship: the `--complete` process exits with
-SIGABRT inside ggml's `ggml_metal_device` destructor, and a 10-request run returned
-only 6 replies. Both land after the output for the CLI seam, but neither is
-acceptable inside the app.

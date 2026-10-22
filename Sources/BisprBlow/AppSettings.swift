@@ -81,6 +81,7 @@ final class AppSettings: ObservableObject {
                 else { try SMAppService.mainApp.unregister() }
             } catch {
                 logLine("login item \(launchAtLogin ? "register" : "unregister") failed: \(error)")
+                launchAtLogin = SMAppService.mainApp.status == .enabled
             }
         }
     }

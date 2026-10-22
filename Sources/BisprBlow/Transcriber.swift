@@ -6,12 +6,10 @@ import Speech
 final class Transcriber {
     enum TranscriberError: Error, LocalizedError {
         case localeUnsupported
-        case noResult
 
         var errorDescription: String? {
             switch self {
             case .localeUnsupported: return "On-device transcription does not support this locale."
-            case .noResult: return "No speech was recognized."
             }
         }
     }

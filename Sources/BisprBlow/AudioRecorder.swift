@@ -138,6 +138,9 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     // the caller must not go on to finalise a recognizer that was never fed — see `finishRecording`.
     var capturedFrames: Int { queue.sync { frames } }
 
+    // Called as a dictation begins, so a release before `start()` runs reads zero, not the last count.
+    func resetCapturedFrames() { queue.sync { frames = 0 } }
+
     // How long the session keeps running after a dictation ends. `startRunning()` is ~150ms of cold
     // CoreAudio setup and was most of the gap between the pill saying "recording" and the mic
     // capturing. Not forever: a running session holds the mic, and macOS keeps its recording

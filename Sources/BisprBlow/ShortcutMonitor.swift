@@ -103,6 +103,14 @@ final class ShortcutMonitor {
         onStop?(true)
     }
 
+    // The controller turned a start down or ended on its own, so no hands-free session is live.
+    func reset() {
+        pendingCancel?.cancel()
+        pendingCancel = nil
+        locked = false
+        lastTapAt = -10
+    }
+
     // Start a hands-free session from the UI (pill buttons) — same as double-tapping.
     func beginLockedSession() {
         guard !locked, !triggerIsDown else { return }
