@@ -683,18 +683,9 @@ miss returns rules while the abandoned generation finishes quietly and is discar
 The cost is that the actor stays busy until it settles, which the 16k-char runaway
 ceiling bounds.
 
-The fork carries prompt-prefix KV caches for BOTH backends now (token-level diff,
-trim at divergence, prefill only the tail): llama.cpp got it first, MLX measured
-363ms → 39ms on identical calls and ~70-100ms on varied transcripts.
-
-**mlx-swift cannot be built by `swift build`.** Its own README says SwiftPM on the
-command line cannot compile the Metal shaders. Worse, a missing `default.metallib`
-makes MLX **abort the process** rather than throw, so the fallback to LM Studio or
-rules never runs and the app dies on the first dictation — any `onDevice` endpoint
-backed by MLX has to be gated on the metallib existing. Getting MLX working needs
-Xcode's multi-GB Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`)
-plus a metallib step in build.sh, re-run on every MLX bump. MLX looks for it beside
-the executable first, so that step is a file copy rather than a bundle.
+The fork carries a prompt-prefix KV cache for MLX (token-level diff, trim at
+divergence, prefill only the tail), measured 363ms → 39ms on identical calls and
+~70-100ms on varied transcripts.
 
 **The in-process dependency is pinned by revision, not version.** The fork that
 carries the KV-cache fixes has no tag past 0.5.0, so a revision is the only stable

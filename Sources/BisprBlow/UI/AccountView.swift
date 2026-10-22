@@ -111,7 +111,7 @@ struct TeamCloudSection: View {
             }
             .buttonStyle(QuietButtonStyle())
             .disabled(busy != nil)
-            // Puts the text, not the hover fill, on the field's left edge.
+            // Puts the text, not the pressed fill, on the field's left edge.
             .padding(.leading, -8)
             noteLine
         }
@@ -182,22 +182,13 @@ struct TeamCloudSection: View {
     private func field(_ prompt: String, text: Binding<String>,
                        submit: @escaping () -> Void) -> some View {
         TextField(prompt, text: text)
-            .textFieldStyle(.plain)
-            .font(.bj(13))
-            .padding(10)
-            .background(FieldBackground())
+            .bjField()
             .frame(maxWidth: .infinity)
             .onSubmit(submit)
     }
 
-    // The button's title, with the spinner the Dictionary page uses while its action runs.
     private func label(_ title: String, for action: Action) -> some View {
-        HStack(spacing: 6) {
-            if busy == action {
-                ProgressView().controlSize(.small)
-            }
-            Text(title)
-        }
+        BusyLabel(title: title, busy: busy == action)
     }
 
     // MARK: - Actions
@@ -295,6 +286,30 @@ struct FieldBackground: View {
     }
 }
 
+extension View {
+    func bjField() -> some View {
+        textFieldStyle(.plain)
+            .font(.bj(13))
+            .padding(10)
+            .background(FieldBackground())
+    }
+}
+
+// A button title with a spinner beside it while its action runs.
+struct BusyLabel: View {
+    let title: String
+    let busy: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if busy {
+                ProgressView().controlSize(.small)
+            }
+            Text(title)
+        }
+    }
+}
+
 // Signing in, in one place: Settings shows it inside the Account group, the Team page as the whole
 // page, and two copies of this drifted apart the moment either was touched. It says "sign in or
 // create an account" because that is literally one call — `requestCode` passes `create_user: true`,
@@ -308,10 +323,10 @@ struct SignInView: View {
     @State private var email = ""
     @State private var code = ""
     @State private var codeSent = false
-    @State private var busy = false
-    // Only the email button spins: the Google button stays as Google draws it.
-    @State private var sending = false
+    @State private var busy: Action?
     @State private var note: String?
+
+    private enum Action { case email, google }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -322,33 +337,23 @@ struct SignInView: View {
             }
             HStack(spacing: 8) {
                 TextField("you@company.com", text: $email)
-                    .textFieldStyle(.plain)
-                    .font(.bj(13))
-                    .padding(10)
-                    .background(FieldBackground())
+                    .bjField()
                     .frame(maxWidth: .infinity)
                     .onSubmit(submit)
                 if codeSent {
                     TextField("Code", text: $code)
-                        .textFieldStyle(.plain)
-                        .font(.bj(13))
                         .monospacedDigit()
-                        .padding(10)
-                        .background(FieldBackground())
+                        .bjField()
                         .frame(width: 100)
                         .onSubmit(submit)
                         .transition(.opacity)
                 }
                 Button(action: submit) {
-                    HStack(spacing: 6) {
-                        if sending {
-                            ProgressView().controlSize(.small)
-                        }
-                        Text(codeSent ? "Sign in" : "Email me a code")
-                    }
+                    // Only the email button spins: the Google button stays as Google draws it.
+                    BusyLabel(title: codeSent ? "Sign in" : "Email me a code", busy: busy == .email)
                 }
                 .buttonStyle(CapsuleButtonStyle())
-                .disabled(busy || trimmedEmail.isEmpty
+                .disabled(busy != nil || trimmedEmail.isEmpty
                           || (codeSent && code.trimmingCharacters(in: .whitespaces).isEmpty))
             }
             if codeSent {
@@ -371,7 +376,7 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(CapsuleButtonStyle(filled: false))
-            .disabled(busy)
+            .disabled(busy != nil)
             if let note {
                 Text(note)
                     .font(.bj(11.5))
@@ -386,9 +391,8 @@ struct SignInView: View {
     }
 
     private func submit() {
-        guard !busy, !trimmedEmail.isEmpty else { return }
-        sending = true
-        run {
+        guard busy == nil, !trimmedEmail.isEmpty else { return }
+        run(.email) {
             if codeSent {
                 try await cloud.signIn(email: trimmedEmail,
                                        code: code.trimmingCharacters(in: .whitespaces))
@@ -402,20 +406,19 @@ struct SignInView: View {
     }
 
     private func google() {
-        guard !busy else { return }
-        run { try await cloud.signInWithGoogle() }
+        guard busy == nil else { return }
+        run(.google) { try await cloud.signInWithGoogle() }
     }
 
     // Closing the Google sheet is a decision, not a failure, so it leaves no red line behind.
-    private func run(_ work: @escaping () async throws -> Void) {
-        busy = true
+    private func run(_ action: Action, _ work: @escaping () async throws -> Void) {
+        busy = action
         note = nil
         Task { @MainActor in
             do { try await work() }
             catch is CancellationError {}
             catch { note = error.localizedDescription }
-            busy = false
-            sending = false
+            busy = nil
         }
     }
 

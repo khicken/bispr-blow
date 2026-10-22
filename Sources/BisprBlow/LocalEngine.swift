@@ -47,8 +47,9 @@ actor LocalEngine {
     // `smallFamilies` / `carefulFamilies` matching works on it unchanged and Fast/Accurate needs no
     // knowledge that the transport changed.
     static func installedModels() -> [(id: String, url: URL)] {
+        guard mlxAvailable else { return [] }
         let fm = FileManager.default
-        var mlx: [(id: String, url: URL)] = []
+        var models: [(id: String, url: URL)] = []
         var seen = Set<String>()
         for root in Self.searchRoots {
             guard let walker = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
@@ -60,12 +61,12 @@ actor LocalEngine {
                       files.contains(where: { $0.pathExtension == "safetensors" })
                 else { continue }
                 walker.skipDescendants()
-                if mlxAvailable, seen.insert(url.lastPathComponent.lowercased()).inserted {
-                    mlx.append((id: url.lastPathComponent, url: url))
+                if seen.insert(url.lastPathComponent.lowercased()).inserted {
+                    models.append((id: url.lastPathComponent, url: url))
                 }
             }
         }
-        return mlx
+        return models
     }
 
     // Loads the model if it is not resident. Separate from `complete` so `warmUp()` can pay the load

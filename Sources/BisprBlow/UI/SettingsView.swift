@@ -115,7 +115,7 @@ struct SettingsView: View {
                           help: "A click when the mic opens and when text lands.",
                           isOn: $settings.soundsEnabled)
                 ToggleRow("Voice commands",
-                          help: "Say what to do in the app in front. Sends your words, its button and field names, and your open app names to TypeSafe. Asks before delete, send or pay.",
+                          help: "Hold your voice command shortcut and say what to do. Sends your words, its button and field names, and your open app names to TypeSafe. Asks before delete, send or pay.",
                           isOn: $settings.voiceCommands)
                 ToggleRow("Check for updates",
                           help: "Checks GitHub at launch. Sends nothing about you.",
@@ -171,12 +171,7 @@ struct SettingsView: View {
                         }
                         Spacer(minLength: 12)
                         Button(action: importFromWispr) {
-                            HStack(spacing: 6) {
-                                if isImportingWispr {
-                                    ProgressView().controlSize(.small)
-                                }
-                                Text("Import")
-                            }
+                            BusyLabel(title: "Import", busy: isImportingWispr)
                         }
                         .buttonStyle(CapsuleButtonStyle())
                         .disabled(isImportingWispr)

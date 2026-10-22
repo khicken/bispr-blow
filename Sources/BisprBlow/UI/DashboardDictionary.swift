@@ -167,10 +167,7 @@ struct DictionaryView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 TextField("Add words, separated by commas", text: $newWord)
-                    .textFieldStyle(.plain)
-                    .font(.bj(13))
-                    .padding(10)
-                    .background(FieldBackground())
+                    .bjField()
                     .onSubmit(addWord)
                 // Return adds the literal words. Asking a model for thirty terms is slower to do by
                 // accident, so it costs a click.
@@ -342,7 +339,7 @@ struct DictionaryView: View {
             let added = settings.dictionary.count - before
             note = switch added {
             case 0 where terms.isEmpty:
-                "No model available. Download one in Settings."
+                "No model to generate with. Add words by hand."
             case 0:
                 "All terms for “\(topic)” are already here."
             default:
