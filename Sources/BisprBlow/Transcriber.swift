@@ -16,6 +16,8 @@ final class Transcriber {
 
     // Volatile (in-progress) text, for live UI feedback.
     var onPartial: ((String) -> Void)?
+    // Each stretch the recognizer will not revise again, in order. Voice commands run from these.
+    var onFinal: ((String) -> Void)?
 
     private var analyzer: SpeechAnalyzer?
     private var analyzerTranscriber: SpeechTranscriber?
@@ -221,6 +223,8 @@ final class Transcriber {
                         logLine("alternatives=\(result.alternatives.count) for \(text.split(whereSeparator: \.isWhitespace).count)w span")
                         self.finalizedText += text
                         self.volatileText = ""
+                        let settled = Self.withoutPauseMarks(text)
+                        DispatchQueue.main.async { self.onFinal?(settled) }
                     } else {
                         self.volatileText = text
                     }

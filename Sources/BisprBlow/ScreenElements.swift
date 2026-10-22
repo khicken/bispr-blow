@@ -5,7 +5,7 @@ import ApplicationServices
 // menu bar as Accessibility exposes them, plus the other apps that are running. Read on demand,
 // never kept: it is a snapshot of someone else's screen.
 struct ScreenElement {
-    enum Kind { case press, field, app }
+    enum Kind { case press, field, app, web }
 
     let label: String
     let kind: Kind
@@ -51,8 +51,11 @@ enum ScreenElements {
         let others = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && $0 != app && $0.localizedName != nil }
             .map { ScreenElement(label: "\($0.localizedName!) (switch to app)", kind: .app, element: nil, app: $0) }
-        // Jev takes at most 255 choices; the other apps stay in, since "open Slack" has to work anywhere.
-        return uniquelyLabelled(Array((found + menu).prefix(max(0, VoiceCommand.maxChoices - others.count))) + others)
+        // Somewhere to go when the thing asked for is not on screen at all: "go to LinkedIn".
+        let web = ScreenElement(label: "Open a website or search the web (web)", kind: .web, element: nil, app: nil)
+        // Jev takes at most 255 choices; the other apps and the web stay in, since they work from anywhere.
+        let room = max(0, VoiceCommand.maxChoices - others.count - 1)
+        return uniquelyLabelled(Array((found + menu).prefix(room)) + others + [web])
     }
 
     private static func walk(_ node: AXUIElement, into found: inout [ScreenElement], limit: Int, budget: inout Int, deadline: Date) {

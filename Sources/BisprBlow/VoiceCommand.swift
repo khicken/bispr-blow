@@ -39,7 +39,7 @@ enum VoiceCommand {
         let byLabel = Dictionary(elements.map { ($0.label, $0) }, uniquingKeysWith: { first, _ in first })
         let body: [String: Any] = [
             "model": model,
-            "state": "The user is in \(appName) on a Mac and said: \"\(spoken)\". The choices are the elements on screen, the app's menu items, and the other open apps.",
+            "state": "The user is in \(appName) on a Mac and said: \"\(spoken)\". The choices are the elements on screen, the app's menu items, the other open apps, and opening a website.",
             "questions": ["target": [
                 "type": "choice",
                 "instructions": "Which on-screen element, menu item, or other app should be acted on to carry out the command?",
@@ -77,6 +77,8 @@ enum VoiceCommand {
         case .press:
             guard let node = element.element else { return false }
             return AXUIElementPerformAction(node, kAXPressAction as CFString) == .success
+        case .web:
+            return webAddress(for: spoken).map { NSWorkspace.shared.open($0) } ?? false
         case .field:
             guard let node = element.element,
                   AXUIElementSetAttributeValue(node, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
@@ -87,6 +89,59 @@ enum VoiceCommand {
             return TextInserter.insert(text)
         }
     }
+
+    // Where "go to LinkedIn" lands: a spoken domain as itself, "search for X" as a search, and a bare
+    // name as DuckDuckGo's first result, which is the site itself for anything with a home page.
+    static func webAddress(for spoken: String) -> URL? {
+        let phrase = spoken.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        let isSearch = phrase.range(of: #"^search\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        let target = phrase.replacingOccurrences(of: webVerbs, with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespaces)
+        guard !target.isEmpty else { return nil }
+        if !isSearch, target.range(of: #"^[\w-]+(\.[\w-]+)+(/\S*)?$"#, options: .regularExpression) != nil {
+            return URL(string: "https://\(target)")
+        }
+        let query = (isSearch ? target : "\\" + target).addingPercentEncoding(withAllowedCharacters: queryValue) ?? target
+        return URL(string: "https://duckduckgo.com/?q=\(query)")
+    }
+
+    // `.urlQueryAllowed` keeps & + = and #, which would split or end the query: "C++ & Rust".
+    private static let queryValue = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+=#;?/"))
+
+    private static let webVerbs = #"^(?:go to|open|visit|pull up|look up|search(?: the web| google| online)?(?: for)?)\s+(?:the\s+)?"#
+
+    // "open Linear and create a new issue" is two commands, each on the screen the last one left.
+    // A "type" step keeps the rest of the sentence: "type salt and pepper" is one thing to type.
+    static func steps(in spoken: String) -> [String] {
+        var steps: [String] = []
+        var rest = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
+        while textToType(in: rest) == nil,
+              let joint = chainJoint.firstMatch(in: rest, range: NSRange(rest.startIndex..., in: rest)),
+              let range = Range(joint.range, in: rest) {
+            steps.append(String(rest[..<range.lowerBound]))
+            rest = String(rest[range.upperBound...])
+        }
+        return (steps + [rest]).filter { !$0.isEmpty }
+    }
+
+    // A pause mid-command ("go to" … "LinkedIn", "open Slack and" … "go to DMs") is not its end.
+    static func isUnfinished(_ said: String) -> Bool {
+        let last = said.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            .split(separator: " ").last.map { $0.lowercased() }
+        return last.map { danglingWords.contains($0) } ?? false
+    }
+
+    static func withoutLeadingJoint(_ said: String) -> String {
+        said.replacingOccurrences(of: #"^\s*(?:and\s+then|then|and)\b[\s,]*"#, with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let danglingWords: Set<String> = ["and", "then", "to", "for", "the", "a", "my", "go", "open", "type", "write", "search", "into", "on"]
+
+    // Only an "and" or "then" followed by a command verb is a joint; "cats and dogs" is not.
+    private static let chainJoint = try! NSRegularExpression(
+        pattern: #"\s*,?\s+(?:and\s+then|then|and)\s+(?=(?:open|go|click|press|tap|switch|type|write|search|show|create|start|close|reply|select|check|look|pull|visit|make|add|mark|react|stop)\b)"#,
+        options: .caseInsensitive)
 
     // The words to put in a field: everything after "type", "write" or "search for". A command that
     // only names the field ("click into the message box") focuses it and types nothing.
