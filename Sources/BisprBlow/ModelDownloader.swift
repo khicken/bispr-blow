@@ -24,6 +24,8 @@ final class ModelDownloader: ObservableObject {
     @Published private(set) var failure: String?
 
     private var job: Task<Void, Never>?
+    // Which job is current, so a cancelled one finishing late cannot clear the one that replaced it.
+    private var jobID: UUID?
     var isRunning: Bool { job != nil }
 
     private var root: URL {
@@ -35,24 +37,29 @@ final class ModelDownloader: ObservableObject {
         guard job == nil else { return }
         failure = nil
         fraction = 0
+        let id = UUID()
+        jobID = id
         job = Task {
+            var done = false
+            var failed: String?
             do {
-                try await run()
-                job = nil
-                fraction = nil
-                finished()
+                try await run(id)
+                done = true
             } catch is CancellationError {
-                job = nil
-                fraction = nil
             } catch let error as URLError where error.code == .cancelled {
                 // What `cancel()` looks like once a transfer is in flight — the session's error,
                 // not `CancellationError`. Stopping is a decision, so it leaves no red line behind.
-                job = nil
-                fraction = nil
             } catch {
-                failure = error.localizedDescription
-                job = nil
-                fraction = nil
+                failed = error.localizedDescription
+            }
+            guard jobID == id else { return }
+            job = nil
+            jobID = nil
+            fraction = nil
+            if let failed {
+                failure = failed
+            } else if done {
+                finished()
             }
         }
     }
@@ -60,10 +67,11 @@ final class ModelDownloader: ObservableObject {
     func cancel() {
         job?.cancel()
         job = nil
+        jobID = nil
         fraction = nil
     }
 
-    private func run() async throws {
+    private func run(_ id: UUID) async throws {
         let fm = FileManager.default
         let staging = root.appendingPathComponent(".incoming-\(modelName)")
         let installed = root.appendingPathComponent(modelName)
@@ -78,7 +86,8 @@ final class ModelDownloader: ObservableObject {
             let url = URL(string: "https://huggingface.co/\(repo)/resolve/main/\(file.name)")!
             let written = try await Fetch.file(url, to: staging.appendingPathComponent(file.name)) { got in
                 Task { @MainActor [weak self] in
-                    self?.fraction = Double(carried + got) / Double(max(total, 1))
+                    guard let self, self.jobID == id else { return }
+                    self.fraction = Double(carried + got) / Double(max(total, 1))
                 }
             }
             // The truncation CLAUDE.md warns is invisible until first dictation, caught here instead.
@@ -86,6 +95,7 @@ final class ModelDownloader: ObservableObject {
             carried += written
         }
 
+        try Task.checkCancellation()
         try? fm.removeItem(at: installed)
         try fm.moveItem(at: staging, to: installed)
     }

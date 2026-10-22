@@ -37,6 +37,8 @@ final class DictationController: ObservableObject {
     private var capturedContext: AppContext?
     private var recordingStartedAt = Date()
     private var sessionGeneration = 0
+    // This dictation's transcriber start, awaited by a cancel so an analyzer still starting is cancelled too.
+    private var startTask: Task<Void, Never>?
     // Set by the "dictate and send" binding: press Return once the text is in.
     private var sendEnter = false
     // Set by the "voice command" binding: act on the app that was in front at the press.
@@ -63,7 +65,7 @@ final class DictationController: ObservableObject {
         // Until Accessibility is granted, auto-insert and shortcut interception are degraded —
         // keep a persistent hint on the pill and clear it the moment the grant lands.
         if !AXIsProcessTrusted() {
-            notice = "Allow Accessibility to insert text"
+            notice = Self.accessibilityHint
             axPollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, AXIsProcessTrusted() else { return }
@@ -81,7 +83,7 @@ final class DictationController: ObservableObject {
         }
         Task.detached(priority: .utility) { [cleaner] in
             await cleaner.warmUp()
-            logLine("cleanup using \(cleaner.activeDescription)")
+            logLine("cleanup using \(await cleaner.activeDescription)")
         }
     }
 
@@ -91,7 +93,7 @@ final class DictationController: ObservableObject {
 
     // Reflect lock state in UI when the monitor transitions hold → locked.
     func noteLocked() {
-        if case .recording = state { state = .recording(locked: true) }
+        if case .recording = state { state = .recording(locked: true) } else { monitor.reset() }
     }
 
     // Stop button on the pill during a hands-free session.
@@ -105,20 +107,25 @@ final class DictationController: ObservableObject {
         monitor.beginLockedSession()
     }
 
+    private static let accessibilityHint = "Allow Accessibility to insert text"
+
     private func showNotice(_ message: String, for seconds: TimeInterval = 4,
                            action: (label: String, run: () -> Void)? = nil) {
         notice = message
         noticeAction = action
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            if self?.notice == message {
-                self?.notice = nil
-                self?.noticeAction = nil
-            }
+            guard let self, self.notice == message else { return }
+            // The Accessibility hint stays until access is granted.
+            self.notice = self.axPollTimer == nil ? nil : Self.accessibilityHint
+            self.noticeAction = nil
         }
     }
 
     private func beginRecording(_ action: ShortcutAction) {
-        guard state == .idle else { return }
+        guard state == .idle else {
+            monitor.reset()
+            return
+        }
         // Speaking again means the last dictation's edits are done, before this one's text can land beside them.
         CorrectionWatcher.cancel()
         ActivationTrace.mark("onStart")
@@ -160,7 +167,8 @@ final class DictationController: ObservableObject {
         }
 
         let generation = sessionGeneration
-        Task {
+        recorder.resetCapturedFrames()
+        startTask = Task {
             await transcriber.startSession(contextTerms: capturedContext?.draftTerms ?? [])
             ActivationTrace.mark("session")
             guard self.sessionGeneration == generation, case .recording = self.state else { return }
@@ -169,6 +177,8 @@ final class DictationController: ObservableObject {
             } catch {
                 self.lastError = "Microphone unavailable: \(error.localizedDescription)"
                 self.state = .idle
+                self.monitor.reset()
+                await self.transcriber.cancelSession()
                 return
             }
             // The pill says "recording" from the moment the shortcut fires, but the mic only opens
@@ -192,7 +202,7 @@ final class DictationController: ObservableObject {
         guard recorder.capturedFrames > 0 else {
             logLine("dictation discarded: no audio captured")
             sessionGeneration += 1
-            Task { await transcriber.cancelSession() }
+            cancelTranscriber()
             showNotice("No audio from \(AudioRecorder.currentInputDeviceName())")
             state = .idle
             partialText = ""
@@ -261,7 +271,17 @@ final class DictationController: ObservableObject {
         sendEnter = false
         partialText = ""
         state = .idle
-        Task { await transcriber.cancelSession() }
+        cancelTranscriber()
+    }
+
+    // Skipped once a newer dictation has started: the transcriber holds one session at a time.
+    private func cancelTranscriber() {
+        let generation = sessionGeneration
+        Task { [startTask] in
+            await startTask?.value
+            guard self.sessionGeneration == generation else { return }
+            await self.transcriber.cancelSession()
+        }
     }
 
     // One cue when the mic opens, one when the text lands. Fire and forget: a sound that waits on

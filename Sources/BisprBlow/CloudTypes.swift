@@ -81,6 +81,7 @@ struct LeaderboardRow: Decodable, Identifiable {
 
 struct CloudError: LocalizedError {
     let message: String
+    var status: Int?
     var errorDescription: String? { message }
 
     // Supabase's own messages ("invite code is not valid") are already the right words to show;
@@ -94,10 +95,10 @@ struct CloudError: LocalizedError {
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             for key in ["message", "msg", "error_description"] {
                 if let text = object[key] as? String, !text.isEmpty {
-                    return CloudError(message: text)
+                    return CloudError(message: text, status: status)
                 }
             }
         }
-        return CloudError(message: "That didn't work. Try again in a moment.")
+        return CloudError(message: "That didn't work. Try again in a moment.", status: status)
     }
 }

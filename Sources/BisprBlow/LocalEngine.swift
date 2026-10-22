@@ -12,6 +12,8 @@ actor LocalEngine {
 
     private var client: MLXClient?
     private var loadedID: String?
+    // The launch warm-up and a first dictation can both ask for a load; they share this one.
+    private var loading: (id: String, task: Task<MLXClient, Error>)?
 
     // MLX aborts the whole process — no throw, no fallback — when its metallib is missing, so MLX
     // models stay invisible unless the library is where MLX will look. Two homes, matching MLX's
@@ -69,26 +71,33 @@ actor LocalEngine {
         return models
     }
 
-    // Loads the model if it is not resident. Separate from `complete` so `warmUp()` can pay the load
-    // cost at launch rather than inside a dictation's deadline.
-    func load(id: String) async throws -> Bool {
-        if loadedID == id, client != nil { return false }
+    // Loads the model if it is not resident.
+    private func load(id: String) async throws {
+        if loadedID == id, client != nil { return }
+        if let pending = loading, pending.id == id {
+            client = try await pending.task.value
+            loadedID = id
+            return
+        }
         guard let model = Self.installedModels().first(where: { $0.id == id }) else {
             throw Failure.notInstalled(id)
         }
         let started = Date()
-        client = try await LocalLLMClient.mlx(
-            url: model.url,
-            parameter: .init(maxTokens: 2048, temperature: 0.2))
+        let task = Task {
+            try await LocalLLMClient.mlx(url: model.url,
+                                         parameter: .init(maxTokens: 2048, temperature: 0.2))
+        }
+        loading = (id, task)
+        defer { if loading?.id == id { loading = nil } }
+        client = try await task.value
         loadedID = id
         logLine("local model loaded \(id) in \(Int(Date().timeIntervalSince(started) * 1000))ms")
-        return true
     }
 
     // One completion. `messages` is the same `[[String: String]]` the HTTP path sends, so both
     // transports run byte-identical prompts and comparing them is honest.
     func complete(id: String, messages: [[String: String]]) async throws -> String {
-        _ = try await load(id: id)
+        try await load(id: id)
         guard let client else { throw Failure.notInstalled(id) }
 
         let chat: [LLMInput.Message] = messages.compactMap { message in
