@@ -180,11 +180,62 @@ extension LLMCleaner {
               !englishWords.contains(fixed),
               // Four letters is where `englishWords` starts, so a shorter heard word is one the list
               // has no opinion about — and an opinion is the whole basis for learning here.
-              heard.count >= 4, !englishWords.contains(heard),
-              abs(heard.count - fixed.count) <= 3
+              heard.count >= 4, !englishWords.contains(heard)
         else { return false }
-        return levenshtein(heard, fixed) <= 2
-            || levenshtein(phoneticKey(heard), phoneticKey(fixed)) <= 1
+        return soundsAlike(heard, fixed)
+    }
+
+    // Same rough length, and either two edits apart or one apart in sound: a mishear, not a rewrite.
+    private static func soundsAlike(_ heard: String, _ fixed: String) -> Bool {
+        abs(heard.count - fixed.count) <= 3
+            && (levenshtein(heard, fixed) <= 2 || levenshtein(phoneticKey(heard), phoneticKey(fixed)) <= 1)
+    }
+
+    // The dictionary words a fix teaches. One word for one word is `learnable`'s call. A longer fix
+    // ("live kit" → "LiveKit", "Abhivit Pulapaka" → "Abhived Pulapaka") must pass the same shape test
+    // across the whole stretch, and teaches only the new words the word list has never heard of: a
+    // real word in the dictionary is what licenses respelling its neighbours.
+    static func learnedWords(from fix: CorrectionWatcher.Correction) -> [String] {
+        let heard = fix.misheard.split(separator: " ").map(String.init)
+        let fixed = fix.corrected.split(separator: " ").map(String.init)
+        if heard.count == 1, fixed.count == 1 {
+            return learnable(misheard: fix.misheard, corrected: fix.corrected) ? [fix.corrected] : []
+        }
+        guard (heard + fixed).allSatisfy({ $0.allSatisfy { $0.isLetter || $0 == "'" || $0 == "-" } }),
+              soundsAlike(heard.joined().lowercased(), fixed.joined().lowercased())
+        else { return [] }
+        let heardWords = Set(heard.map { $0.lowercased() })
+        return fixed.filter {
+            $0.count >= 3 && !englishWords.contains($0.lowercased()) && !heardWords.contains($0.lowercased())
+        }
+    }
+
+    // Keeps only the words that never put a word into one of `dictations` that was not already there,
+    // recasing included: those are text the user kept, so a word that changes one will do the same
+    // to the next. Repeats because a word only licenses its neighbours once it is in.
+    static func harmless(_ candidates: [String], vocabulary: [String], dictations: [String]) -> [String] {
+        var kept = candidates
+        while true {
+            let keptKeys = Set(kept.map { $0.lowercased() })
+            var respelled = [String](repeating: "", count: dictations.count)
+            respelled.withUnsafeMutableBufferPointer { out in
+                DispatchQueue.concurrentPerform(iterations: dictations.count) { index in
+                    out[index] = applyVocabulary(dictations[index], vocabulary: vocabulary + kept)
+                }
+            }
+            var blamed = Set<String>()
+            for (dictation, after) in zip(dictations, respelled) where after != dictation {
+                let said = Set(words(in: dictation))
+                blamed.formUnion(words(in: after).filter { !said.contains($0) }
+                    .map { $0.lowercased() }.filter(keptKeys.contains))
+            }
+            if blamed.isEmpty { return kept }
+            kept.removeAll { blamed.contains($0.lowercased()) }
+        }
+    }
+
+    private static func words(in line: String) -> [String] {
+        line.split(whereSeparator: \.isWhitespace).map { $0.trimmingCharacters(in: .punctuationCharacters) }
     }
 
     private static func levenshtein(_ a: String, _ b: String) -> Int {

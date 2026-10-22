@@ -237,7 +237,7 @@ extension SelfCheck {
     static func run(_ body: (ShortcutMonitor, () -> [String]) -> Void) {
         let monitor = ShortcutMonitor()
         var log: [String] = []
-        monitor.onStart = { log.append($0 ? "start+enter" : "start") }
+        monitor.onStart = { log.append($0 == .pressEnter ? "start+enter" : "start") }
         monitor.onStop = { log.append($0 ? "stop-locked" : "stop") }
         monitor.onCancel = { log.append("cancel") }
         monitor.onLock = { log.append("lock") }

@@ -32,39 +32,14 @@ enum WisprImport {
         else { return nil }
         let edits = history.filter { !$0[1].isEmpty }.map { (written: $0[0], edited: $0[1]) }
         let dictations = history.map { $0[1].isEmpty ? $0[0] : $0[1] }
-        return harmless(words.map { $0[0] } + corrections(in: edits), vocabulary: vocabulary, dictations: dictations)
+        return LLMCleaner.harmless(words.map { $0[0] } + corrections(in: edits), vocabulary: vocabulary, dictations: dictations)
     }
 
     // Wispr Flow's history is the same signal `CorrectionWatcher` waits for, after the fact, so it is
     // held to the same bar.
     static func corrections(in edits: [(written: String, edited: String)]) -> [String] {
         edits.compactMap { CorrectionWatcher.substitution(from: $0.written, to: $0.edited) }
-            .filter { LLMCleaner.learnable(misheard: $0.misheard, corrected: $0.corrected) }
-            .map(\.corrected)
-    }
-
-    // Keeps only the words that never put a word into a past dictation that the user did not say,
-    // recasing included: those dictations are what the user kept, so a word that changes one will do
-    // the same to the next. Repeats because a word only licenses its neighbours once it is in.
-    static func harmless(_ candidates: [String], vocabulary: [String], dictations: [String]) -> [String] {
-        var kept = candidates
-        while true {
-            let keptKeys = Set(kept.map { $0.lowercased() })
-            var respelled = [String](repeating: "", count: dictations.count)
-            respelled.withUnsafeMutableBufferPointer { out in
-                DispatchQueue.concurrentPerform(iterations: dictations.count) { index in
-                    out[index] = LLMCleaner.applyVocabulary(dictations[index], vocabulary: vocabulary + kept)
-                }
-            }
-            var blamed = Set<String>()
-            for (dictation, after) in zip(dictations, respelled) where after != dictation {
-                let said = Set(words(in: dictation))
-                blamed.formUnion(words(in: after).filter { !said.contains($0) }
-                    .map { $0.lowercased() }.filter(keptKeys.contains))
-            }
-            if blamed.isEmpty { return kept }
-            kept.removeAll { blamed.contains($0.lowercased()) }
-        }
+            .flatMap(LLMCleaner.learnedWords(from:))
     }
 
     // Adds the words the dictionary does not already hold, and returns them. A word already known in
@@ -75,10 +50,6 @@ enum WisprImport {
             .filter { !$0.isEmpty && known.insert($0.lowercased()).inserted }
         settings.addDictionaryWords(added)
         return added
-    }
-
-    private static func words(in line: String) -> [String] {
-        line.split(whereSeparator: \.isWhitespace).map { $0.trimmingCharacters(in: .punctuationCharacters) }
     }
 
     // Nil unless every row was read: a busy or failing read must not pass for a short dictionary.

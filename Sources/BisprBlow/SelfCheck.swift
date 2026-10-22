@@ -375,6 +375,7 @@ enum SelfCheck {
 
         checkAnchors()
         checkCorrections()
+        checkVoiceCommands()
         checkFieldLabel()
         checkHistoryRoundTrip()
         checkShortcuts()

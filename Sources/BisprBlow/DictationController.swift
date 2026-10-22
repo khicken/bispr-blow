@@ -39,13 +39,15 @@ final class DictationController: ObservableObject {
     private var sessionGeneration = 0
     // Set by the "dictate and send" binding: press Return once the text is in.
     private var sendEnter = false
+    // Set by the "voice command" binding: act on the app that was in front at the press.
+    private var commandApp: NSRunningApplication?
 
     func start() {
         transcriber.onPartial = { [weak self] text in
             self?.partialText = text
         }
-        monitor.onStart = { [weak self] sendEnter in
-            Task { @MainActor in self?.beginRecording(sendEnter: sendEnter) }
+        monitor.onStart = { [weak self] action in
+            Task { @MainActor in self?.beginRecording(action) }
         }
         monitor.onStop = { [weak self] _ in
             Task { @MainActor in self?.finishRecording() }
@@ -115,11 +117,14 @@ final class DictationController: ObservableObject {
         }
     }
 
-    private func beginRecording(sendEnter: Bool) {
+    private func beginRecording(_ action: ShortcutAction) {
         guard state == .idle else { return }
+        // Speaking again means the last dictation's edits are done, before this one's text can land beside them.
+        CorrectionWatcher.cancel()
         ActivationTrace.mark("onStart")
         sessionGeneration += 1
-        self.sendEnter = sendEnter
+        sendEnter = action == .pressEnter
+        commandApp = action == .command ? NSWorkspace.shared.frontmostApplication : nil
         capturedContext = ContextDetector.current()
         let device = AudioRecorder.currentInputDeviceName()
         if device != UserDefaults.standard.string(forKey: "lastMicName") {
@@ -207,6 +212,13 @@ final class DictationController: ObservableObject {
                 self.partialText = ""
                 return
             }
+            if let app = self.commandApp {
+                self.commandApp = nil
+                await self.runCommand(raw, in: app)
+                self.state = .idle
+                self.partialText = ""
+                return
+            }
             let llmStart = Date()
             let (cleaned, provider) = await self.cleaner.clean(raw, context: context)
             let llmMs = Date().timeIntervalSince(llmStart) * 1000
@@ -281,16 +293,71 @@ final class DictationController: ObservableObject {
 
     // A word the user fixed by hand goes into the dictionary, so the next dictation spells it their
     // way. Said out loud on the pill with the way back attached: this changes a setting the user
-    // owns, and doing that silently is how a dictionary starts respelling good words.
+    // owns, and doing that silently is how a dictionary starts respelling good words. Replayed over
+    // history first for the same reason; the dictations still holding the mishear are the ones the
+    // fix is for, so they are not evidence against it.
     private func watchForCorrection(to inserted: String) {
         CorrectionWatcher.watch(inserted: inserted) { [weak self] fix in
             let settings = AppSettings.shared
-            guard !settings.dictionary.contains(fix.corrected) else { return }
-            settings.addDictionaryWords([fix.corrected])
-            self?.showNotice("Added \"\(fix.corrected)\" to your dictionary", for: 6,
-                             action: ("Undo", {
-                                 settings.dictionary.removeAll { $0 == fix.corrected }
-                             }))
+            let vocabulary = settings.vocabulary
+            let known = Set(vocabulary.map { $0.lowercased() })
+            let words = LLMCleaner.learnedWords(from: fix).filter { !known.contains($0.lowercased()) }
+            guard !words.isEmpty else { return }
+            let history = HistoryStore.shared.entries.map(\.cleaned)
+                .filter { !$0.localizedCaseInsensitiveContains(fix.misheard) }
+            Task {
+                let safe = await Task.detached {
+                    LLMCleaner.harmless(words, vocabulary: vocabulary, dictations: history)
+                }.value
+                logLine("correction learned=\(safe.count) skipped=\(words.count - safe.count)")
+                guard !safe.isEmpty else { return }
+                settings.addDictionaryWords(safe)
+                self?.showNotice("Added \(safe.map { "\"\($0)\"" }.joined(separator: ", ")) to your dictionary", for: 6,
+                                 action: ("Undo", { settings.dictionary.removeAll { safe.contains($0) } }))
+            }
+        }
+    }
+
+    // The front app's screen is read, one element in it is acted on, and anything Jev is unsure of
+    // is asked about rather than done. Labels stay out of the log: they are someone's screen.
+    private func runCommand(_ spoken: String, in app: NSRunningApplication) async {
+        guard AppSettings.shared.voiceCommands else {
+            showNotice("Turn on Voice commands in Settings")
+            return
+        }
+        let readStarted = Date()
+        let elements = await Task.detached { ScreenElements.read(app: app) }.value
+        let readMs = Int(Date().timeIntervalSince(readStarted) * 1000)
+        if let target = VoiceCommand.appNamed(in: spoken, among: elements) {
+            logLine("command app-switch read=\(readMs)ms")
+            if !VoiceCommand.perform(target, spoken: spoken) { showNotice("Couldn't switch to \(target.label)") }
+            return
+        }
+        do {
+            let pickStarted = Date()
+            let pick = try await VoiceCommand.pick(spoken, among: elements, appName: app.localizedName ?? "the app in front")
+            logLine("command read=\(readMs)ms jev=\(Int(Date().timeIntervalSince(pickStarted) * 1000))ms choices=\(elements.count) confidence=\(pick.confidence)")
+            guard pick.confidence >= VoiceCommand.confidentEnough, !VoiceCommand.needsConfirmation(pick.element) else {
+                let pid = app.processIdentifier
+                showNotice("\(pick.confidence >= VoiceCommand.confidentEnough ? "Press" : "Did you mean") \(pick.element.label)?", for: 8,
+                           action: ("Do it", { [weak self] in
+                               // The element belongs to the app the command was said in; elsewhere it presses nothing sensible.
+                               guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                                     VoiceCommand.perform(pick.element, spoken: spoken)
+                               else { self?.showNotice("Couldn't do that: \(pick.element.label)"); return }
+                           }))
+                return
+            }
+            if !VoiceCommand.perform(pick.element, spoken: spoken) {
+                showNotice("Couldn't do that: \(pick.element.label)")
+            }
+        } catch VoiceCommand.Failure.noKey {
+            showNotice("Voice commands need a TypeSafe key in your Keychain")
+        } catch VoiceCommand.Failure.keyRejected {
+            showNotice("TypeSafe rejected the key in your Keychain")
+        } catch {
+            logLine("command failed error=\(error.localizedDescription)")
+            showNotice("Couldn't reach Jev")
         }
     }
 

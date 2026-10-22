@@ -249,6 +249,18 @@ enum Main {
             for word in WisprImport.add(words, to: .shared) { print(word) }
             return
         }
+        // What a voice command would see in a running app, as JSON to a file. Launch it with
+        // `open -n BisprBlow.app --args` so Accessibility trusts it as the app, not as a terminal.
+        if let flag = CommandLine.arguments.firstIndex(of: "--dump-elements"), CommandLine.arguments.count > flag + 2 {
+            let bundleID = CommandLine.arguments[flag + 1], output = CommandLine.arguments[flag + 2]
+            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { exit(1) }
+            let started = Date()
+            let elements = ScreenElements.read(app: app)
+            let report: [String: Any] = ["trusted": AXIsProcessTrusted(), "ms": Int(Date().timeIntervalSince(started) * 1000),
+                                         "labels": elements.map(\.label)]
+            try? JSONSerialization.data(withJSONObject: report, options: .prettyPrinted).write(to: URL(fileURLWithPath: output))
+            return
+        }
         // Every model on disk, one id per line, so bench/bench.py can enumerate the in-process
         // engine the same way it enumerates LM Studio's /models.
         if CommandLine.arguments.contains("--list-models") {

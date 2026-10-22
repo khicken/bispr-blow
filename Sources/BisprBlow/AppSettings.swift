@@ -99,6 +99,10 @@ final class AppSettings: ObservableObject {
     @Published var restoreMicVolume: Bool {
         didSet { defaults.set(restoreMicVolume, forKey: "restoreMicVolume") }
     }
+    // Off by default: a voice command sends the front app's on-screen labels to TypeSafe.
+    @Published var voiceCommands: Bool {
+        didSet { defaults.set(voiceCommands, forKey: "voiceCommands") }
+    }
     // One request to api.github.com at launch, asking whether a newer release is out. On by
     // default: an update nobody hears about is the same as no update, and an opt-in check that
     // nobody finds is dead code. Off, nothing is asked and nothing is sent — and it is the only
@@ -255,6 +259,7 @@ final class AppSettings: ObservableObject {
         lowercaseSentences = defaults.bool(forKey: "lowercaseSentences")
         endWithPeriod = defaults.bool(forKey: "endWithPeriod")
         restoreMicVolume = defaults.bool(forKey: "restoreMicVolume")
+        voiceCommands = defaults.bool(forKey: "voiceCommands")
         checkForUpdates = defaults.object(forKey: "checkForUpdates") as? Bool ?? true
         appearance = Self.appearance(stored: defaults.string(forKey: "appearance"))
         if let data = defaults.data(forKey: "bindings"),

@@ -16,8 +16,8 @@ final class ShortcutMonitor {
     // Shared so Settings can arm the recorder without threading the controller through the UI.
     static let shared = ShortcutMonitor()
 
-    // `sendEnter` is true when the binding that started this session was "Dictate and send".
-    var onStart: ((_ sendEnter: Bool) -> Void)?
+    // The binding that started this session, so "Dictate and send" and "Voice command" can end it their way.
+    var onStart: ((_ action: ShortcutAction) -> Void)?
     // locked == true when stopping a hands-free session.
     var onStop: ((_ locked: Bool) -> Void)?
     var onCancel: (() -> Void)?
@@ -107,7 +107,7 @@ final class ShortcutMonitor {
     func beginLockedSession() {
         guard !locked, !triggerIsDown else { return }
         locked = true
-        onStart?(false)
+        onStart?(.handsFree)
         onLock?()
     }
 
@@ -328,7 +328,7 @@ final class ShortcutMonitor {
     // Returns true when the event should be swallowed rather than passed to the app underneath.
     private func dispatch(_ action: ShortcutAction, down: Bool) -> Bool {
         switch action {
-        case .pushToTalk, .pressEnter:
+        case .pushToTalk, .pressEnter, .command:
             handleHold(action, down: down)
             return true
         case .handsFree:
@@ -441,7 +441,7 @@ final class ShortcutMonitor {
                 return
             }
             ActivationTrace.begin()
-            onStart?(action == .pressEnter)
+            onStart?(action)
         } else if !down, triggerIsDown, heldAction == action {
             triggerIsDown = false
             heldAction = nil

@@ -124,6 +124,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
     case pushToTalk
     case handsFree
     case pressEnter
+    case command
     case cancel
 
     var id: String { rawValue }
@@ -133,6 +134,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         case .pushToTalk: return "Push to talk"
         case .handsFree: return "Hands-free"
         case .pressEnter: return "Dictate and send"
+        case .command: return "Voice command"
         case .cancel: return "Cancel"
         }
     }
@@ -146,6 +148,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         // this the editor reads as though the feature were unavailable rather than already working.
         case .handsFree: return "Press to start, again to finish. Or double-tap push to talk."
         case .pressEnter: return "Push to talk, then presses Return."
+        case .command: return "Hold, say what to do in the app in front, release."
         case .cancel: return "Throw away the current dictation."
         }
     }
@@ -156,7 +159,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .pushToTalk: return [.fn]
         case .cancel: return [.escape]
-        case .handsFree, .pressEnter: return []
+        case .handsFree, .pressEnter, .command: return []
         }
     }
 }
