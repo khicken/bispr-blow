@@ -31,6 +31,9 @@ enum CorrectionWatcher {
         cancel()
         guard inserted.split(whereSeparator: \.isWhitespace).count >= 2,
               let (element, pid) = ContextDetector.focusedElement() else { return }
+        // A hung app answers each read after the 6s default. The watch runs for minutes beside the
+        // shortcut tap on the main thread, so a slow read gives up instead.
+        AXUIElementSetMessagingTimeout(element, 0.5)
 
         task = Task { @MainActor in
             // The paste has to land before there is anything to compare against.
@@ -43,8 +46,11 @@ enum CorrectionWatcher {
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled,
                       NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-                      let current = ContextDetector.focusedText(element: element)
+                      let current = await Task.detached(operation: {
+                          ContextDetector.focusedText(element: element)
+                      }).value
                 else { break }
+                guard !Task.isCancelled else { return }
                 pending?.lastSeen = current
             }
             if !Task.isCancelled { settle() }

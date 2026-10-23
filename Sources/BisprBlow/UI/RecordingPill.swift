@@ -79,11 +79,6 @@ final class RecordingPillController {
             self?.drawnRect = rect
             self?.refreshClickThrough()
         }
-        installMouseMonitors()
-
-        repositionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.reposition()
-        }
 
         // Hiding the idle pill is a visibility setting, not a state: it still has to appear the
         // moment a dictation starts. Both inputs drive it, and idle is the only state that hides.
@@ -118,6 +113,7 @@ final class RecordingPillController {
     // back. `onDrawnRect` re-runs this too, so the panel closes again the moment the pill shrinks
     // under a pointer that has stopped moving.
     private func installMouseMonitors() {
+        guard monitors.isEmpty else { return }
         let types: NSEvent.EventTypeMask = [
             .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
             .leftMouseDown, .rightMouseDown, .otherMouseDown,
@@ -373,8 +369,8 @@ final class RecordingPillController {
         if panel.frame.origin != target {
             panel.setFrameOrigin(target)
         }
-        // The 2s reposition timer runs whether or not the pill is meant to be on screen, so without
-        // this it would order a hidden pill straight back to the front.
+        // Screen and space changes still reposition a hidden pill, so without this they would order
+        // it straight back to the front.
         if !isHidden { panel.orderFrontRegardless() }
         // The capsule moved with the panel, so what the pointer is over has changed.
         refreshClickThrough()
@@ -384,9 +380,25 @@ final class RecordingPillController {
         monitors.forEach(NSEvent.removeMonitor)
     }
 
+    // A hidden pill takes no clicks and holds no place, so the pointer monitors and the reposition
+    // timer run only while it shows: they wake the app on every mouse move and every 2s.
     func setHidden(_ hidden: Bool) {
         isHidden = hidden
-        if hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+        if hidden {
+            panel.orderOut(nil)
+            monitors.forEach(NSEvent.removeMonitor)
+            monitors = []
+            repositionTimer?.invalidate()
+            repositionTimer = nil
+        } else {
+            installMouseMonitors()
+            if repositionTimer == nil {
+                repositionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                    self?.reposition()
+                }
+            }
+            reposition()
+        }
     }
 }
 

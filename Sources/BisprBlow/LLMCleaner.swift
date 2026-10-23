@@ -193,17 +193,52 @@ actor LLMCleaner {
             : min(2500, 900 + 6 * UInt64(max(0, words)))
     }
 
-    // Races `body` against the deadline, cancelling the loser rather than leaving it running.
+    // Races `body` against the deadline and returns at whichever comes first. Not a task group: a
+    // group waits for every child, and an on-device generation cannot be cancelled (see
+    // `LocalEngine.complete`), so a slow one held the result until it finished. The loser is
+    // cancelled, which stops an HTTP request; an on-device generation runs on and is dropped.
     private static func beforeDeadline<T>(ms: UInt64,
                                           _ body: @escaping () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await body() }
-            group.addTask {
+        try await withCheckedThrowingContinuation { continuation in
+            let once = ResumeOnce(continuation)
+            let timer = Task {
                 try await Task.sleep(nanoseconds: ms * 1_000_000)
-                throw DeadlineExceeded()
+                once.resume(with: .failure(DeadlineExceeded()))
             }
-            defer { group.cancelAll() }
-            return try await group.next()!
+            let work = Task {
+                do { once.resume(with: .success(try await body())) }
+                catch { once.resume(with: .failure(error)) }
+                timer.cancel()
+            }
+            Task {
+                if (try? await timer.value) != nil { work.cancel() }
+            }
+        }
+    }
+
+    private final class ResumeOnce<T>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T, Error>?
+
+        init(_ continuation: CheckedContinuation<T, Error>) { self.continuation = continuation }
+
+        func resume(with result: Result<T, Error>) {
+            lock.lock()
+            let pending = continuation
+            continuation = nil
+            lock.unlock()
+            pending?.resume(with: result)
+        }
+    }
+
+    // Called as a dictation starts: if the model was freed while idle, loading it now overlaps the
+    // load with the speaking instead of spending the cleanup deadline on it.
+    func prepare() async {
+        guard let resolved, resolved.endpoint.isInProcess else { return }
+        if await LocalEngine.shared.loadedModel == resolved.model {
+            await LocalEngine.shared.keepLoaded()
+        } else {
+            await warmUp()
         }
     }
 

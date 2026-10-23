@@ -11,6 +11,12 @@ extension LLMCleaner {
     // shapes a real use never takes.
     private static let hardFillers = ["um", "umm", "ummm", "uh", "uhh", "uhhh",
                                       "er", "erm", "ah", "oh", "hm", "hmm"]
+    // Words a comma after a filler follows. In history.json, a comma there almost always punctuated
+    // only the filler ("for, um, red"); "sign in, uh, then" loses a real one, and keeps its words.
+    private static let midClauseWords = ["the", "a", "an", "for", "on", "of", "to", "in", "at", "with",
+                                         "from", "and", "but", "or", "because", "if", "our", "your",
+                                         "my", "their", "his", "her", "its", "is", "are", "was", "be",
+                                         "very"]
 
     static func stripFillers(_ text: String) -> String {
         var text = text
@@ -33,7 +39,11 @@ extension LLMCleaner {
         // previous one ("Update the uh, this cookbook, Doc." → "Update the, this cookbook, Doc.") —
         // and a dictation at or under `verbatimWords` gets no model pass to tidy it. One pass, not
         // two: the leading `[\s\u{1}]` also matches the space inside ", um,", so a comma-bracketed
-        // filler collapses to a single comma. A separate bracketed rule undoes that; there isn't one.
+        // filler collapses to a single comma. That comma is right after "Basically" and wrong after
+        // "is" ("is, um, standard"), so after a word in `midClauseWords` both commas go first.
+        text = text.replacingOccurrences(
+            of: "(?i)\\b(\(midClauseWords.joined(separator: "|")))\\s*,\\s*(?:\(hard))\\s*,\\s*",
+            with: "$1 ", options: .regularExpression)
         text = text.replacingOccurrences(
             of: "(?i)(^|[\\s\u{1}])(?:\(hard))\\s*,\\s*", with: "$1", options: .regularExpression)
         // Anywhere else. `(^|[\s,\u{1}])` keeps "umbrella" and "uh-huh" intact, and counts a marker

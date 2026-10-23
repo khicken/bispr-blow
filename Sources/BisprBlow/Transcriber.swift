@@ -14,9 +14,6 @@ final class Transcriber {
         }
     }
 
-    // Volatile (in-progress) text, for live UI feedback.
-    var onPartial: ((String) -> Void)?
-
     private var analyzer: SpeechAnalyzer?
     private var analyzerTranscriber: SpeechTranscriber?
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
@@ -224,8 +221,6 @@ final class Transcriber {
                     } else {
                         self.volatileText = text
                     }
-                    let snapshot = Self.withoutPauseMarks(self.finalizedText + self.volatileText)
-                    DispatchQueue.main.async { self.onPartial?(snapshot) }
                 }
             } catch {
                 logLine("transcriber results error: \(error)")
@@ -261,8 +256,6 @@ final class Transcriber {
         sfTask = recognizer.recognitionTask(with: request) { [weak self] result, _ in
             guard let self, let result else { return }
             self.sfLatest = result.bestTranscription.formattedString
-            let snapshot = Self.withoutPauseMarks(self.sfLatest)
-            DispatchQueue.main.async { self.onPartial?(snapshot) }
         }
     }
 

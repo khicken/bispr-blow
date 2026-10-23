@@ -680,8 +680,8 @@ generation is cancelled mid command-buffer commit; the deadline race used to do
 exactly that on every miss (reproduced ~1 in 3). `LocalEngine.complete` drains the
 MLX stream in a detached task that outer cancellation cannot reach, so a deadline
 miss returns rules while the abandoned generation finishes quietly and is discarded.
-The cost is that the actor stays busy until it settles, which the 16k-char runaway
-ceiling bounds.
+The cost is that the next completion waits for it to settle, which `maxTokens` bounds
+(about 13s for a model that loops). The deadline race returns rules on time either way.
 
 The fork carries a prompt-prefix KV cache for MLX (token-level diff, trim at
 divergence, prefill only the tail), measured 363ms → 39ms on identical calls and
