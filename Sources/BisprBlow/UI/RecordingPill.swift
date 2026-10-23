@@ -79,11 +79,6 @@ final class RecordingPillController {
             self?.drawnRect = rect
             self?.refreshClickThrough()
         }
-        installMouseMonitors()
-
-        repositionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.reposition()
-        }
 
         // Hiding the idle pill is a visibility setting, not a state: it still has to appear the
         // moment a dictation starts. Both inputs drive it, and idle is the only state that hides.
@@ -118,6 +113,7 @@ final class RecordingPillController {
     // back. `onDrawnRect` re-runs this too, so the panel closes again the moment the pill shrinks
     // under a pointer that has stopped moving.
     private func installMouseMonitors() {
+        guard monitors.isEmpty else { return }
         let types: NSEvent.EventTypeMask = [
             .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
             .leftMouseDown, .rightMouseDown, .otherMouseDown,
@@ -138,6 +134,10 @@ final class RecordingPillController {
     }
 
     private func refreshClickThrough() {
+        if isHidden {
+            panel.ignoresMouseEvents = true
+            return
+        }
         // Placing: the DragGesture is hosted in this panel, so taking its events away mid-gesture
         // ends the drag on the spot — the same reason the panel fades instead of ordering out.
         if placement.placing {
@@ -279,7 +279,7 @@ final class RecordingPillController {
         placement.placing = false
         placement.highlighted = nil
         placement.cursor = nil
-        panel.alphaValue = 1
+        panel.alphaValue = isHidden ? 0 : 1
         overlay?.setVisible(false, on: screen)
         model.noteDragEnded()
         defer { refreshClickThrough() }
@@ -373,9 +373,7 @@ final class RecordingPillController {
         if panel.frame.origin != target {
             panel.setFrameOrigin(target)
         }
-        // The 2s reposition timer runs whether or not the pill is meant to be on screen, so without
-        // this it would order a hidden pill straight back to the front.
-        if !isHidden { panel.orderFrontRegardless() }
+        panel.orderFrontRegardless()
         // The capsule moved with the panel, so what the pointer is over has changed.
         refreshClickThrough()
     }
@@ -384,9 +382,31 @@ final class RecordingPillController {
         monitors.forEach(NSEvent.removeMonitor)
     }
 
+    // A hidden pill takes no clicks and holds no place, so the pointer monitors and the reposition
+    // timer run only while it shows: they wake the app on every mouse move and every 2s.
+    //
+    // Hidden is zero alpha, not ordered out: a panel ordered back in while another app's fullscreen
+    // space is active does not join that space (measured in fullscreen Cursor: sized, never on
+    // screen), while one that never leaves stays on every space, as the toast does.
     func setHidden(_ hidden: Bool) {
         isHidden = hidden
-        if hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+        if hidden {
+            panel.alphaValue = 0
+            panel.ignoresMouseEvents = true
+            monitors.forEach(NSEvent.removeMonitor)
+            monitors = []
+            repositionTimer?.invalidate()
+            repositionTimer = nil
+        } else {
+            panel.alphaValue = 1
+            installMouseMonitors()
+            if repositionTimer == nil {
+                repositionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                    self?.reposition()
+                }
+            }
+            reposition()
+        }
     }
 }
 

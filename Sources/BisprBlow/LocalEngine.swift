@@ -5,8 +5,8 @@ import LocalLLMClientMLX
 // In-process inference. The only file that imports the inference library — everything else reaches
 // it through `LLMCleaner.Endpoint`, so changing runtime touches this file and the endpoint list. It
 // exists because LM Studio was a dependency the app cannot satisfy on the user's behalf: without it
-// every dictation degrades to unpunctuated `ruleClean`. Loading the model once and keeping it
-// resident is what `client` below does instead.
+// every dictation degrades to unpunctuated `ruleClean`. `client` keeps the model resident between
+// dictations and frees it after `idleUnload`.
 actor LocalEngine {
     static let shared = LocalEngine()
 
@@ -14,6 +14,20 @@ actor LocalEngine {
     private var loadedID: String?
     // The launch warm-up and a first dictation can both ask for a load; they share this one.
     private var loading: (id: String, task: Task<MLXClient, Error>)?
+    // The generation in flight. A deadline miss leaves it running, so the next completion waits for
+    // it rather than starting a second stream on the same client and KV cache.
+    private var generation: Task<String, Error>?
+    // The model is freed after this long without a completion: the 1.7B one is 1.8 GB held for a
+    // whole session otherwise. `LLMCleaner.prepare` loads it again when the shortcut is pressed.
+    private static let idleUnload: Duration = .seconds(600)
+    private var unload: Task<Void, Never>?
+
+    var loadedModel: String? { client == nil ? nil : loadedID }
+
+    // A dictation is starting on the loaded model, so its idle clock starts over.
+    func keepLoaded() {
+        if client != nil { scheduleUnload() }
+    }
 
     // MLX aborts the whole process — no throw, no fallback — when its metallib is missing, so MLX
     // models stay invisible unless the library is where MLX will look. Two homes, matching MLX's
@@ -97,7 +111,15 @@ actor LocalEngine {
     // One completion. `messages` is the same `[[String: String]]` the HTTP path sends, so both
     // transports run byte-identical prompts and comparing them is honest.
     func complete(id: String, messages: [[String: String]]) async throws -> String {
-        try await load(id: id)
+        unload?.cancel()
+        defer { scheduleUnload() }
+        // Looped: while `load` waits, another completion can start a generation or swap the model.
+        repeat {
+            await finishGeneration()
+            try await load(id: id)
+        } while generation != nil || loadedID != id
+        // A caller whose deadline passed while it waited gets rules; its generation would be dropped.
+        try Task.checkCancellation()
         guard let client else { throw Failure.notInstalled(id) }
 
         let chat: [LLMInput.Message] = messages.compactMap { message in
@@ -113,20 +135,38 @@ actor LocalEngine {
         // Metal asserts, and aborts the app, when a generation is cancelled mid command-buffer
         // commit, so a deadline miss must never cancel MLX. The stream is drained in a detached
         // task outer cancellation cannot reach; the abandoned generation finishes and is dropped.
-        let stream = try await client.textStream(from: .chat(chat))
-        let output = await Task.detached {
+        // Drained to the end, never left early: dropping the stream cancels the generation, which is
+        // the abort above. `maxTokens` at load is what bounds a model that starts looping.
+        let task = Task.detached {
+            let stream = try await client.textStream(from: .chat(chat))
             var out = ""
-            for await chunk in stream {
-                out += chunk
-                // A model that starts looping must not outrun the deadline guard by streaming
-                // forever. Generous against any real dictation — the longest bench case cleans to
-                // ~1.7k chars.
-                if out.count > 16_000 { break }
-            }
+            for await chunk in stream { out += chunk }
             return out
-        }.value
+        }
+        generation = task
+        defer { if generation == task { generation = nil } }
+        let output = try await task.value
         logLine("local completion \(Int(Date().timeIntervalSince(started) * 1000))ms \(output.count)chars")
         return output
+    }
+
+    private func scheduleUnload() {
+        unload?.cancel()
+        unload = Task {
+            try? await Task.sleep(for: Self.idleUnload)
+            guard !Task.isCancelled, generation == nil, loading == nil, let id = loadedID else { return }
+            client = nil
+            loadedID = nil
+            logLine("local model unloaded \(id) after idle")
+        }
+    }
+
+    private func finishGeneration() async {
+        while let pending = generation {
+            logLine("local completion waiting on the previous generation")
+            _ = try? await pending.value
+            if generation == pending { generation = nil }
+        }
     }
 
     enum Failure: Error, LocalizedError {

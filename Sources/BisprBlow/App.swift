@@ -256,7 +256,9 @@ enum Main {
             let bundleID = CommandLine.arguments[flag + 1], output = CommandLine.arguments[flag + 2]
             guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { exit(1) }
             let started = Date()
+            let opened = ScreenElements.openTree(app)
             let elements = ScreenElements.read(app: app)
+            if opened { ScreenElements.closeTree(app) }
             let report: [String: Any] = ["trusted": AXIsProcessTrusted(), "ms": Int(Date().timeIntervalSince(started) * 1000),
                                          "labels": elements.map(\.label)]
             try? JSONSerialization.data(withJSONObject: report, options: .prettyPrinted).write(to: URL(fileURLWithPath: output))
@@ -312,10 +314,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dashboard: DashboardWindowController!
     private var statusItem: NSStatusItem!
     private var tooltipUpdates: AnyCancellable?
+    private var terminateSignal: DispatchSourceSignal?
     private var quitMenu: NSMenu!
     private var appearanceObserver: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `kill` and `killall` end the process without `applicationWillTerminate`, which leaves the
+        // Globe key set to Do Nothing. Routed through a normal quit instead. A force quit or a crash
+        // cannot be caught; the saved setting comes back on the next launch's quit.
+        // Not on main: a hung main thread must still die, or build.sh's relaunch leaves two copies.
+        signal(SIGTERM, SIG_IGN)
+        terminateSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+        terminateSignal?.setEventHandler {
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { exit(0) }
+        }
+        terminateSignal?.resume()
         watchSystemAppearance()
         controller = DictationController()
         dashboard = DashboardWindowController(controller: controller)

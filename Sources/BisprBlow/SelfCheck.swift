@@ -181,6 +181,10 @@ enum SelfCheck {
                      == "Basically, we want the script")
         precondition(LLMCleaner.stripFillers("a smaller model decide, oh, this seems incoherent")
                      == "a smaller model decide, this seems incoherent")
+        // After a word no clause ends on, neither comma was real.
+        precondition(LLMCleaner.stripFillers("the format is, um, standard")
+                     == "the format is standard")
+        precondition(LLMCleaner.stripFillers("because, uh, it's slow") == "because it's slow")
         // A filler that brought its own comma takes it along, or the comma lands against the previous
         // one ("Update the uh, this cookbook, Doc." → "Update the, this cookbook, Doc."). A dictation
         // at or under `LLMCleaner.verbatimWords` never reaches the model, so `ruleClean` is its only

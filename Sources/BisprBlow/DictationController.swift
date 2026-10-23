@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Combine
 import IOKit.hidsystem
 import Speech
 
@@ -13,8 +14,9 @@ final class DictationController: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
-    @Published private(set) var level: Float = 0
-    @Published private(set) var partialText = ""
+    // Mic level for the pill's wave, ~43 a second while recording. A subject, not @Published, so
+    // views that observe the controller for its state do not redraw at that rate.
+    let levels = PassthroughSubject<Float, Never>()
     @Published private(set) var lastError: String?
     // Transient message shown on the pill (e.g. manual-paste fallback).
     @Published private(set) var notice: String?
@@ -43,11 +45,10 @@ final class DictationController: ObservableObject {
     private var sendEnter = false
     // Set by the "voice command" binding: act on the app that was in front at the press.
     private var commandApp: NSRunningApplication?
+    // The Electron tree a voice command turned on, and the work that turns it off again.
+    private var pendingTreeClose: (pid: pid_t, work: DispatchWorkItem)?
 
     func start() {
-        transcriber.onPartial = { [weak self] text in
-            self?.partialText = text
-        }
         monitor.onStart = { [weak self] action in
             Task { @MainActor in self?.beginRecording(action) }
         }
@@ -128,6 +129,7 @@ final class DictationController: ObservableObject {
         }
         // Speaking again means the last dictation's edits are done, before this one's text can land beside them.
         CorrectionWatcher.cancel()
+        Task.detached(priority: .utility) { [cleaner] in await cleaner.prepare() }
         ActivationTrace.mark("onStart")
         sessionGeneration += 1
         sendEnter = action == .pressEnter
@@ -145,12 +147,11 @@ final class DictationController: ObservableObject {
         }
         Self.playSound(Self.startSound)
         recordingStartedAt = Date()
-        partialText = ""
         lastError = nil
         state = .recording(locked: false)
 
         recorder.onLevel = { [weak self] level in
-            DispatchQueue.main.async { self?.level = level }
+            DispatchQueue.main.async { self?.levels.send(level) }
         }
         recorder.onBuffer = { [weak self] buffer in
             self?.transcriber.feed(buffer)
@@ -192,7 +193,7 @@ final class DictationController: ObservableObject {
         guard case .recording = state else { return }
         let duration = Date().timeIntervalSince(recordingStartedAt)
         recorder.stop()
-        level = 0
+        levels.send(0)
         state = .processing
 
         // Nothing was captured, so there is nothing to finalise — and finalising anyway hangs:
@@ -205,7 +206,6 @@ final class DictationController: ObservableObject {
             cancelTranscriber()
             showNotice("No audio from \(AudioRecorder.currentInputDeviceName())")
             state = .idle
-            partialText = ""
             sendEnter = false
             return
         }
@@ -219,14 +219,12 @@ final class DictationController: ObservableObject {
             guard self.sessionGeneration == generation else { return }
             guard !raw.isEmpty else {
                 self.state = .idle
-                self.partialText = ""
                 return
             }
             if let app = self.commandApp {
                 self.commandApp = nil
                 await self.runCommand(raw, in: app)
                 self.state = .idle
-                self.partialText = ""
                 return
             }
             let llmStart = Date()
@@ -257,7 +255,6 @@ final class DictationController: ObservableObject {
                 ))
             }
             self.state = .idle
-            self.partialText = ""
             self.sendEnter = false
         }
     }
@@ -267,9 +264,8 @@ final class DictationController: ObservableObject {
         guard case .recording = state else { return }
         sessionGeneration += 1
         recorder.stop()
-        level = 0
+        levels.send(0)
         sendEnter = false
-        partialText = ""
         state = .idle
         cancelTranscriber()
     }
@@ -346,6 +342,31 @@ final class DictationController: ObservableObject {
             return
         }
         let readStarted = Date()
+        // A close still pending from the last command in this app means the tree is ours and on.
+        let pid = app.processIdentifier
+        let opened: Bool
+        if let pending = pendingTreeClose, pending.pid == pid {
+            pending.work.cancel()
+            pendingTreeClose = nil
+            opened = true
+        } else {
+            opened = await Task.detached { ScreenElements.openTree(app) }.value
+        }
+        // After the command, or after the confirm notice expires, since "Do it" presses an element.
+        // The write goes off main: a hung app answers it after the 6s default.
+        var closeAfter: TimeInterval = 0
+        defer {
+            if opened {
+                let work = DispatchWorkItem { [weak self] in
+                    MainActor.assumeIsolated {
+                        if self?.pendingTreeClose?.pid == pid { self?.pendingTreeClose = nil }
+                    }
+                    DispatchQueue.global().async { ScreenElements.closeTree(app) }
+                }
+                pendingTreeClose = (pid, work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + closeAfter, execute: work)
+            }
+        }
         let elements = await Task.detached { ScreenElements.read(app: app) }.value
         let readMs = Int(Date().timeIntervalSince(readStarted) * 1000)
         if let target = VoiceCommand.appNamed(in: spoken, among: elements) {
@@ -358,7 +379,7 @@ final class DictationController: ObservableObject {
             let pick = try await VoiceCommand.pick(spoken, among: elements, appName: app.localizedName ?? "the app in front")
             logLine("command read=\(readMs)ms jev=\(Int(Date().timeIntervalSince(pickStarted) * 1000))ms choices=\(elements.count) confidence=\(pick.confidence)")
             guard pick.confidence >= VoiceCommand.confidentEnough, !VoiceCommand.needsConfirmation(pick.element) else {
-                let pid = app.processIdentifier
+                closeAfter = 9
                 showNotice("\(pick.confidence >= VoiceCommand.confidentEnough ? "Press" : "Did you mean") \(pick.element.label)?", for: 8,
                            action: ("Do it", { [weak self] in
                                // The element belongs to the app the command was said in; elsewhere it presses nothing sensible.
