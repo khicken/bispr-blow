@@ -50,14 +50,26 @@ final class ToastController {
         ) { [weak self] _ in
             self?.reposition()
         }
-        // Same 2s re-pin as the pill, so the toast follows it after a drag.
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.reposition()
-        }
+        // Same 2s re-pin as the pill, so the toast follows it after a drag. Only while there is
+        // something to show: an empty toast has nowhere it needs to be.
+        showingObserver = controller.$notice.combineLatest(controller.$micFlash)
+            .map { notice, mic in !(notice ?? "").isEmpty || !(mic ?? "").isEmpty }
+            .removeDuplicates()
+            .sink { [weak self] showing in
+                guard let self else { return }
+                self.timer?.invalidate()
+                self.timer = nil
+                guard showing else { return }
+                self.reposition()
+                self.timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                    self?.reposition()
+                }
+            }
     }
 
     private var timer: Timer?
     private var actionObserver: AnyCancellable?
+    private var showingObserver: AnyCancellable?
 
     // Sits against the pill wherever it is parked, so the two read as one thing: above it on the
     // bottom edge, and BESIDE it on a side edge. Above is what put the message halfway up an empty

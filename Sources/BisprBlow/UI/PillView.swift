@@ -139,7 +139,7 @@ struct PillView: View {
                 // Fast attack, slow release, like a meter needle. The raw per-buffer level is spiky —
                 // speech is mostly gaps — so rising is taken instantly and falling is floored at 82%
                 // of the previous sample, which turns a gap into a decaying tail instead of a dropout.
-            .onReceive(controller.$level) { level in
+            .onReceive(controller.levels) { level in
                 guard case .recording = controller.state else { return }
                 let previous = waveSamples.last ?? 0
                 waveSamples.removeFirst()

@@ -29,9 +29,6 @@ enum ScreenElements {
         let systemWide = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(systemWide, 0.25)
         defer { AXUIElementSetMessagingTimeout(systemWide, 0) }
-        // Chromium and Electron build their tree only for a client that asks for it this way.
-        AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-
         var found: [ScreenElement] = []
         var budget = nodeBudget
         var deadline = Date().addingTimeInterval(timeBudget)
@@ -53,6 +50,21 @@ enum ScreenElements {
             .map { ScreenElement(label: "\($0.localizedName!) (switch to app)", kind: .app, element: nil, app: $0) }
         // Jev takes at most 255 choices; the other apps stay in, since "open Slack" has to work anywhere.
         return uniquelyLabelled(Array((found + menu).prefix(max(0, VoiceCommand.maxChoices - others.count))) + others)
+    }
+
+    // Chromium and Electron build their tree only for a client that asks for it this way, and keep
+    // it until told otherwise, which slows the app for as long as it runs. Returns whether this call
+    // turned it on, so the caller turns it off once it is done with the elements, and leaves it alone
+    // when another assistive app had asked first.
+    static func openTree(_ app: NSRunningApplication) -> Bool {
+        let root = AXUIElementCreateApplication(app.processIdentifier)
+        if (attribute(root, "AXManualAccessibility") as Bool?) == true { return false }
+        return AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success
+    }
+
+    static func closeTree(_ app: NSRunningApplication) {
+        AXUIElementSetAttributeValue(AXUIElementCreateApplication(app.processIdentifier),
+                                     "AXManualAccessibility" as CFString, kCFBooleanFalse)
     }
 
     private static func walk(_ node: AXUIElement, into found: inout [ScreenElement], limit: Int, budget: inout Int, deadline: Date) {
