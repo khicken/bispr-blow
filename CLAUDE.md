@@ -586,8 +586,26 @@ lost on accuracy.
 downloads about 700MB into `~/Library/Application Support/FluidAudio/Models` on first run, then
 loads. CoreML compiles the models for the Neural Engine on first load of each new binary: 32-40s
 measured after `./build.sh`, then 363ms on the next launch. Until `isReady`, `startSession` uses the
-SpeechAnalyzer path exactly as before. **Neither installer carries these weights yet**, so a fresh
-machine needs the network once; bundling them is a packaging decision that is still open.
+SpeechAnalyzer path exactly as before.
+
+**Both installers carry the weights (`BUNDLE_SPEECH=1`, set by dmg.sh and package.sh), so a fresh
+Mac downloads nothing.** 701 MB in `Contents/Resources/models`; the installed app is 775 MB.
+`Parakeet.linkBundledModels` symlinks them into FluidAudio's cache folder instead of loading them
+by path, because `VocabularyBoostingSession` reads its tokenizer from that cache folder no matter
+where the models came from: loaded by path alone, the dictionary would silently stop applying.
+Measured with the cache moved aside: links created, Parakeet ready in 28.5s (first compile), the
+clips score 10.1%/88% exactly as from the cache, and the bundle seal still verifies after a run.
+A real folder in the cache wins over the bundle, and a link a removed app left dangling is replaced.
+
+`./build.sh` without the flag does not bundle, so local iteration stays fast. Do not test an
+installer and then switch back to local builds without knowing this: the links point into
+/Applications/BisprBlow.app, the local build replaces that bundle without the weights, the links
+dangle, and the app downloads 700 MB again.
+
+The links hold only because FluidAudio treats Ultra as unpinned (revision "main"), so a complete
+folder counts as current. If a FluidAudio bump pins its revision, `AsrModels.download` writes
+through the link into the bundle: a broken seal on a .dmg install, a permission error on a .pkg
+one. Check this before bumping the version.
 
 **`swift build` needs `--disable-keychain`.** FluidAudio ships a binary xcframework, and with
 keychain lookups enabled SwiftPM can fail fetching it ("Failed to find credentials ... status -128").

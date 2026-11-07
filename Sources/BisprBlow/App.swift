@@ -249,6 +249,16 @@ enum Main {
             RunLoop.main.run()
             return
         }
+        // For build.sh. The real load, not bare downloads: it clears links an installer test left
+        // dangling, which a download would otherwise try to write through.
+        if CommandLine.arguments.contains("--download-speech") {
+            let ok = awaitSync { () -> Bool in
+                await Parakeet.shared.load()
+                return await Parakeet.shared.isReady
+            }
+            if !ok { print("FAIL — Parakeet did not load; see the log") }
+            exit(ok ? 0 : 1)
+        }
         // Drives the real `ModelDownloader` against Hugging Face and prints progress. The installer
         // no longer ships the Accurate weights, so this is the only way anyone gets them — and the
         // path had been read and never once run before this existed.

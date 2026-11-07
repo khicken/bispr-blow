@@ -15,12 +15,14 @@ actor Parakeet {
 
     var isReady: Bool { asr != nil }
 
-    // Fetches the models on first run (about 700MB into Application Support/FluidAudio) and loads
-    // them. Until this finishes, or if it fails, `Transcriber` stays on Apple's recognizer.
+    // Loads the models from the app bundle when an installer put them there, else fetches them once
+    // (about 700MB into Application Support/FluidAudio). Until this finishes, or if it fails,
+    // `Transcriber` stays on Apple's recognizer.
     func load() async {
         guard asr == nil else { return }
         do {
             let start = Date()
+            Self.linkBundledModels()
             let dir = try await AsrModels.download(version: .ultra)
             let models = try await AsrModels.load(from: dir, version: .ultra)
             let manager = AsrManager(config: .default)
@@ -50,6 +52,31 @@ actor Parakeet {
         } catch {
             logLine("parakeet transcribe failed: \(error)")
             return nil
+        }
+    }
+
+    // An installer ships the weights in Contents/Resources/models. They are linked into FluidAudio's
+    // cache folder rather than loaded by path, because the vocab rescorer reads its tokenizer from
+    // that cache folder whatever folder the models came from — loaded by path alone, the dictionary
+    // silently stops applying. A real folder already there wins; a link left dangling by a moved
+    // or deleted app is replaced.
+    static func linkBundledModels() {
+        guard let bundled = Bundle.main.resourceURL?.appendingPathComponent("models") else { return }
+        let fm = FileManager.default
+        for cache in [AsrModels.defaultCacheDirectory(for: .ultra), CtcModels.defaultCacheDirectory(for: .ctc110m)] {
+            // Dangling whether or not this bundle has weights: left in place, the download below
+            // cannot write through it and Parakeet never loads.
+            if (try? fm.destinationOfSymbolicLink(atPath: cache.path)) != nil, !fm.fileExists(atPath: cache.path) {
+                try? fm.removeItem(at: cache)
+            }
+            let source = bundled.appendingPathComponent(cache.lastPathComponent)
+            guard fm.fileExists(atPath: source.path), !fm.fileExists(atPath: cache.path) else { continue }
+            try? fm.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
+            do {
+                try fm.createSymbolicLink(at: cache, withDestinationURL: source)
+            } catch {
+                logLine("parakeet: could not link bundled \(cache.lastPathComponent): \(error)")
+            }
         }
     }
 

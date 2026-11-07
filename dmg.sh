@@ -19,7 +19,7 @@ VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' |
 OUT=.build/dmg
 DMG=".build/BisprBlow.dmg"
 
-BUNDLE_WEIGHTS=1 ./build.sh
+BUNDLE_WEIGHTS=1 BUNDLE_SPEECH=1 ./build.sh
 
 # Same guard as package.sh: MLX aborts the process on first dictation without this, rather
 # than throwing, so there is no degraded mode to notice later.

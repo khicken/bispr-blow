@@ -23,7 +23,7 @@ OUT=.build/pkg
 
 [ -d "$MODELS/$FAST" ] || { echo "Missing weights: $MODELS/$FAST" >&2; exit 1; }
 
-./build.sh
+BUNDLE_SPEECH=1 ./build.sh
 
 # A missing metallib aborts the process on first dictation rather than throwing — no degraded mode.
 [ -f ".build/BisprBlow.app/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib" ] \

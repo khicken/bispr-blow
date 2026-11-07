@@ -76,6 +76,20 @@ if [ -n "${BUNDLE_WEIGHTS:-}" ]; then
     echo "Bundled Fast weights ($(du -sh "$FAST_SRC" | cut -f1))."
 fi
 
+# BUNDLE_SPEECH=1 puts the Parakeet weights in the bundle, so neither installer leaves a fresh Mac
+# downloading 700 MB before dictation can use it. Parakeet.linkBundledModels finds them. A separate
+# flag from BUNDLE_WEIGHTS because the .pkg needs this one and not that: it installs Fast to
+# /Library. -L because on this machine the cache folders may themselves be links into a bundle.
+if [ -n "${BUNDLE_SPEECH:-}" ]; then
+    FLUID="$HOME/Library/Application Support/FluidAudio/Models"
+    mkdir -p "$APP/Contents/Resources/models"
+    for m in parakeet-ultra parakeet-ctc-110m-coreml; do
+        [ -d "$FLUID/$m" ] || .build/release/BisprBlow --download-speech
+        cp -RL "$FLUID/$m" "$APP/Contents/Resources/models/"
+    done
+    echo "Bundled speech weights ($(du -shc "$APP"/Contents/Resources/models/parakeet-* | tail -1 | cut -f1))."
+fi
+
 # A Developer ID cert wins when the machine has one: it is the only signature that opens on a
 # stranger's Mac, and notarization requires it plus the hardened runtime. Everything else is the
 # local-iteration path, where the point of a stable identity is only that TCC keeps its grants.
