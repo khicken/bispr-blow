@@ -554,7 +554,7 @@ Phonon, Whisper turbo, Qwen3-ASR, Granite 4.1, Nemotron streaming and Moonshine:
 | engine | WER | dictionary terms | wait, short | wait, 20s |
 |---|---|---|---|---|
 | Apple SpeechTranscriber | 19.9% | 45% | 159ms | 588ms |
-| Parakeet Ultra + CTC vocab (shipped) | 10.1% | 88% | 84ms | 300ms |
+| Parakeet Ultra + CTC vocab + English guard (shipped) | 10.3% | 82% | 88ms | 315ms |
 | Qwen3-ASR 1.7B + vocab prompt | 8.2% | 86% | 606ms | 2.3s |
 
 Qwen3-ASR and Granite are marginally more accurate and seven to ten times slower: about 7s after a
@@ -565,7 +565,8 @@ copies of the clips it scores 10.4%/87%, so the bench describes what runs.
 **The dictionary reaches the recognizer now, and that is most of the win.** Apple's
 `contextualStrings` is a no-op on `SpeechTranscriber`. FluidAudio's CTC keyword rescorer
 (`VocabularyBoostingSession`) re-checks the transcript against the audio for each dictionary term:
-without it Ultra gets 60% of terms, with it 88%. Measured settings, each a loss to change:
+without it Ultra gets 60% of terms, with it 88% before the guard below and 82% after. Measured
+settings, each a loss to change:
 - Default thresholds. FluidAudio's documented "dictation" thresholds (`cbw: 0, minSimilarity: 0.7`)
   dropped recall to 64%, and almost every term back to the mishear.
 - `boostable` drops a spaced spelling of another term. Given "Bispr Blow" and "BisprBlow", the rescorer
@@ -575,7 +576,16 @@ without it Ultra gets 60% of terms, with it 88%. Measured settings, each a loss 
 - Dictionary only, not the draft's on-screen terms. Every unspoken term is one more chance to
   replace a word that was heard correctly.
 
-Known overcorrection: "Claude Code" can come out as "Claude Xcode", because "Xcode" is also a term.
+**The rescorer must not replace a word the recognizer heard right — `Parakeet.isMishear`.** It
+decides on acoustics alone, so a term that sounds like a common word takes it. Unguarded on the
+user's clips: "code" → Xcode, "model" → Modal, "error" → Terraform, "Write" → Vite, "strip" →
+Stripe, "Thing" → staging, "Claude and" → Claude Code. The user reported the first two in daily
+use. Same doctrine and same word list as `applyVocabulary`: if every heard word is real English,
+the replacement is refused, unless it is a `mishears` alias or the term with its spaces removed.
+It costs six correct fixes on the clips, each a real word heard for a term: entry → Sentry,
+Cloud → Claude, Christian → Krishin (twice), "works tree" → worktree, CSH → zsh. Term recall
+drops 88% → 82%, WER 10.1% → 10.3%. That trade is deliberate: a missed fix leaves a word that was
+already wrong, a false one breaks a word that was right.
 
 **Batch, not streaming.** Audio is kept at the device rate during the dictation and resampled once on
 release (per-buffer resampling restarts the filter at every boundary), then transcribed whole. That

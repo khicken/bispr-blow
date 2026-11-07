@@ -206,6 +206,26 @@ enum SelfCheck {
         // Given both spellings, Parakeet's rescorer writes the spaced one. Unrelated phrases stay.
         precondition(Parakeet.boostable(["Bispr Blow", "BisprBlow", "Claude Code", "Claude"])
             == ["BisprBlow", "Claude Code", "Claude"])
+        // Verbatim from the rescorer on the user's clips. Real words it took: refused.
+        for (heard, term) in [("code", "Xcode"), ("model", "Modal"), ("error", "Terraform"),
+                              ("strip", "Stripe"), ("Claude and", "Claude Code"), ("models", "Modal"),
+                              ("code's", "Xcode's")] {
+            precondition(!Parakeet.isMishear(heard, of: term), "\(heard) → \(term)")
+        }
+        // Mishears, compounds and known aliases: kept.
+        for (heard, term) in [("Superbase", "Supabase"), ("web hook", "webhook"), ("CI CD", "CI/CD"),
+                              ("We're cell", "Vercel"), ("clod.", "Claude"), ("Visperblow", "BisprBlow")] {
+            precondition(Parakeet.isMishear(heard, of: term), "\(heard) → \(term)")
+        }
+        // Listed out of text order, as the rescorer does; punctuation the heard word carried stays.
+        precondition(Parakeet.applying([("web hook", "webhook"), ("Superbase", "Supabase"), ("clod.", "Claude")],
+                                       to: "Superbase web hook, ask clod.")
+            == "Supabase webhook, ask Claude.")
+        precondition(Parakeet.applying([("Versel", "Vercel")], to: "no such word") == nil)
+        // Whole words only, so an alias cannot land inside a longer word.
+        precondition(Parakeet.applying([("quad", "Claude")], to: "the quadrant, then quad")
+            == "the quadrant, then Claude")
+        precondition(Parakeet.applying([("clod.", "Claude")], to: "say \"clod.\" twice") == "say \"Claude.\" twice")
         // The recognizer marks a pause with an ellipsis. Verbatim from history: while it sat in the
         // transcript it also switched off looksTruncated's elision check on that dictation.
         precondition(Transcriber.withoutPauseMarks(

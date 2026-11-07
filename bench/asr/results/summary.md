@@ -4,7 +4,7 @@
 | qwen3-asr-1.7b-vocab | 28 | 8.2 | 86 | 606 | 2332 |
 | whisper-turbo-vocab | 28 | 9.5 | 82 | 764 | 1171 |
 | qwen3-asr-0.6b-vocab | 28 | 9.6 | 82 | 252 | 1011 |
-| app | 28 | 10.1 | 88 | 84 | 305 |
+| app | 28 | 10.3 | 82 | 87 | 321 |
 | app-48k | 28 | 10.4 | 87 | 105 | 412 |
 | parakeet-ultra-vocab | 28 | 10.4 | 87 | 91 | 342 |
 | parakeet-v2-vocab | 28 | 10.7 | 84 | 90 | 245 |
@@ -34,7 +34,7 @@
 - **qwen3-asr-1.7b-vocab** missed: BisprBlow, Bluejay, Claude, Linear, Prisma, SwiftUI, Vapi, Vercel, frontend
 - **whisper-turbo-vocab** missed: Anthropic, BisprBlow, Bluejay, Claude, Linear, LiveKit, Supabase, Vercel, auth, backend, endpoint, frontend
 - **qwen3-asr-0.6b-vocab** missed: BisprBlow, Claude, ElevenLabs, Krishin, Linear, LiveKit, Qwen, Supabase, Vercel, env
-- **app** missed: Claude, Claude Code, ClickHouse, Dockerfile, ElevenLabs, Qwen, SwiftUI, auth, env
+- **app** missed: Claude, ClickHouse, Dockerfile, ElevenLabs, Krishin, Qwen, Sentry, SwiftUI, auth, env, worktree, zsh
 - **app-48k** missed: Claude, Claude Code, ClickHouse, Dockerfile, ElevenLabs, Qwen, SwiftUI, auth, dev, env
 - **parakeet-ultra-vocab** missed: BisprBlow, Claude, Claude Code, ClickHouse, Dockerfile, ElevenLabs, Qwen, SwiftUI, auth, env
 - **parakeet-v2-vocab** missed: BisprBlow, Claude, Claude Code, Krishy, Linear, SwiftUI, Vapi, env, worktree

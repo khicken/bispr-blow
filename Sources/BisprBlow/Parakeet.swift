@@ -48,7 +48,15 @@ actor Parakeet {
             guard let session = await boostSession(for: vocabulary) else { return result.text }
             let rescored = await session.rescore(
                 text: result.text, tokenTimings: result.tokenTimings ?? [], audioSamples: samples)
-            return rescored?.text ?? result.text
+            let kept = (rescored?.replacements ?? []).compactMap { r -> (String, String)? in
+                guard let term = r.replacementWord, Self.isMishear(r.originalWord, of: term) else { return nil }
+                return (r.originalWord, term)
+            }
+            guard let text = Self.applying(kept, to: result.text) else {
+                logLine("parakeet: \(kept.count) vocabulary fixes did not line up with the transcript; skipped")
+                return result.text
+            }
+            return text
         } catch {
             logLine("parakeet transcribe failed: \(error)")
             return nil
@@ -83,6 +91,61 @@ actor Parakeet {
     // Mishears of a term that real words own, so only acoustics can tell them apart: Ultra writes
     // "clod" for Claude, and nothing downstream respells a real word.
     private static let mishears = ["Claude": ["quad", "claw", "clawed", "clod"]]
+
+    // The rescorer replaces on acoustics alone, so a term that sounds like a common word takes it:
+    // "code" became Xcode, "model" Modal, "error" Terraform, "strip" Stripe, "Claude and" Claude
+    // Code. Same doctrine as `LLMCleaner.applyVocabulary`: a real English word is one the recognizer
+    // heard right. Allowed through: a known mishear, the term with its spaces or slash
+    // ("web hook", "CI CD"), and anything with a word that is not English ("Superbase", "We're
+    // cell"). The word list has no plurals or possessives, so "models" and "code's" are checked by
+    // their stem. Under four letters counts as English: `englishWords` omits them, and nearly all are.
+    static func isMishear(_ original: String, of term: String) -> Bool {
+        let letters = { (text: String) in text.lowercased().filter(\.isLetter) }
+        let bareTerm = term.hasSuffix("'s") ? String(term.dropLast(2)) : term
+        let heard = letters(original.hasSuffix("'s") ? String(original.dropLast(2)) : original)
+        if heard == letters(bareTerm) || mishears[bareTerm]?.contains(heard) == true { return true }
+        return !original.lowercased().split(separator: " ").allSatisfy { word in
+            // Apostrophes kept: "we're" stripped to "were" would pass for English.
+            let bare = String(word.filter { $0.isLetter || $0 == "'" })
+            let stems = [bare, bare.hasSuffix("'s") ? String(bare.dropLast(2)) : bare,
+                         bare.hasSuffix("s") ? String(bare.dropLast()) : bare,
+                         bare.hasSuffix("es") ? String(bare.dropLast(2)) : bare]
+            return stems.contains { $0.count < 4 || LLMCleaner.englishWords.contains($0) }
+        }
+    }
+
+    // Applies the kept replacements to whole words of `text`. The rescorer does not list them in
+    // text order, so each takes the first run of words it matches that no other has claimed.
+    // Punctuation around the heard words stays ("clod." → "Claude."). Nil when a run cannot be
+    // found; the caller then uses the unboosted transcript, since a misplaced replacement corrupts
+    // text and a skipped one does not.
+    static func applying(_ replacements: [(original: String, term: String)], to text: String) -> String? {
+        let core = { (word: Substring) in word.trimmingCharacters(in: .punctuationCharacters).lowercased() }
+        let words = text.split(separator: " ")
+        var claimed: [(first: Int, last: Int, term: String)] = []
+        for (original, term) in replacements {
+            let wanted = original.split(separator: " ").map(core)
+            guard !wanted.isEmpty,
+                  let first = words.indices.first(where: { start in
+                      start + wanted.count <= words.count
+                          && !claimed.contains { start <= $0.last && $0.first <= start + wanted.count - 1 }
+                          && zip(words[start...], wanted).allSatisfy { core($0) == $1 }
+                  })
+            else { return nil }
+            claimed.append((first, first + wanted.count - 1, term))
+        }
+        var out: [String] = []
+        var index = 0
+        for (first, last, term) in claimed.sorted(by: { $0.first < $1.first }) {
+            out += words[index..<first].map(String.init)
+            let lead = words[first].prefix { $0.isPunctuation && $0 != "'" }
+            let trail = words[last].reversed().prefix { $0.isPunctuation && $0 != "'" }
+            out.append(String(lead) + term + String(trail.reversed()))
+            index = last + 1
+        }
+        out += words[index...].map(String.init)
+        return out.joined(separator: " ")
+    }
 
     // Rebuilt only when the dictionary changes: building tokenizes every term.
     private func boostSession(for vocabulary: [String]) async -> VocabularyBoostingSession? {
