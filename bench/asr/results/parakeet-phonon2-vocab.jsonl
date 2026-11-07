@@ -1,0 +1,28 @@
+{"file":"c01.wav","ms":85,"text":"Ask Claude to open the BisprBlow Worktree and run the build."}
+{"file":"c02.wav","ms":80,"text":"I say clot a lot, so Claude Code should never come out as clot or Claude."}
+{"file":"c03.wav","ms":63,"text":"Supabase Webhook is failing on staging but not in prod."}
+{"file":"c04.wav","ms":73,"text":"Open a pull request on GitHub and ping Krishin on Slack when the CICD run is green."}
+{"file":"c05.wav","ms":63,"text":"Can you check the sentry Terraform in the middleware and see if it is the off endpoint?"}
+{"file":"c06.wav","ms":86,"text":"BisprBlow should read what is already in the text box before it writes anything."}
+{"file":"c07.wav","ms":68,"text":"We move the frontend from Versailles to Railway and the backend still runs in modal."}
+{"file":"c08.wav","ms":81,"text":"Run PNPm installed and npm run dev and open localhost on worktree thousand."}
+{"file":"c09.wav","ms":83,"text":"The Docker file pins Postgres sixteen and the Prisma migration runs before DBMate."}
+{"file":"c10.wav","ms":70,"text":"Bluejay uses LiveKit and doppy for voice and ElevenLabs for the text speech."}
+{"file":"c11.wav","ms":65,"text":"Add a playwright test that clicks the button and checks the JSON in the response."}
+{"file":"c12.wav","ms":82,"text":"The Swift UIView uses AppKit underneath because the event tap needs it."}
+{"file":"c13.wav","ms":83,"text":"Can you ask Anthropic whether Claude supports this or should we try Gemini or OpenAI?"}
+{"file":"c14.wav","ms":64,"text":"Put the Terraform config in the repo and make the linter and prettier happy."}
+{"file":"c15.wav","ms":68,"text":"Hey Krishy, can you look at the linear ticket about the CLI Out's dashboard?"}
+{"file":"c16.wav","ms":66,"text":"Parikh said the Metronome invoices go out through stripe on the first of the month."}
+{"file":"c17.wav","ms":73,"text":"Vite a regex that pulls the end name out of the YAML file and prints it."}
+{"file":"c18.wav","ms":68,"text":"I think the Qwen Modal is fine for cleanup, but Whisper might be Apple on names."}
+{"file":"c19.wav","ms":75,"text":"Open Xcode, then Homebrew install TMUX, and set Zsh as the default shell."}
+{"file":"c20.wav","ms":65,"text":"The Figma file is a notion in the Cloudflare settings or in the markdown doc."}
+{"file":"c21.wav","ms":71,"text":"Yes, I was thinking um we could actually no. Let's just ship it today and see what breaks."}
+{"file":"c22.wav","ms":66,"text":"Wait, not the staging one, the prod one. Sorry, the prod Supabase project."}
+{"file":"c23.wav","ms":103,"text":"Okay, so the thing is I keep saying Whisper blow and it keeps writing something else and it's kind of driving me crazy."}
+{"file":"c24.wav","ms":59,"text":"Send the invoice to finance and cancel the meeting on Thursday."}
+{"file":"c25.wav","ms":55,"text":"What time is it demo with a Bluejay team tomorrow?"}
+{"file":"l01.wav","ms":379,"text":"Okay, so here's the endpoint for today. First I want Claude to look at the transcription path of Whisper Blow because Apple's recognizer keeps him staging names like Claude Code Supabase. Then I want to bench a few newer models, maybe parakeet, maybe whisper, and see which one is fastest on my Mac. If one of them runs on both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way I want the numbers before we change anything."}
+{"file":"l02.wav","ms":340,"text":"So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the Swift U iFrame. Can you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet, just tell me when you what you find and we'll decide together on Slack with the Krishin."}
+{"file":"l03.wav","ms":307,"text":"I want to write a longer message to the team about the launch. We're going to ship the DMG on Friday and the get up release will have the notes. Vercel hosts the website, Cloudflare does a DNS, and the data link points at the release page. If anyone sees Gatekeeper complain that is expected until we have a developer ID, so please don't tell people to Stripe the quarantine flag. Staging in linear something breaks and I'll look at the Sentry dashboard first thing in the morning."}

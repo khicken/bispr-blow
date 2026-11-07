@@ -231,7 +231,8 @@ updating. So `UpdateChecker` asks `api.github.com/repos/khicken/bispr-blow/relea
 launch, and a newer tag becomes one line on Home that opens the release page.
 
 Every failure is silence, deliberately: offline is the normal case for this app, and the site says
-it works with the wifi off. It is the only network call the app makes unbidden, which is why the off
+it works with the wifi off. The one other unbidden request is Parakeet's first-run model download
+(see Speech recognition rules), which happens once per machine. That is why the off
 switch's help text says so out loud (`AppSettings.checkForUpdates`, on by default — an opt-in check
 nobody finds is dead code).
 
@@ -543,6 +544,54 @@ Cross-platform note: SpeechAnalyzer, Foundation Models, and SwiftUI are all
 Apple-only. Anything aimed at Windows or Linux needs llama.cpp and either
 whisper.cpp or sherpa-onnx instead.
 
+## Speech recognition rules
+
+**Parakeet transcribes, not Apple, and the decision was measured on the user's own voice.**
+`bench/asr/` holds 28 read-aloud clips (`clips/`, gitignored), a runner per engine, and
+`run_all.sh`, which times every engine one at a time. 27 variants across Parakeet v2/v3/Ultra,
+Phonon, Whisper turbo, Qwen3-ASR, Granite 4.1, Nemotron streaming and Moonshine:
+
+| engine | WER | dictionary terms | wait, short | wait, 20s |
+|---|---|---|---|---|
+| Apple SpeechTranscriber | 19.9% | 45% | 159ms | 588ms |
+| Parakeet Ultra + CTC vocab (shipped) | 10.1% | 88% | 84ms | 300ms |
+| Qwen3-ASR 1.7B + vocab prompt | 8.2% | 86% | 606ms | 2.3s |
+
+Qwen3-ASR and Granite are marginally more accurate and seven to ten times slower: about 7s after a
+60s dictation, on an app whose user picked it for feeling instant. Do not swap toward them without
+re-running the bench. `app` in `run_all.sh` is the shipped path itself (`--transcribe`), and on 48kHz
+copies of the clips it scores 10.4%/87%, so the bench describes what runs.
+
+**The dictionary reaches the recognizer now, and that is most of the win.** Apple's
+`contextualStrings` is a no-op on `SpeechTranscriber`. FluidAudio's CTC keyword rescorer
+(`VocabularyBoostingSession`) re-checks the transcript against the audio for each dictionary term:
+without it Ultra gets 60% of terms, with it 88%. Measured settings, each a loss to change:
+- Default thresholds. FluidAudio's documented "dictation" thresholds (`cbw: 0, minSimilarity: 0.7`)
+  dropped recall to 64%, and almost every term back to the mishear.
+- `boostable` drops a spaced spelling of another term. Given "Bispr Blow" and "BisprBlow", the rescorer
+  writes the spaced one.
+- `mishears` aliases only Claude (quad, claw, clawed, clod). Ultra writes "clod", which is a real word,
+  so nothing downstream will respell it. The same table for BisprBlow measured worse.
+- Dictionary only, not the draft's on-screen terms. Every unspoken term is one more chance to
+  replace a word that was heard correctly.
+
+Known overcorrection: "Claude Code" can come out as "Claude Xcode", because "Xcode" is also a term.
+
+**Batch, not streaming.** Audio is kept at the device rate during the dictation and resampled once on
+release (per-buffer resampling restarts the filter at every boundary), then transcribed whole. That
+is still faster than Apple finishing its stream. Nemotron streaming and Moonshine stream, and both
+lost on accuracy.
+
+**Apple stays as the fallback, and it is live for the first ~40s after an install.** `Parakeet.load`
+downloads about 700MB into `~/Library/Application Support/FluidAudio/Models` on first run, then
+loads. CoreML compiles the models for the Neural Engine on first load of each new binary: 32-40s
+measured after `./build.sh`, then 363ms on the next launch. Until `isReady`, `startSession` uses the
+SpeechAnalyzer path exactly as before. **Neither installer carries these weights yet**, so a fresh
+machine needs the network once; bundling them is a packaging decision that is still open.
+
+**`swift build` needs `--disable-keychain`.** FluidAudio ships a binary xcframework, and with
+keychain lookups enabled SwiftPM can fail fetching it ("Failed to find credentials ... status -128").
+
 ## Audio capture rules
 
 **Never use `Tink` for a start cue, or any other sound macOS has already assigned a meaning.**
@@ -624,10 +673,6 @@ the app was force-quit — the user-visible face of the bug above. It now checks
 `recorder.capturedFrames` first and shows which mic produced nothing. Silence is a
 failure the user has to be told about; the alternative is dictating into nothing and
 not finding out.
-
-**`Result.alternatives` IS populated.** Measured from real dictations: N ranges 1
-to 5, usually 2-3 on short spans. n-best rescoring against the dictionary has real
-raw material — this was an open question and the answer is yes.
 
 ## Inference runtime rules
 

@@ -1,8 +1,10 @@
 import AVFoundation
+import FluidAudio
 import Speech
 
-// Streaming on-device transcription. Primary path: the macOS 26 `SpeechAnalyzer` +
-// `SpeechTranscriber` API. Fallback: `SFSpeechRecognizer` with on-device recognition.
+// On-device transcription. Primary path: Parakeet (see Parakeet.swift), which records the clip and
+// transcribes it on release. Until its models are loaded, or if they fail to: the macOS 26
+// `SpeechAnalyzer` + `SpeechTranscriber` API, and behind that `SFSpeechRecognizer`.
 final class Transcriber {
     enum TranscriberError: Error, LocalizedError {
         case localeUnsupported
@@ -32,6 +34,12 @@ final class Transcriber {
     private var sfTask: SFSpeechRecognitionTask?
     private var sfLatest = ""
     private var usingFallback = false
+
+    // Parakeet path. `feed` runs on the capture queue, so the audio sits behind a lock. One segment
+    // per sample rate, so a device change mid-dictation does not resample earlier audio wrongly.
+    private var usingParakeet = false
+    private let sampleLock = NSLock()
+    private var segments: [(rate: Double, samples: [Float])] = []
 
     // Drops the ellipsis the recognizer writes where the speaker paused: punctuation it invented,
     // not a word anybody said, and it does two kinds of damage. It reaches the cursor ("again to
@@ -84,8 +92,11 @@ final class Transcriber {
         volatileText = ""
         sfLatest = ""
         usingFallback = false
+        sampleLock.withLock { segments = [] }
+        usingParakeet = await Parakeet.shared.isReady
+        if usingParakeet { return }
         do {
-            try await startAnalyzerSession(contextTerms: contextTerms)
+            try await startAnalyzerSession()
         } catch {
             logLine("SpeechAnalyzer unavailable (\(error)); falling back to SFSpeechRecognizer")
             usingFallback = true
@@ -94,6 +105,18 @@ final class Transcriber {
     }
 
     func feed(_ buffer: AVAudioPCMBuffer) {
+        if usingParakeet {
+            // Kept at the device's rate and resampled once on release: resampling buffer by buffer
+            // restarts the filter at every boundary. Channel 0 only, as `AudioRecorder.measure` does.
+            guard let channel = buffer.floatChannelData?[0] else { return }
+            let chunk = UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))
+            let rate = buffer.format.sampleRate
+            sampleLock.withLock {
+                if segments.last?.rate != rate { segments.append((rate, [])) }
+                segments[segments.count - 1].samples.append(contentsOf: chunk)
+            }
+            return
+        }
         if usingFallback {
             sfRequest?.append(buffer)
             return
@@ -135,8 +158,10 @@ final class Transcriber {
         }
     }
 
-    // Stops the session and returns the full transcript.
-    func finishSession() async -> String {
+    // Stops the session and returns the full transcript. Nil only when Parakeet failed with audio
+    // in hand, which the caller must report: those words cannot be recovered.
+    func finishSession() async -> String? {
+        if usingParakeet { return await finishParakeetSession() }
         if usingFallback { return await finishSFSession() }
 
         inputBuilder?.finish()
@@ -151,6 +176,10 @@ final class Transcriber {
     }
 
     func cancelSession() async {
+        if usingParakeet {
+            sampleLock.withLock { segments = [] }
+            return
+        }
         if usingFallback {
             sfTask?.cancel()
             sfRequest?.endAudio()
@@ -164,36 +193,39 @@ final class Transcriber {
         cleanupAnalyzer()
     }
 
+    // MARK: - Parakeet path
+
+    // The dictionary only, not `contextTerms`: that is what was measured, and every unspoken term
+    // in the list is one more chance to replace a word that was heard right.
+    private func finishParakeetSession() async -> String? {
+        let captured = sampleLock.withLock { defer { segments = [] }; return segments }
+        guard !captured.isEmpty else { return "" }
+        do {
+            let converter = AudioConverter()
+            let audio = try captured.flatMap {
+                $0.rate == 16_000 ? $0.samples : try converter.resample($0.samples, from: $0.rate)
+            }
+            let vocabulary = await MainActor.run { AppSettings.shared.vocabulary }
+            return await Parakeet.shared.transcribe(audio, vocabulary: vocabulary).map(Self.withoutPauseMarks)
+        } catch {
+            logLine("parakeet resample failed: \(error)")
+            return nil
+        }
+    }
+
     // MARK: - SpeechAnalyzer path
 
-    private func startAnalyzerSession(contextTerms: [String]) async throws {
+    private func startAnalyzerSession() async throws {
         guard let locale = await Self.bestLocale() else { throw TranscriberError.localeUnsupported }
-        // Alternatives and confidence cost nothing to ask for and are the raw material every
-        // recognition fix needs: if a term is anywhere in the n-best, choosing it is free accuracy.
-        // Published ablations put 1-best-only rewriting at roughly break-even, and negative
-        // zero-shot, while n-best is where the gains are.
         let transcriber = SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
-            reportingOptions: [.volatileResults, .alternativeTranscriptions],
-            attributeOptions: [.transcriptionConfidence]
+            reportingOptions: [.volatileResults],
+            attributeOptions: []
         )
-        // NOTE: contextualStrings below is very likely a NO-OP on this module. Apple DTS, twice:
-        // contextual strings only help the DictationTranscriber module, and SpeechTranscriber does
-        // not take them into account (developer.apple.com/forums/thread/811083, /801877). It fails
-        // silently, so it cannot be smoke-tested by "looks fine". Confirmed structurally on this
-        // SDK: `SpeechTranscriber` has no `contentHints:` parameter while `DictationTranscriber`
-        // does, so the real biasing door — SFCustomLanguageModelData — opens only onto the older,
-        // weaker acoustic model. Left in place because it is harmless and load-bearing on the
-        // SFSpeechRecognizer fallback (capped at 100 phrases). Do not tune it until the no-op is
-        // confirmed at runtime.
+        // No contextualStrings: SpeechTranscriber ignores them (Apple DTS, and measured in
+        // bench/asr), which is why Parakeet is primary. Only the SF fallback below takes them.
         let analyzer = SpeechAnalyzer(modules: [transcriber])
-        let vocabulary = await MainActor.run { AppSettings.shared.vocabulary } + contextTerms
-        if !vocabulary.isEmpty {
-            let context = AnalysisContext()
-            context.contextualStrings = [.general: vocabulary]
-            try? await analyzer.setContext(context)
-        }
         self.analyzerTranscriber = transcriber
         self.analyzer = analyzer
 
@@ -211,11 +243,6 @@ final class Transcriber {
                     guard let self else { break }
                     let text = String(result.text.characters)
                     if result.isFinal {
-                        // Whether `alternatives` is populated, and how deep, is undocumented, and it
-                        // decides whether n-best rescoring is worth building. A CLI probe cannot ask
-                        // (no Speech authorization). Counts only, never the text: the unified log is
-                        // readable by anything on the machine.
-                        logLine("alternatives=\(result.alternatives.count) for \(text.split(whereSeparator: \.isWhitespace).count)w span")
                         self.finalizedText += text
                         self.volatileText = ""
                     } else {

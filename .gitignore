@@ -2,3 +2,11 @@
 .DS_Store
 icon-1024.png   # regenerate with `swift make-icon.swift`
 bench/__pycache__/
+
+# ASR bench: local venvs, model caches, recordings
+bench/asr/.venv*/
+bench/asr/.build*/
+bench/asr/fluid/.build/
+bench/asr/clips/
+bench/asr/models/
+bench/asr/logs/

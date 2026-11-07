@@ -1,0 +1,28 @@
+{"file":"c01.wav","ms":57,"text":"Ask Claude to open the Bisperblo works tree and run the build."}
+{"file":"c02.wav","ms":52,"text":"I say clod a lot so clod code should never come out as quad or clod."}
+{"file":"c03.wav","ms":48,"text":"Superbase web hook is failing on staging but not in prod."}
+{"file":"c04.wav","ms":55,"text":"Open a pull request on GitHub and ping Christian on Slack when the CI CD run is green."}
+{"file":"c05.wav","ms":50,"text":"Can you check this entry error in the middleware and see if it is the authendpoint?"}
+{"file":"c06.wav","ms":54,"text":"Basebird blow should read what is already in the text box before it writes anything."}
+{"file":"c07.wav","ms":53,"text":"We move the front end from Versel to railway and the back end still runs in modal."}
+{"file":"c08.wav","ms":55,"text":"Run pnpm installed and npm run dev and open localhost on port 3000."}
+{"file":"c09.wav","ms":54,"text":"The Docker file pins Postgres 16 and the Prisma migration runs before dbmate."}
+{"file":"c10.wav","ms":59,"text":"BlueJay uses lifekit and vapi for voice and 11 labs for the text speech."}
+{"file":"c11.wav","ms":53,"text":"Add a playwright test that clicks the button and checks the JSON in the response."}
+{"file":"c12.wav","ms":52,"text":"The Swift UiView uses AppKit underneath because the event tab needs it."}
+{"file":"c13.wav","ms":54,"text":"Can you ask Anthropic whether Cloud supports this, or should we try Gemini or OpenAI?"}
+{"file":"c14.wav","ms":49,"text":"Put the Terraform config in the repo and make the Linter and Prettier happy."}
+{"file":"c15.wav","ms":53,"text":"Hey Chrishi, can you look at the linear ticket about the ClickOut's dashboard?"}
+{"file":"c16.wav","ms":54,"text":"Parik said the metronome invoices go out through Stripe on the first of the month."}
+{"file":"c17.wav","ms":52,"text":"Write a regex that pulls the endname out of the YAML file and prints it."}
+{"file":"c18.wav","ms":53,"text":"I think the coin model is fine for cleanup, but Whisper might be Apple on names."}
+{"file":"c19.wav","ms":54,"text":"Open Xcode, then homebrew install Tmux, and set CSH as the default shell."}
+{"file":"c20.wav","ms":54,"text":"The Figma file is in notion in the Cloudflare settings or in the markdown doc."}
+{"file":"c21.wav","ms":52,"text":"Yes, I was thinking um we could actually no, let's just ship it today and see what breaks."}
+{"file":"c22.wav","ms":52,"text":"Wait, not the staging one, the prod one. Sorry, the prod superbase project."}
+{"file":"c23.wav","ms":62,"text":"Okay, so the thing is I keep saying Visperblow and it keeps writing something else and it's kind of driving me crazy."}
+{"file":"c24.wav","ms":49,"text":"Send the invoice to finance it canceled the meeting on Thursday."}
+{"file":"c25.wav","ms":46,"text":"What time is a demo with a blue jay team tomorrow?"}
+{"file":"l01.wav","ms":185,"text":"Okay, so here's the plan for today. First I want Claude to look at the transcription path in WhisperBlow, because Apple's recognizer keeps mishearing names like Claude and Superbase. Then I want to bench a few newer models, maybe Parakeet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins on both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything."}
+{"file":"l02.wav","ms":176,"text":"So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the Swift Uiframe. Can you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet, just tell me when you what you find and we will decide together on Slack with Christian."}
+{"file":"l03.wav","ms":186,"text":"I want to write a longer message to the team about the launch. We're going to ship the DMG on Friday and the GitHub release will have the notes. We're cell hosts the website, Cloudflare does a DNS and the data link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a developer ID, so please don't tell people to strip the quarantine flag. Thing in linear if something breaks and I'll look at the sentry dashboard first thing in the morning."}

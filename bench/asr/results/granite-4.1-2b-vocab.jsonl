@@ -1,0 +1,28 @@
+{"file": "c01.wav", "text": "ask claude to open the bisprBlow worktree and run the build", "ms": 895}
+{"file": "c02.wav", "text": "i say claude a lot so claude code should never come out as quad or quad", "ms": 963}
+{"file": "c03.wav", "text": "supabase webhook is failing on staging but not on prod", "ms": 736}
+{"file": "c04.wav", "text": "open a pull request on github and ping krish in slack when the ci cd run is green", "ms": 985}
+{"file": "c05.wav", "text": "you check the sentry error in the middleware and see if it is the auth endpoint", "ms": 930}
+{"file": "c06.wav", "text": "bisprBlow should read what is already in the text box before it writes anything", "ms": 934}
+{"file": "c07.wav", "text": "we moved the front end from vercel to railway and the backend still runs in modal", "ms": 879}
+{"file": "c08.wav", "text": "run pnpm install then npm run dev and open localhost on port 3000", "ms": 872}
+{"file": "c09.wav", "text": "the dockerfile pins postgres 16 and the prisma migration runs before dbmate", "ms": 904}
+{"file": "c10.wav", "text": "bluejay uses livekit and vapi for voice and elevenlabs for the text to speech", "ms": 917}
+{"file": "c11.wav", "text": "i add a playwright test that clicks the button and checks the json in the response", "ms": 849}
+{"file": "c12.wav", "text": "the swift ui view uses appkit underneath because the event tap needs it", "ms": 905}
+{"file": "c13.wav", "text": "can you ask anthropic whether claude supports this or should we try gemini or openai", "ms": 980}
+{"file": "c14.wav", "text": "put the terraform config in the repo and make the linter pretty or happy", "ms": 875}
+{"file": "c15.wav", "text": "hey krishy can you look at the linear ticket about the clickHouse dashboard", "ms": 874}
+{"file": "c16.wav", "text": "parikh said the metronome invoices go out through stripe on the first of the month", "ms": 924}
+{"file": "c17.wav", "text": "write a regex that pulls the env name out of the yaml file and prints it", "ms": 952}
+{"file": "c18.wav", "text": "i think the qwen model is fine for cleanup but whisper might be apple on names", "ms": 915}
+{"file": "c19.wav", "text": "open xcode then homebrew install tmux and set chsh as the default shell", "ms": 935}
+{"file": "c20.wav", "text": "the figma file is a notion and the cloudflare settings are in the markdown doc", "ms": 923}
+{"file": "c21.wav", "text": "yeah so i was thinking we could actually no let's just ship it today and see what breaks", "ms": 972}
+{"file": "c22.wav", "text": "wait not the staging one the prod one sorry the prod sub based project", "ms": 833}
+{"file": "c23.wav", "text": "okay so the thing is i keep saying bispr Blow and it keeps writing something else and it's kind of driving me crazy", "ms": 1224}
+{"file": "c24.wav", "text": "send an invoice to finance and cancel the meeting on thursday", "ms": 737}
+{"file": "c25.wav", "text": "what time is the demo with the bluejay team tomorrow", "ms": 750}
+{"file": "l01.wav", "text": "okay so here's a plan for today first i want claude to look at the transcription path in bisprBlow because apple's recognizer keeps mishearing names like claude and supabase then i want to bench a few newer models maybe parakeet maybe whisper and see which one is fastest on my mac if one of them wins on both speed and accuracy we swap it in if not we keep apple and fix the dictionary instead either way i want the numbers before we change anything", "ms": 3867}
+{"file": "l02.wav", "text": "so the bug report from yesterday was that the pill jumps when the dictation ends and i think it is the panel resizing itself not the swift ui frame could you open the pill demo file run it with the left center anchor and tell me how many points it moves then check the git log for the commit that changed the sizing options because i'm pretty sure that is where it started do not push anything yet just tell me what you find and we will decide together on slack with the christian", "ms": 3915}
+{"file": "l03.wav", "text": "i want to write a longer message to the team about the launch we're going to ship the dmj on friday and the github release will have the notes rachel hosts the website cloudflare does the dns and the download link points at the release page if anyone sees gatekeeper complain that is expected until we have a developer id so please don't tell people to strip the quarantine flag ping in the nerf if something breaks and i'll look at the sentry dashboard first thing in the morning", "ms": 3950}

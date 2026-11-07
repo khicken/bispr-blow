@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import SwiftUI
 
@@ -45,6 +46,35 @@ enum Main {
             print(frames > 0 ? "PASS — see the `audio` line in the log for level"
                              : "FAIL — no audio captured")
             exit(frames > 0 ? 0 : 1)
+        }
+        // WAV files through the real `Transcriber` (feed, then finish), one JSON line each in
+        // bench/asr's runner format, so the shipped path is benched rather than a copy of it. On a
+        // RunLoop, not `awaitSync`: finishing reads the dictionary on the main actor.
+        if let flag = CommandLine.arguments.firstIndex(of: "--transcribe") {
+            let files = CommandLine.arguments[(flag + 1)...]
+            var finished = false
+            Task {
+                await Parakeet.shared.load()
+                guard await Parakeet.shared.isReady else { print("FAIL — Parakeet did not load"); exit(1) }
+                let transcriber = Transcriber()
+                for path in files {
+                    guard let file = try? AVAudioFile(forReading: URL(fileURLWithPath: path)),
+                          let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                                        frameCapacity: AVAudioFrameCount(file.length)),
+                          (try? file.read(into: buffer)) != nil
+                    else { print("FAIL — cannot read \(path)"); exit(1) }
+                    await transcriber.startSession()
+                    transcriber.feed(buffer)
+                    let start = Date()
+                    let text = await transcriber.finishSession() ?? "FAILED"
+                    let line: [String: Any] = ["file": (path as NSString).lastPathComponent, "text": text,
+                                               "ms": Int(Date().timeIntervalSince(start) * 1000)]
+                    print(String(data: try! JSONSerialization.data(withJSONObject: line), encoding: .utf8)!)
+                }
+                finished = true
+            }
+            while !finished { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            return
         }
         // Replays a release transition and measures the pill's drawn position every 8ms. Two
         // attempts at this animation shipped a regression when the only evidence was what the user
@@ -117,8 +147,7 @@ enum Main {
             return
         }
         // The real releases/latest request and the real comparison, against a version given on the
-        // command line. The banner cannot otherwise be seen without cutting a second release, and
-        // this is the app's only unsolicited network call — worth being able to watch it.
+        // command line. The banner cannot otherwise be seen without cutting a second release.
         if let index = CommandLine.arguments.firstIndex(of: "--update-check") {
             let current = CommandLine.arguments.count > index + 1
                 ? CommandLine.arguments[index + 1] : "0.0.0"

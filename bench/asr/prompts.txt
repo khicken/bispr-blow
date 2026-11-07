@@ -1,0 +1,30 @@
+# One clip per line: <id>|<text to read>. Read it the way you would dictate it, not like a newsreader.
+# If you stumble, re-record that clip (record.sh lets you). Long clips exist to measure latency after release.
+c01|Ask Claude to open the BisprBlow worktree and run the build.
+c02|I say Claude a lot, so Claude Code should never come out as quad or clawed.
+c03|Tell Claude that the Supabase webhook is failing on staging but not on prod.
+c04|Open a pull request on GitHub and ping Krishin on Slack when the CI/CD run is green.
+c05|Can you check the Sentry error in the middleware and see if it is the auth endpoint?
+c06|BisprBlow should read what is already in the text box before it writes anything.
+c07|We moved the frontend from Vercel to Railway and the backend still runs on Modal.
+c08|Run pnpm install, then npm run dev, and open localhost on port three thousand.
+c09|The Dockerfile pins Postgres sixteen and the Prisma migration runs before dbmate.
+c10|Bluejay uses LiveKit and Vapi for voice, and ElevenLabs for the text to speech.
+c11|Add a Playwright test that clicks the button and checks the JSON in the response.
+c12|The SwiftUI view uses AppKit underneath because the event tap needs it.
+c13|Can you ask Anthropic whether Claude supports this, or should we try Gemini or OpenAI?
+c14|Put the Terraform config in the repo and make the linter and Prettier happy.
+c15|Hey Krishy, can you look at the Linear ticket about the ClickHouse dashboard?
+c16|Parikh said the Metronome invoices go out through Stripe on the first of the month.
+c17|Write a regex that pulls the env name out of the YAML file and prints it.
+c18|I think the Qwen model is fine for cleanup but Whisper might beat Apple on names.
+c19|Open Xcode, then Homebrew install tmux, and set zsh as the default shell.
+c20|The Figma file is in Notion, and the Cloudflare settings are in the Markdown doc.
+c21|Yeah so I was thinking, um, we could, actually no, let's just ship it today and see what breaks.
+c22|Wait, not the staging one, the prod one, sorry, the prod Supabase project.
+c23|Okay so the thing is, I keep saying BisprBlow and it keeps writing something else, and it's kind of driving me crazy.
+c24|Send the invoice to finance and cancel the meeting on Thursday.
+c25|What time is the demo with the Bluejay team tomorrow?
+l01|Okay, so here is the plan for today. First I want Claude to look at the transcription path in BisprBlow, because Apple's recognizer keeps mishearing names like Claude and Supabase. Then I want to bench a few newer models, maybe Parakeet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins on both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything.
+l02|So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the SwiftUI frame. Can you open the PillDemo file, run it with the left centre anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options, because I am pretty sure that is where it started. Do not push anything yet, just tell me what you find and we will decide together on Slack with Krishin.
+l03|I want to write a longer message to the team about the launch. We are going to ship the dmg on Friday, and the GitHub release will have the notes. Vercel hosts the website, Cloudflare does the DNS, and the download link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a Developer ID, so please do not tell people to strip the quarantine flag. Ping me in Linear if something breaks, and I will look at the Sentry dashboard first thing in the morning.

@@ -82,6 +82,9 @@ final class DictationController: ObservableObject {
         Task.detached(priority: .utility) {
             await Transcriber.prepareAssets()
         }
+        Task.detached(priority: .utility) {
+            await Parakeet.shared.load()
+        }
         Task.detached(priority: .utility) { [cleaner] in
             await cleaner.warmUp()
             logLine("cleanup using \(await cleaner.activeDescription)")
@@ -157,8 +160,8 @@ final class DictationController: ObservableObject {
             self?.transcriber.feed(buffer)
         }
 
-        // Whether the focused field's text reaches us is per-app and unmeasured, and recognizer
-        // biasing is only as good as this. Counts, never the text: the unified log is world-readable.
+        // Whether the focused field's text reaches us is per-app and unmeasured. Its terms bias only
+        // the Apple fallback recognizer; Parakeet uses the dictionary alone. Counts, never the text: the unified log is world-readable.
         if let context = capturedContext {
             logLine("""
                 context app=\(context.appName.isEmpty ? "unknown" : context.appName) \
@@ -214,9 +217,16 @@ final class DictationController: ObservableObject {
         let generation = sessionGeneration
         Task {
             let released = Date()
-            let raw = await transcriber.finishSession()
+            let finished = await transcriber.finishSession()
             let transcribeMs = Date().timeIntervalSince(released) * 1000
             guard self.sessionGeneration == generation else { return }
+            // The recognizer failed with the audio in hand. Say so: going quietly idle reads as
+            // "it heard nothing", and the words are already gone.
+            guard let raw = finished else {
+                self.showNotice("Couldn't transcribe that. Try again.")
+                self.state = .idle
+                return
+            }
             guard !raw.isEmpty else {
                 self.state = .idle
                 return

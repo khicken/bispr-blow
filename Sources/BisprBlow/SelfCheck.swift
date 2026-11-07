@@ -203,6 +203,9 @@ enum SelfCheck {
         precondition(!LLMCleaner.fewShot.contains { $0.1.contains("—") })
 
         checkLowercaseSentences()
+        // Given both spellings, Parakeet's rescorer writes the spaced one. Unrelated phrases stay.
+        precondition(Parakeet.boostable(["Bispr Blow", "BisprBlow", "Claude Code", "Claude"])
+            == ["BisprBlow", "Claude Code", "Claude"])
         // The recognizer marks a pause with an ellipsis. Verbatim from history: while it sat in the
         // transcript it also switched off looksTruncated's elision check on that dictation.
         precondition(Transcriber.withoutPauseMarks(

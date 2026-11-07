@@ -1,0 +1,28 @@
+{"file": "c01.wav", "text": "Ask Claude to open the Bisper Blow Workshop and run the build.", "ms": 184}
+{"file": "c02.wav", "text": "I say \"clod\" a lot, so \"clod code\" should never come out as \"quad\" or \"clod.\"", "ms": 272}
+{"file": "c03.wav", "text": "Superbase whip hook is failing on staging, but not in prod.", "ms": 164}
+{"file": "c04.wav", "text": "Open a pull request on GitHub and ping Christian on Slack when the CICD run is green.", "ms": 349}
+{"file": "c05.wav", "text": "You check the Sentry error in the middleware and see if it is the auth endpoint.", "ms": 183}
+{"file": "c06.wav", "text": "This blob should read what is already in the text box before it writes anything.", "ms": 194}
+{"file": "c07.wav", "text": "We move the front end from Vercel to Railway, and the back end still runs in Modal.", "ms": 211}
+{"file": "c08.wav", "text": "Run pnpm installed and npm run dev, and open localhost on port three thousand.", "ms": 195}
+{"file": "c09.wav", "text": "The Dockerfile pins postgres sixteen, and the Prisma migration runs before DBMate.", "ms": 194}
+{"file": "c10.wav", "text": "Blue Jay uses Life Kit and Vappy for voice, and Eleven Labs for the text speech.", "ms": 197}
+{"file": "c11.wav", "text": "Add a playwright test that clicks the button and checks the JSON in the response.", "ms": 180}
+{"file": "c12.wav", "text": "The SwiftUI view uses AppKit underneath because the event tap needs it.", "ms": 186}
+{"file": "c13.wav", "text": "Can you ask Anthropic whether Claude supports this, or should we try Gemini or OpenAI?", "ms": 206}
+{"file": "c14.wav", "text": "Put the terraform config in the repo and make the linter and prettier happy.", "ms": 190}
+{"file": "c15.wav", "text": "Hey Chris, can you look at the winner ticket about the clickout dashboard?", "ms": 178}
+{"file": "c16.wav", "text": "Perryk said, \"The metronome invoices go out through Stripe on the first of the month.\"", "ms": 214}
+{"file": "c17.wav", "text": "Write a regex that pulls the end name out of the YAML file and prints it.", "ms": 187}
+{"file": "c18.wav", "text": "I think the Quin model is fine for cleanup, but whisper might be Apple on names.", "ms": 195}
+{"file": "c19.wav", "text": "Open Xcode, then Homebrew install tmux and set sh as the default shell.", "ms": 192}
+{"file": "c20.wav", "text": "The figma file is a notion in the cloudflare settings or in the markdown doc.", "ms": 182}
+{"file": "c21.wav", "text": "Yes, I was thinking um we could actually no let's just ship it today and see what breaks.", "ms": 211}
+{"file": "c22.wav", "text": "Wait, not the staging one. The prod one. Sorry, the prod superbase project.", "ms": 199}
+{"file": "c23.wav", "text": "Okay, so the thing is, I keep saying whisper blow and it keeps writing something else, and it's kind of driving me crazy.", "ms": 260}
+{"file": "c24.wav", "text": "Send an invoice to finance and cancel the meeting on Thursday.", "ms": 148}
+{"file": "c25.wav", "text": "What time is the demo with the Blue Jay team tomorrow?", "ms": 144}
+{"file": "l01.wav", "text": "Okay, so here's a plan for today. First, I want Claude to look at the transcription path of WhisperBlow because Apple's recognizer keeps mishearing names like Claude and Superbase. Then I want to bench a few newer models, maybe Parquet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins on both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything.", "ms": 873}
+{"file": "l02.wav", "text": "So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the SwiftUI iframe. Can you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the Git log, for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet. Just tell me when you what you find, and we will decide together on Slack with Christian.", "ms": 921}
+{"file": "l03.wav", "text": "I want to write a longer message to the team about the launch. We're going to ship the D M G on Friday, and the GitHub release will have the notes. We sell hosts, the website, Cloudflare does the DNS, and the download link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a developer ID. So please don't tell people to strip the quarantine flag. Thinking of if something breaks, and I'll look at the Sentry dashboard first thing in the morning.", "ms": 886}

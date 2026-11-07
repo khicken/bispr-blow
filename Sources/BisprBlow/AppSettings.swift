@@ -106,8 +106,7 @@ final class AppSettings: ObservableObject {
     }
     // One request to api.github.com at launch, asking whether a newer release is out. On by
     // default: an update nobody hears about is the same as no update, and an opt-in check that
-    // nobody finds is dead code. Off, nothing is asked and nothing is sent — and it is the only
-    // network call the app makes without being signed in.
+    // nobody finds is dead code. Off, nothing is asked and nothing is sent.
     @Published var checkForUpdates: Bool {
         didSet { defaults.set(checkForUpdates, forKey: "checkForUpdates") }
     }

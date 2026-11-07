@@ -12,7 +12,10 @@ let package = Package(
         // -O) and its text-prefix cache never matched a realistic follow-up prompt, so every call
         // re-prefilled a context that never shrank. No upstream PR yet, at the user's request.
         .package(url: "https://github.com/khicken/LocalLLMClient",
-                 revision: "7741fbcdbd318ed6be9c32b2516f5062cd559b7c")
+                 revision: "7741fbcdbd318ed6be9c32b2516f5062cd559b7c"),
+        // Speech recognition (Parakeet on the Neural Engine). Pinned to the version benched in
+        // bench/asr; a new FluidAudio means re-running bench/asr/run_all.sh before trusting it.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.2"),
     ],
     targets: [
         .executableTarget(
@@ -20,6 +23,7 @@ let package = Package(
             dependencies: [
                 .product(name: "LocalLLMClient", package: "LocalLLMClient"),
                 .product(name: "LocalLLMClientMLX", package: "LocalLLMClient"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/BisprBlow",
             resources: [.copy("Resources")],

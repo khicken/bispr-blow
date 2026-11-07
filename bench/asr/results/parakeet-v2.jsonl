@@ -1,0 +1,28 @@
+{"file":"c01.wav","ms":52,"text":"Ask Claude to open the Bisper Blow Workshop and run the build."}
+{"file":"c02.wav","ms":53,"text":"I say clod a lot, so clawed code should never come out as clawed or clawed."}
+{"file":"c03.wav","ms":52,"text":"Superbass World Hook is failing on staging, but not on prod."}
+{"file":"c04.wav","ms":60,"text":"Open a pull request on GitHub and ping Christian on Slack when the CI C D run is green."}
+{"file":"c05.wav","ms":53,"text":"Can you check the sentry error in the middleware and see if it is the auth end point?"}
+{"file":"c06.wav","ms":53,"text":"Facebook blow should read what is already in the text box before it writes anything."}
+{"file":"c07.wav","ms":50,"text":"We moved the front end from Vercell to railway and the back end still runs in modal."}
+{"file":"c08.wav","ms":54,"text":"Run pnpm installed in npm run dev and open localhost on port three thousand."}
+{"file":"c09.wav","ms":54,"text":"The Dockerfile pins Postgres sixteen and the Prisma migration runs before dbmate."}
+{"file":"c10.wav","ms":55,"text":"Blue Jay uses Life Kit and Dappy for voice, and Eleven Labs for the text to speech."}
+{"file":"c11.wav","ms":54,"text":"Add a playwright test that clicks the button and checks the JSON in the response."}
+{"file":"c12.wav","ms":53,"text":"The Slifty Yview uses AppKit underneath because the Event tab needs it."}
+{"file":"c13.wav","ms":53,"text":"Can you ask Anthropic whether Claude supports this, or should we try Gemini or OpenAI?"}
+{"file":"c14.wav","ms":51,"text":"Put the Terraform config in the repo and make the Linter and Prettier happy."}
+{"file":"c15.wav","ms":52,"text":"Hey Chrisy, can you look at the winner ticket about the Click Outs dashboard?"}
+{"file":"c16.wav","ms":50,"text":"Perik said the Metronome invoices go out through Stripe on the first of the month"}
+{"file":"c17.wav","ms":52,"text":"Write a regex that pulls the endname out of the yaml file and prints it."}
+{"file":"c18.wav","ms":52,"text":"I think the Quen model is fine for cleanup, but Whisper might beat Apple on names."}
+{"file":"c19.wav","ms":54,"text":"Open Xcode, then homebrew install tmux, and set zsh as the default shell."}
+{"file":"c20.wav","ms":53,"text":"The Figma file is in Notion and the Cloudflare settings are in the Markdown docum."}
+{"file":"c21.wav","ms":50,"text":"Yes, I was thinking um we could actually no, let's just ship it today and see what breaks"}
+{"file":"c22.wav","ms":52,"text":"Wait, not the staging one, the prod one, sorry, the prod superbase project"}
+{"file":"c23.wav","ms":56,"text":"Okay, so the thing is, I keep saying Bisper Blow and it keeps writing something else and it's kind of driving me crazy"}
+{"file":"c24.wav","ms":49,"text":"Send the invoice to finance and cancel the meeting on Thursday."}
+{"file":"c25.wav","ms":48,"text":"What time is the demo with a Blue Jay team tomorrow"}
+{"file":"l01.wav","ms":101,"text":"Okay, so here's the plan for today. First, I want Claude to look at the transcription path of Whisper Blow, because Apple's recognizer keeps him hearing names like Claude and Superbase. Then I want to bench a few newer models, maybe Parakeet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins in both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything."}
+{"file":"l02.wav","ms":98,"text":"So, the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the Swift UIFrame. Can you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet, just tell me when you what you find and we will decide together on Slack with Christian."}
+{"file":"l03.wav","ms":99,"text":"I want to write a longer message to the team about the launch. We're going to ship the DMG on Friday, and the GitHub release will have the notes. We're cell hosts, the website, Cloudflare does the DNS, and the data link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a developer ID, so please don't tell people to strip the quarantine flag. Thing in the near if something breaks, and I'll look at the sentry dashboard first thing in the morning."}

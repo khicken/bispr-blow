@@ -4,7 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release
+# --disable-keychain: FluidAudio ships a binary xcframework, and with the keychain enabled SwiftPM
+# can stop to ask it for credentials the download does not need ("status -128").
+swift build -c release --disable-keychain
 
 # `xcrun metal` lives in the Metal Toolchain, which is not part of the command line tools and is a
 # separate ~700 MB download. Fetched here rather than left as a README step somebody can skip:
