@@ -491,6 +491,23 @@ a post-pass holds on the rule-based fallback path too, where there is no model t
 instruct. Sentence casing is applied in `clean` around `cleaned`, because all six
 of that function's exits end at the cursor.
 
+**A spoken enumeration becomes a numbered list, and that is a post-pass too** (`numberedList`, in
+`clean` after `applyVocabulary`, so the rules path and the coding path get it as well). "One, X, two,
+Y, and three, Z" comes out one item per line. Every condition in it is a real false positive: the
+number needs a comma, colon, full stop or "is" after it, the count starts at one and climbs by one,
+every number after the first opens a clause, and every item holds a word — which is what keeps "steps
+one and two", "agents 1, 2, and 3", "testing, one, two, three" and "the first one is the Canary" as
+prose. Measured over this machine's 500 BisprBlow dictations plus 1573 Wispr Flow ones (raw and
+formatted): 3 conversions, all wanted, and no false positive. Most of what Wispr Flow turns into a list
+has no spoken numbers at all ("another one would be..."), and no deterministic pass can find that.
+
+**A sentence the model dropped whole is a rejection** (`dropsSentence`). Replayed over 233 real model
+cleanups, about a third lost at least one non-filler word, and 7 lost an entire sentence while every
+other guard passed, because they judge the dictation as one bag of words and are floored at 12 content
+words: "I have bypass permissions on.", "That's pretty exciting.", "It doesn't make any sense." Under
+half of a sentence's content words surviving anywhere in the output counts as gone. Fires on 0 of 30
+bench cases and on none of the replayed cleanups that kept their sentences.
+
 **No em dash ever lands at the cursor.** It is a model tic rather than something
 the speaker said, and a comma carries the same break. Enforced in `sanitize` as a
 substitution, not asked for in the prompt: a 0.6b model obeys a style rule

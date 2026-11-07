@@ -203,6 +203,7 @@ enum SelfCheck {
         precondition(!LLMCleaner.fewShot.contains { $0.1.contains("—") })
 
         checkLowercaseSentences()
+        checkNumberedList()
         // Given both spellings, Parakeet's rescorer writes the spaced one. Unrelated phrases stay.
         precondition(Parakeet.boostable(["Bispr Blow", "BisprBlow", "Claude Code", "Claude"])
             == ["BisprBlow", "Claude Code", "Claude"])
@@ -287,6 +288,27 @@ enum SelfCheck {
         // Short dictations are not judged: the last word is as likely to be a discarded "yeah".
         precondition(!LLMCleaner.dropsTail("Ship it today.", raw: "um so i think we should just ship "
                                            + "it um today yeah"))
+        // A whole sentence gone from the middle or the end of a short dictation. Verbatim from
+        // history.json, and every other guard passes both.
+        let permissions = "Also, I don't understand why you're asking me to approve commands. Um, I have "
+            + "bypass permissions on."
+        precondition(LLMCleaner.dropsSentence(
+            "also, I don't understand why you're asking me to approve commands", raw: permissions))
+        precondition(LLMCleaner.rejection("also, I don't understand why you're asking me to approve commands",
+                                          raw: permissions, lowTouch: false, allowed: []) == .droppedSentence)
+        precondition(LLMCleaner.dropsSentence(
+            "that's so chill. yeah, just say that we have gotten beta permission to test out the app",
+            raw: "That's so chill. Yeah, just say that we have gotten, um, beta permission to test out "
+            + "the app. That's pretty exciting."))
+        precondition(!LLMCleaner.dropsSentence(permissions, raw: permissions))
+        // A self-correction across sentences keeps most of its words, and a short one is not judged.
+        precondition(!LLMCleaner.dropsSentence("Let's ship it Thursday.",
+                                               raw: "Let's ship it Friday. No, actually Thursday."))
+        // Every demonstration the model is shown must pass, or the prompt teaches a rejection.
+        for (user, cleaned) in LLMCleaner.fewShot + LLMCleaner.lowTouchFewShot {
+            let raw = String(user.split(separator: "\n").last!.dropFirst("Transcript: ".count))
+            precondition(!LLMCleaner.dropsSentence(cleaned, raw: raw), "few-shot drops a sentence: \(cleaned)")
+        }
         // Verbatim from history, and it shipped: a 149-word dictation lost its whole closing sentence
         // and every guard stayed silent. Real strings rather than a paraphrase, because a shortened
         // stand-in trips `losesContent` and stops demonstrating the hole. Two holes, both pinned here.

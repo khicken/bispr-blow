@@ -181,4 +181,50 @@ extension SelfCheck {
         precondition(Int(back[0].date.timeIntervalSince1970) == 1_788_000_000,
                      "history date did not survive the round trip: \(back[0].date)")
     }
+
+    // Spoken enumerations become numbered lists. The first case is a real dictation (Wispr
+    // Flow's history on this machine), and so are most of the false positives below.
+    static func checkNumberedList() {
+        let list = LLMCleaner.numberedList
+
+        precondition(list("One is Agent Connection, two is Agent First Utterance, three is Agent "
+                          + "Second Utterance, and four is Agent System.")
+                     == "1. Agent Connection\n2. Agent First Utterance\n3. Agent Second Utterance\n4. Agent System")
+        precondition(list("There are three things, one, I want to do this, two, I want to do that, "
+                          + "and three, I want to also do that.")
+                     == "There are three things:\n1. I want to do this\n2. I want to do that\n3. I want to also do that")
+        // The first number may sit mid-clause. This is the dictation that asked for the feature.
+        precondition(list("If you say something like one, I want this, two, I want that.")
+                     == "If you say something like:\n1. I want this\n2. I want that")
+        precondition(list("The first one is the Canary. So one, how do I test it? Two, what does the data look like?")
+                     == "The first one is the Canary. So:\n1. How do I test it?\n2. What does the data look like?")
+        // Ordinal words, a sentence per item, and prose after the last item. The polish few-shot turns
+        // "one is ... two ..." into exactly this, so it is the shape the model path hands over.
+        precondition(list("I found two issues. First, the spinner never goes away. Second, logging out "
+                          + "keeps the session. We should fix those before Friday.")
+                     == "I found two issues.\n1. The spinner never goes away.\n2. Logging out keeps the session.\n\nWe should fix those before Friday.")
+        // Digits, the way a model writes them inline, and a full stop as the separator.
+        precondition(list("Plan: 1. fix the build. 2. ship it.") == "Plan:\n1. Fix the build.\n2. Ship it.")
+        precondition(list("One. Fix the build. Two. Ship it.") == "1. Fix the build.\n2. Ship it.")
+
+        // Prose, all of it.
+        for prose in ["I have two questions about the deploy.",
+                      "One more thing, can you check the logs?",
+                      "Bump it to version 1 2 3.",
+                      "When we go to steps one and two in the frontend, check the schema.",
+                      "For the agents that are implementing agents 1, 2, and 3, update the parameter.",
+                      "In the case of one, two, or three metrics, use one digital human.",
+                      "Testing, testing, one, two, three.",
+                      "One, two",
+                      "Two, I want that. Three, I want this.",
+                      "One, we're supposed to open agent settings.",
+                      "First, check the logs. Then restart it.",
+                      "This one is broken. Two, the build fails.",
+                      "We only need one. Two, the build fails.",
+                      "Upgrade to Gemini 2.5 Flash. 2.5 Flash is deprecated."] {
+            precondition(list(prose) == prose, "became a list: \(prose)")
+        }
+        // Already formatted, by the model or the speaker.
+        precondition(list("Steps:\n1. Build\n2. Ship") == "Steps:\n1. Build\n2. Ship")
+    }
 }

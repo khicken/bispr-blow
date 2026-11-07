@@ -36,12 +36,7 @@ extension LLMCleaner {
     // recall across bench/cases.json is 94-96%, so 0.8 keeps ~14 points of clearance.
     static let contentRecallFloor = 0.8
     static func losesContent(_ cleaned: String, raw: String) -> Bool {
-        let content = { (text: String) -> Set<String> in
-            Set(text.lowercased()
-                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-                .map(String.init)
-                .filter { $0.count >= 3 && !AppContext.commonWords.contains($0) })
-        }
+        let content = { Set(contentWords($0)) }
         let spoken = content(raw)
         // Below this a single dropped word swings the ratio too far to judge anything.
         guard spoken.count >= 12 else { return false }
@@ -64,18 +59,13 @@ extension LLMCleaner {
     // `snap_regions` — its final word is "picked" and the transcript said "pick" — and that trade is
     // deliberate: a rejection ships ruleClean, so the false-positive rate is what decides this guard.
     static func dropsTail(_ cleaned: String, raw: String) -> Bool {
-        let words = { (text: String) in
-            text.lowercased()
-                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-                .map(String.init)
-        }
-        let spoken = words(raw).filter { $0.count >= 3 && !AppContext.commonWords.contains($0) }
+        let spoken = contentWords(raw)
         guard spoken.count >= 12, let last = spoken.last else { return false }
         // Position, not presence: searching all of `cleaned` lets an earlier occurrence satisfy it,
         // which is how a 157-word dictation silently lost its closing "...then that's for the cleanup
         // too" — "cleanup" also appeared 90 words earlier, at index 38 of 128. Requiring the match in
         // the last quarter is what makes "compressed the middle" distinguishable from "gave up".
-        let out = words(cleaned)
+        let out = tokens(cleaned)
         let tail = out.suffix(max(8, out.count / 4))
         // Prefix is for morphology, not a shorter unrelated word: "region" for "regions" is the same
         // word, "clean" for "cleanup" is not — the second half of that same miss, whose surviving tail
@@ -85,6 +75,31 @@ extension LLMCleaner {
         }
     }
 
+    // Did a whole sentence go? The guards above judge the dictation as one bag of words and are
+    // floored at 12 content words, so one lost sentence in sixty words clears all of them. A sentence
+    // is gone when under half of its content words survive; two is enough to judge, because
+    // `commonWords` is broad and "bypass permissions" is all "I have bypass permissions on." has.
+    static func dropsSentence(_ cleaned: String, raw: String) -> Bool {
+        let out = tokens(cleaned)
+        return raw.replacingOccurrences(of: "(?<=[.!?])\\s+", with: "\n", options: .regularExpression)
+            .split(separator: "\n")
+            .contains { sentence in
+                let content = contentWords(String(sentence))
+                guard content.count >= 2 else { return false }
+                // Substring, as in dropsTail: a respelling or a plural fix is not a deletion.
+                let kept = content.filter { word in out.contains { $0.contains(word) } }.count
+                return kept * 2 < content.count
+            }
+    }
+
+    static func tokens(_ text: String) -> [String] {
+        text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+    }
+
+    static func contentWords(_ text: String) -> [String] {
+        tokens(text).filter { $0.count >= 3 && !AppContext.commonWords.contains($0) }
+    }
+
     // Every guard in one place — they had already drifted: `--finish`, the seam bench.py scores
     // through, never ran `losesContent`, so that guard's false-positive rate had never been measured
     // on the set that exists to measure it.
@@ -92,6 +107,7 @@ extension LLMCleaner {
         case truncated = "dropped content"
         case lostContent = "lost content words"
         case droppedTail = "dropped the last thing said"
+        case droppedSentence = "dropped a whole sentence"
         case reworded = "reworded content on the coding path"
     }
 
@@ -104,6 +120,7 @@ extension LLMCleaner {
         if losesContent(cleaned, raw: raw) { return .lostContent }
         // And the one that catches it stopping at the very end, where neither ratio can see it.
         if dropsTail(cleaned, raw: raw) { return .droppedTail }
+        if dropsSentence(cleaned, raw: raw) { return .droppedSentence }
         // Low touch promised delete/repunctuate/respell only. Check it: a swap leaves the length alone.
         if lowTouch, rewordsContent(cleaned, raw: raw, allowed: allowed) { return .reworded }
         return nil
@@ -119,14 +136,9 @@ extension LLMCleaner {
     // "500s") is a rendering of spoken number words, and two spoken words written as one ("back off"
     // → "backoff") is a deleted space.
     static func rewordsContent(_ cleaned: String, raw: String, allowed: Set<String> = []) -> Bool {
-        let words = { (text: String) in
-            text.lowercased()
-                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-                .map(String.init)
-        }
-        let source = words(raw)
+        let source = tokens(raw)
         var next = source.startIndex  // order matters: only ever scan forward
-        for word in words(cleaned) {
+        for word in tokens(cleaned) {
             if word.first?.isNumber == true || allowed.contains(word) { continue }
             if let hit = source[next...].firstIndex(of: word) {
                 next = source.index(after: hit)

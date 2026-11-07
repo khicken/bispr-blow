@@ -44,7 +44,7 @@ actor LLMCleaner {
     // here because all six exits of `cleaned` end at the cursor.
     func clean(_ raw: String, context: AppContext) async -> (text: String, provider: String) {
         let result = await cleaned(raw, context: context)
-        var text = Self.applyVocabulary(result.text, vocabulary: settings.vocabulary)
+        var text = Self.numberedList(Self.applyVocabulary(result.text, vocabulary: settings.vocabulary))
         if settings.lowercaseSentences {
             text = Self.lowercaseSentenceStarts(text, keeping: settings.vocabulary)
         }

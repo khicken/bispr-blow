@@ -91,6 +91,89 @@ extension LLMCleaner {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Spoken lists
+
+    // One family per list, so "first ... two ..." is not a sequence. Digits are there because the
+    // model writes "1." itself often enough.
+    private static let ordinals: [(words: [String], marker: NSRegularExpression)] = [
+        ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"],
+        ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"],
+        (1...10).map(String.init),
+    ].map { words in
+        (words, try! NSRegularExpression(
+            pattern: "(?i)\\b(\(words.joined(separator: "|")))(?:\\s*[,:.](?=\\s)|\\s+is\\b)\\s*"))
+    }
+
+    // "One, X, two, Y, and three, Z" becomes a numbered list, one item per line. Why each condition
+    // exists, with the real dictation behind it, is in CLAUDE.md and `checkNumberedList`. The last item
+    // ends with its sentence, because nothing spoken marks where a list stops.
+    static func numberedList(_ text: String) -> String {
+        guard !text.contains("\n") else { return text }
+        let ns = text as NSString
+        for (family, regex) in ordinals {
+            let markers = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            func value(_ marker: NSTextCheckingResult) -> Int? {
+                family.firstIndex(of: ns.substring(with: marker.range(at: 1)).lowercased())
+            }
+            func opensClause(_ marker: NSTextCheckingResult) -> Bool {
+                ns.substring(to: marker.range.location)
+                    .range(of: "(?i)(?:^|[.!?:,]\\s|\\band\\s)$", options: .regularExpression) != nil
+            }
+            // Mid-clause, only a comma or colon marks a list: "this one is broken. Two, ..." is prose.
+            func canStart(_ marker: NSTextCheckingResult) -> Bool {
+                value(marker) == 0 && (opensClause(marker)
+                    || ns.substring(with: NSRange(location: NSMaxRange(marker.range(at: 1)),
+                                                  length: NSMaxRange(marker.range) - NSMaxRange(marker.range(at: 1))))
+                        .contains(where: { $0 == "," || $0 == ":" }))
+            }
+            for (start, first) in markers.enumerated() where canStart(first) {
+                var chain = [first]
+                for next in markers[(start + 1)...] {
+                    // "the first one is the Canary ... so one, how do I test it? Two, ..." counts
+                    // from the "one" nearest the "two".
+                    if chain.count == 1, canStart(next) { chain = [next]; continue }
+                    guard opensClause(next) else { continue }
+                    guard value(next) == chain.count else { break }
+                    chain.append(next)
+                }
+                guard chain.count >= 2 else { continue }
+
+                var items: [String] = []
+                for (i, marker) in chain.enumerated() {
+                    let from = marker.range.upperBound
+                    let to = i + 1 < chain.count ? chain[i + 1].range.location : ns.length
+                    items.append(ns.substring(with: NSRange(location: from, length: to - from)))
+                }
+                // The last item stops at its first sentence end; the rest is prose again.
+                var tail = ""
+                if let end = items[items.count - 1].range(of: "[.!?](?=\\s|$)", options: .regularExpression) {
+                    tail = String(items[items.count - 1][end.upperBound...])
+                    items[items.count - 1] = String(items[items.count - 1][..<end.upperBound])
+                }
+                // A comma or "and" was only joining the items.
+                items = items.map {
+                    $0.replacingOccurrences(of: "(?i)(?:[\\s,]+|\\band\\b)+$", with: "", options: .regularExpression)
+                }
+                guard items.allSatisfy({ $0.contains(where: \.isLetter) }) else { continue }
+                // "One is X, two is Y, and three is Z." should not end only its last item with a stop.
+                if items.dropLast().allSatisfy({ $0.last.map { !".!?".contains($0) } ?? true }), items[items.count - 1].hasSuffix(".") {
+                    items[items.count - 1].removeLast()
+                }
+
+                var intro = ns.substring(to: chain[0].range.location).trimmingCharacters(in: .whitespaces)
+                if intro.hasSuffix(",") { intro.removeLast() }
+                if let last = intro.last, !".!?:".contains(last) { intro += ":" }
+                let list = items.enumerated()
+                    .map { "\($0.offset + 1). \($0.element.prefix(1).uppercased())\($0.element.dropFirst())" }
+                    .joined(separator: "\n")
+                let rest = tail.trimmingCharacters(in: .whitespaces)
+                return (intro.isEmpty ? "" : intro + "\n") + list
+                    + (rest.isEmpty ? "" : "\n\n" + numberedList(rest))
+            }
+        }
+        return text
+    }
+
     // MARK: - Rule-based fallback
 
     static func ruleClean(_ raw: String) -> String {
