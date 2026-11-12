@@ -67,18 +67,21 @@ enum SelfCheck {
                      == "Ask Devi about it.")
         precondition(LLMCleaner.applyVocabulary("ask claude to fix it", vocabulary: vocab)
                      == "ask Claude to fix it")
-        // A sound-alike is corrected only beside another dictionary hit — a misheard name arrives
-        // as a misheard pair, and the pair is the evidence...
+        // Nothing respells by sound. "Robin" is a real word, so it stays even beside a fixed "Devy":
+        // the phonetic tier that used to take it made 0 fixes over 500 real dictations and only ever
+        // rewrote the real words next to a fix. Heard-as at the recognizer is the way to get Rohin.
         precondition(LLMCleaner.applyVocabulary("My name is Robin Devy.", vocabulary: vocab)
-                     == "My name is Rohin Devi.")
-        // ...and the evidence must be a word the pass itself respelled. An exact hit is a word the
-        // recognizer got RIGHT, and it fires on nearly every dictation: "per api key" shipped as
-        // "Vite API git" when exact matches licensed their neighbours. The case fix still applies.
+                     == "My name is Robin Devi.")
+        let neighbours = ["Vercel", "frontend", "BisprBlow", "prod", "dev", "repo", "Claude", "worktree"]
+        precondition(LLMCleaner.applyVocabulary("We move the front end from Versel.", vocabulary: neighbours)
+                     == "We move the frontend from Vercel.")
+        precondition(LLMCleaner.applyVocabulary("Ask Claude to open the Bisperblo works tree.",
+                                                vocabulary: neighbours)
+                     == "Ask Claude to open the BisprBlow works tree.")
         precondition(LLMCleaner.applyVocabulary("a token bucket per api key",
                                                 vocabulary: ["Vite", "API", "git"])
                      == "a token bucket per API key")
-        // ...so the same sound-alikes alone are never touched: not every robin is Rohin and
-        // not every cloud is Claude.
+        // Not every robin is Rohin and not every cloud is Claude.
         precondition(LLMCleaner.applyVocabulary("a robin in the garden", vocabulary: vocab)
                      == "a robin in the garden")
         precondition(LLMCleaner.applyVocabulary("push it to cloud storage", vocabulary: vocab)
@@ -99,17 +102,15 @@ enum SelfCheck {
         precondition(LLMCleaner.applyVocabulary("ask claude in github",
                                                 vocabulary: AppSettings.builtInWords)
                      == "ask Claude in GitHub")
-        // The two-word join is an EXACT hit, so it must not license the phonetic tier next door. It
-        // used to, and that one line corrupted 13 of 432 real dictations: "Says Blue Jay for all
-        // six." went out as "git bluejay Vite all six."
+        // A join leaves its neighbours alone: "Says Blue Jay for all six." once went out as "git
+        // bluejay Vite all six."
         precondition(LLMCleaner.applyVocabulary("Says Blue Jay for all six.",
                                                 vocabulary: ["bluejay", "git", "Vite"])
                      == "Says bluejay for all six.")
         precondition(LLMCleaner.applyVocabulary("not just say Blue Jay everywhere",
                                                 vocabulary: ["bluejay", "git", "Prettier"])
                      == "not just say bluejay everywhere")
-        // An inflection of a term is the term: "docs" must not be respelled to "doc", and must not
-        // license its neighbours either ("run the docs page locally" → "run dev doc Vite locally").
+        // An inflection of a term is the term: "docs" must not be respelled to "doc".
         precondition(LLMCleaner.applyVocabulary("can you run the docs page locally",
                                                 vocabulary: ["doc", "dev", "Vite"])
                      == "can you run the docs page locally")

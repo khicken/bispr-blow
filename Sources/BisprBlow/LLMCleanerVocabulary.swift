@@ -26,12 +26,13 @@ extension LLMCleaner {
     // - exact: same letters, wrong case → take the dictionary casing ("claude" → "Claude").
     // - near: edit distance ≤1 (≤2 from eight letters), four letters minimum — "Devy" → "Devi"
     //   but never "def" → "dev".
-    // - loose: sound-alike by phonetic key, accepted ONLY next to a word this pass just respelled;
-    //   alone it turns every "cloud" into "Claude". An exact match is NOT evidence — counting them
-    //   shipped "per api key" as "Vite API git".
     // - joined: two words that concatenate into a term ("work tree" → "worktree").
     //
-    // Ahead of all four is `misheard`, for words the dictionary cannot express safely: "main" as an
+    // No sound-alike tier: one by phonetic key made 0 fixes over 500 real dictations and only ever
+    // rewrote the real words beside a `near` fix ("front end from Versel" → "frontend prod Vercel").
+    // Acoustic correction belongs to the recognizer's rescorer, where the audio still exists.
+    //
+    // Ahead of all three is `misheard`, for words the dictionary cannot express safely: "main" as an
     // entry would make `near` rewrite "mail", "rain", "pain" and "gain" too.
     static func applyVocabulary(_ text: String, vocabulary: [String]) -> String {
         let terms = vocabulary.filter { !$0.isEmpty && !$0.contains(" ") }
@@ -61,37 +62,31 @@ extension LLMCleaner {
             words[i] = w.replacingCharacters(in: r, with: term)
         }
 
-        enum Tier: Int { case none, loose, near, exact }
+        enum Tier: Int { case none, near, exact }
         func tier(_ b: String, _ term: String) -> Tier {
             let w = b.lowercased(), t = term.lowercased()
             if w == t { return .exact }
             guard w.count >= 3, t.count >= 3 else { return .none }
         // An inflection of a term IS the term, heard correctly. "docs" is one edit from "doc" and is
-        // not in the word list, so `near` respelled it — destroying the plural and marking the word
-        // corrected, which licensed `loose` on both sides ("run the docs page locally" → "run dev doc
-        // Vite locally"). Both directions, since the dictionary may hold either form.
+        // not in the word list, so `near` respelled it, destroying the plural. Both directions, since
+        // the dictionary may hold either form.
             if w == t + "s" || w == t + "es" || t == w + "s" || t == w + "es" { return .none }
-        // `near` fires without the matched-neighbour evidence `loose` demands, so it must never
-        // overwrite a word the recognizer got right: levenshtein("code", "xcode") == 1 shipped "just
-        // put a Xcode Vite for it". Across the shipped dictionary "git" ate gift/gist/grit, "Vite" ate
+        // `near` fires on spelling alone, so it must never overwrite a word the recognizer got right:
+        // levenshtein("code", "xcode") == 1 shipped "just put a Xcode Vite for it". Across the shipped dictionary "git" ate gift/gist/grit, "Vite" ate
         // site/cite/bite, "Swift" ate shift, "linter" ate liner/linger/linker, "Claude" ate clause.
         // Being real English is the discriminator, not being long: "Devy" → "Devi" is four letters
         // and is exactly what the dictionary is for.
             if w.count >= 4, !englishWords.contains(w),
                levenshtein(w, t) <= (max(w.count, t.count) >= 8 ? 2 : 1) { return .near }
-            if abs(w.count - t.count) <= 3, levenshtein(phoneticKey(w), phoneticKey(t)) <= 1 { return .loose }
             return .none
         }
 
-        var corrected = Set<Int>()
-        var looseCandidates: [(index: Int, term: String)] = []
         var i = 0
         while i < words.count {
             let b = bare(words[i])
             guard plainWord(b) else { i += 1; continue }
             if let fix = Self.misheard[b.lowercased()] {
                 replace(i, with: fix)
-                corrected.insert(i)
                 i += 1
                 continue
             }
@@ -104,11 +99,6 @@ extension LLMCleaner {
                     words[i] += tail
                     words.remove(at: i + 1)
                     seps.remove(at: i + 1)
-                    // Deliberately NOT `corrected.insert(i)`: this branch fires on an `.exact` match,
-                    // so the recognizer heard it right and only the spacing was ours to fix. An exact
-                    // hit must not license the phonetic tier on its neighbours. Measured over 432 real
-                    // dictations, this one line accounted for 13 of the 16 corruptions — "Says Blue Jay
-                    // for all six." left as "git bluejay Vite all six."
                     i += 1
                     continue
                 }
@@ -125,24 +115,16 @@ extension LLMCleaner {
                 break
             case let (.near, term)?:
                 replace(i, with: term)
-                corrected.insert(i)
-            case let (.loose, term)?:
-                looseCandidates.append((i, term))
             default:
                 break
             }
             i += 1
         }
-        for (index, term) in looseCandidates where corrected.contains(index - 1) || corrected.contains(index + 1) {
-            replace(index, with: term)
-        }
-
         return zip(seps, words + [""]).map { $0 + $1 }.joined()
     }
 
     // Soundex-style consonant classes, first letter included (so C and K agree), vowels reset the
-    // run. "christian" and "krishin" land one edit apart; "clot", "cloud" and "claude" collapse to
-    // the same key — which is why `loose` needs a matched neighbour.
+    // run. "christian" and "krishin" land one edit apart.
     private static func phoneticKey(_ s: String) -> String {
         var out = ""
         var last: Character? = nil
@@ -194,7 +176,7 @@ extension LLMCleaner {
     // The dictionary words a fix teaches. One word for one word is `learnable`'s call. A longer fix
     // ("live kit" → "LiveKit", "Abhivit Pulapaka" → "Abhived Pulapaka") must pass the same shape test
     // across the whole stretch, and teaches only the new words the word list has never heard of: a
-    // real word in the dictionary is what licenses respelling its neighbours.
+    // real word needs no teaching.
     static func learnedWords(from fix: CorrectionWatcher.Correction) -> [String] {
         let heard = fix.misheard.split(separator: " ").map(String.init)
         let fixed = fix.corrected.split(separator: " ").map(String.init)
@@ -212,7 +194,7 @@ extension LLMCleaner {
 
     // Keeps only the words that never put a word into one of `dictations` that was not already there,
     // recasing included: those are text the user kept, so a word that changes one will do the same
-    // to the next. Repeats because a word only licenses its neighbours once it is in.
+    // to the next. Repeats because dropping a word can hand its matches to another candidate.
     static func harmless(_ candidates: [String], vocabulary: [String], dictations: [String]) -> [String] {
         var kept = candidates
         while true {

@@ -354,10 +354,29 @@ rates, and the fix belongs in the prompt. `fewShot` therefore ends with a short 
 imperative, and the vocabulary demo must not drift back to being last. When you add a demo, ask
 what shape is now nearest to the shapes that have none.
 
+**The respeller is four tiers of spelling, and none of them is sound.** `misheard` swaps a few
+homophones the recognizer picks the wrong side of ("Maine" → "main"); `exact` takes the dictionary's
+casing; `near` respells at one edit (two from eight letters); and two words that join into a term
+join ("work tree" → "worktree"). Acoustic correction happens upstream, where the audio still exists:
+Parakeet's CTC rescorer plus each term's heard-as aliases (see Speech recognition rules).
+
+**There is no phonetic tier any more, because it never fixed anything.** `loose` respelled a
+sound-alike by phonetic key, licensed only beside a word the same pass had corrected. Replayed over
+the raw transcripts of 500 dictations from `history.json` it changed nothing at all — removing it
+leaves `--vocab` output byte-identical — so it made 0 fixes. Where it did fire, it corrupted: once
+`near` respells an invented spelling, `loose` rewrote the real English beside it — "We move the front end
+from Versel." shipped as "We move the frontend prod Vercel.", and "Ask Claude to open the Bisperblo
+works tree." as "Ask Claude to open dev BisprBlow repo tree." A phonetic key drops every vowel, so one
+edit between keys is a huge neighbourhood: "Says"/"git", "for"/"Vite", "the"/"dev", "any"/"JSON".
+Its licensing rule had already been patched twice — an exact hit and the two-word join each used to
+count as evidence, and the join alone caused 13 of 16 corruptions over 432 dictations ("Says Blue Jay
+for all six." → "git bluejay Vite all six."). The cost of removing it is the pair it was written
+for: "Robin Devy" now comes out "Robin Devi". Teach "Robin" as heard-as for Rohin instead; do not
+bring a sound-alike tier back downstream of the recognizer.
+
 **The dictionary must never respell a word the recognizer got right.** `near` matches at one edit
-and, unlike `loose`, fires without neighbour evidence — so `levenshtein("code", "xcode") == 1` put
-"just put a Xcode Vite for it" at the cursor, the corrected "code" then licensing the phonetic tier
-on "fix". Across the shipped dictionary: "git" ate gift/gist/grit, "Vite" ate site/cite/bite,
+with no other evidence, so `levenshtein("code", "xcode") == 1` put "just put a Xcode Vite for it" at
+the cursor. Across the shipped dictionary: "git" ate gift/gist/grit, "Vite" ate site/cite/bite,
 "Swift" ate shift, "linter" ate liner/linger/linker, "Claude" ate clause. The gate is
 `LLMCleaner.englishWords`, macOS's own `/usr/share/dict/words` — being real English is the
 discriminator. A length floor is the obvious fix and the wrong one: "Devy" → "Devi" is four
@@ -365,21 +384,11 @@ letters and is the case the dictionary exists for. The set is empty when the fil
 restores the old behaviour rather than disabling respelling, and `warmUp` builds it so the first
 dictation does not spend its deadline on it.
 
-**An exact dictionary hit must never license the phonetic tier, and the two-word join forgot.**
-`loose` fires only beside a word this pass itself corrected, and that neighbour is supposed to be
-*evidence of mishearing* — so a hit the recognizer got right cannot be it. The single-word `.exact`
-case obeys that by doing nothing; the "work tree" → "worktree" join marked itself corrected and
-handed both its neighbours to `loose`. A phonetic key drops every vowel, so one edit between keys is
-a huge neighbourhood: "Says"/"git", "for"/"Vite", "our"/"API", "the"/"dev", "agent"/"git",
-"everywhere"/"Prettier", "any"/"JSON". Replayed over 432 real dictations from `history.json`, the
-respeller corrupted 16 and this one line caused 13 — "Says Blue Jay for all six." left as "git
-bluejay Vite all six." Every corruption was a dictation containing "Blue Jay".
-
 **An inflection of a term IS the term, heard correctly.** "docs" is one edit from `doc` and is not in
-`/usr/share/dict/words`, so `near` respelled it — destroying the plural *and* marking it corrected,
-which licensed `loose` on both sides: "run the docs page locally" shipped as "run dev doc Vite
-locally". `tier` returns `.none` for a bare s/es difference in either direction. The cost is a
-mangled plural of a term going unrespelled ("kubernete"), which is the recoverable direction.
+`/usr/share/dict/words`, so `near` respelled it, destroying the plural: "run the docs page locally"
+shipped as "run dev doc Vite locally" while the phonetic tier still existed. `tier` returns `.none`
+for a bare s/es difference in either direction. The cost is a mangled plural of a term going
+unrespelled ("kubernete"), which is the recoverable direction.
 
 **Measure the respeller against `history.json`, not by reading it — `--vocab`.** One dictation per
 line of stdin, the real dictionary, `applyVocabulary` alone. Vocabulary corruption has now shipped
