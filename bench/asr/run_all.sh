@@ -48,6 +48,10 @@ run moonshine-medium       .venv-moonshine/bin/python run_moonshine.py
 run moonshine-medium-vocab .venv-moonshine/bin/python run_moonshine.py --vocab vocab.txt
 stream_variant moonshine-medium moonshine-medium-stream
 stream_variant moonshine-medium-vocab moonshine-medium-stream-vocab
+for m in unified ultra; do
+  run handy-parakeet-$m       .venv-handy/bin/python run_handy.py --model $m
+  run handy-parakeet-$m-vocab .venv-handy/bin/python run_handy.py --model $m --vocab vocab.txt
+done
 HF_HUB_OFFLINE=1 run granite-4.1-2b       .venv-granite/bin/python run_granite.py
 HF_HUB_OFFLINE=1 run granite-4.1-2b-vocab .venv-granite/bin/python run_granite.py --vocab vocab.txt
 

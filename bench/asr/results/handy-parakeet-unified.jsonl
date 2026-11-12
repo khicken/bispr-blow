@@ -1,0 +1,28 @@
+{"file": "c01.wav", "text": "Ask Claude to open the Bisper Blow worktree and run the build", "ms": 70, "feed_rtf": 0.034, "kept_s": 4.86}
+{"file": "c02.wav", "text": "I say claude a lot, so claude code should never come out as claud or claud", "ms": 79, "feed_rtf": 0.039, "kept_s": 6.02}
+{"file": "c03.wav", "text": "Supa Base Web Hook is failing on staging, but not in prod.", "ms": 157, "feed_rtf": 0.018, "kept_s": 3.1}
+{"file": "c04.wav", "text": "Open a pull request on GitHub and ping Christian on Slack when the CI CD run is green", "ms": 74, "feed_rtf": 0.042, "kept_s": 4.96}
+{"file": "c05.wav", "text": "You check the sentry error in the middleware and see if it is the auth endpoint", "ms": 71, "feed_rtf": 0.03, "kept_s": 3.2}
+{"file": "c06.wav", "text": "Basper Blow should read what is already in the text box before it writes anything", "ms": 68, "feed_rtf": 0.041, "kept_s": 5.44}
+{"file": "c07.wav", "text": "We move the front end from Vercell to railway and the back end still runs in modal", "ms": 74, "feed_rtf": 0.03, "kept_s": 3.26}
+{"file": "c08.wav", "text": "Run pnpm install, then npm run dev, and open localhost on port 3000", "ms": 73, "feed_rtf": 0.044, "kept_s": 5.41}
+{"file": "c09.wav", "text": "The Docker file appends Postgres 16 and the Prisma migration runs before dbMate.", "ms": 71, "feed_rtf": 0.04, "kept_s": 5.6}
+{"file": "c10.wav", "text": "Blue Jay uses Life Kit and Doppy for voice and 11 labs for the text-to-speech", "ms": 73, "feed_rtf": 0.027, "kept_s": 3.9}
+{"file": "c11.wav", "text": "Add a playwright test that clicks the button and checks the JSON and the response", "ms": 77, "feed_rtf": 0.028, "kept_s": 3.55}
+{"file": "c12.wav", "text": "The Slift UI view uses AppKit underneath because the event tab needs it", "ms": 86, "feed_rtf": 0.042, "kept_s": 6.85}
+{"file": "c13.wav", "text": "Can you ask Anthropic whether Claude supports this or should we try Gemini or OpenAI?", "ms": 78, "feed_rtf": 0.043, "kept_s": 5.22}
+{"file": "c14.wav", "text": "Put the Terraform config in the repo and make the linter and prettier happy", "ms": 71, "feed_rtf": 0.026, "kept_s": 3.94}
+{"file": "c15.wav", "text": "Hey Chrishi, can you look at the liner ticket about the clickhouse dashboard?", "ms": 83, "feed_rtf": 0.029, "kept_s": 3.65}
+{"file": "c16.wav", "text": "Parikh said the metronome invoices go out through Stripe on the first of the month", "ms": 81, "feed_rtf": 0.029, "kept_s": 3.71}
+{"file": "c17.wav", "text": "Write a regex that pulls the end name out of the YAML file and prints it", "ms": 73, "feed_rtf": 0.033, "kept_s": 4.93}
+{"file": "c18.wav", "text": "I think the Quen model is fine for cleanup, but Whisper might be Apple on names", "ms": 69, "feed_rtf": 0.029, "kept_s": 3.74}
+{"file": "c19.wav", "text": "Open Xcode, then homebrew install Tmux, and set CSH as the default shell", "ms": 72, "feed_rtf": 0.032, "kept_s": 4.93}
+{"file": "c20.wav", "text": "The Figmopile is a notion and the Cloudflare settings are in the Markdown doc.", "ms": 76, "feed_rtf": 0.031, "kept_s": 3.58}
+{"file": "c21.wav", "text": "Yes, I was thinking we could actually know. Let's just ship it today and see what breaks", "ms": 79, "feed_rtf": 0.028, "kept_s": 3.9}
+{"file": "c22.wav", "text": "Wait, not the staging one, the prod one. Sorry, the prod Zigua Base project", "ms": 67, "feed_rtf": 0.038, "kept_s": 4.16}
+{"file": "c23.wav", "text": "Okay, so the thing is, I keep saying Bisper Blow and it keeps writing something else, and it's kind of driving me crazy", "ms": 80, "feed_rtf": 0.043, "kept_s": 5.63}
+{"file": "c24.wav", "text": "It's an invoice to finance and cancel the meeting on Thursday", "ms": 67, "feed_rtf": 0.014, "kept_s": 2.94}
+{"file": "c25.wav", "text": "What time is the demo with a Blue Jay team tomorrow?", "ms": 62, "feed_rtf": 0.016, "kept_s": 2.66}
+{"file": "l01.wav", "text": "Okay, so here's a bunch of today. First, I want Claude to look at the transcription path of BISPRBLO because Apple's recognizer keeps mishearing names like Claude and SuperBase. Then I want to bench a few newer models, maybe Parakeet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins in both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything", "ms": 99, "feed_rtf": 0.068, "kept_s": 19.49}
+{"file": "l02.wav", "text": "So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the Swifty wife. Could you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet, just tell me what you find, and we will decide together on Slack with Christian", "ms": 93, "feed_rtf": 0.072, "kept_s": 22.37}
+{"file": "l03.wav", "text": "I want to write a longer message to the team about the launch. We're going to ship the DMG on Friday, and the GitHub release will have the notes. Roussell hosts the website, Cloudflare does a DNS, and the download link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a developer ID, so please don't tell people to strip the quarantine flag. Thing in linear if something breaks, and I'll look at the sentry dashboard first thing in the morning", "ms": 92, "feed_rtf": 0.069, "kept_s": 20.51}

@@ -1,0 +1,28 @@
+{"file": "c01.wav", "text": "Ask Claude to open the Bisper Blow Work tree and run the build.", "ms": 78, "chunks": 1, "kept_s": 4.83}
+{"file": "c02.wav", "text": "I say clod a lot, so clod code should never come out as quad or clod.", "ms": 120, "chunks": 1, "kept_s": 6.02}
+{"file": "c03.wav", "text": "Superbase webhook is failing on staging but not on prod.", "ms": 73, "chunks": 1, "kept_s": 3.1}
+{"file": "c04.wav", "text": "Open a pull request on GitHub and ping Christian on Slack when the CI CD run is green.", "ms": 81, "chunks": 1, "kept_s": 4.96}
+{"file": "c05.wav", "text": "Can you check this entry error in the middleware and see if it is the authendpoint?", "ms": 72, "chunks": 1, "kept_s": 3.2}
+{"file": "c06.wav", "text": "Basebird blow should read what is already in the text box before it writes anything.", "ms": 79, "chunks": 1, "kept_s": 4.26}
+{"file": "c07.wav", "text": "We move the front end from Versel to railway and the back end still runs in modal.", "ms": 73, "chunks": 1, "kept_s": 3.26}
+{"file": "c08.wav", "text": "Run pnpm installed and npm run dev and open localhost on port 3000.", "ms": 89, "chunks": 1, "kept_s": 5.41}
+{"file": "c09.wav", "text": "The Docker file pins Postgres 16 and the Prisma migration runs before dbmate.", "ms": 97, "chunks": 1, "kept_s": 5.6}
+{"file": "c10.wav", "text": "BlueJay uses lifekit and Vapi for voice and eleven labs for the text speech.", "ms": 86, "chunks": 1, "kept_s": 3.9}
+{"file": "c11.wav", "text": "Add a playwright test that clicks the button and checks the JSON in the response.", "ms": 79, "chunks": 1, "kept_s": 3.55}
+{"file": "c12.wav", "text": "The Swift UIView uses AppKit underneath because the event tab needs it.", "ms": 99, "chunks": 1, "kept_s": 6.5}
+{"file": "c13.wav", "text": "Can you ask Enthropic whether Cloud supports this, or should we try Gemini or OpenAI?", "ms": 97, "chunks": 1, "kept_s": 5.22}
+{"file": "c14.wav", "text": "Put the Terraform config in the repo and make the linter and prettier happy.", "ms": 78, "chunks": 1, "kept_s": 3.94}
+{"file": "c15.wav", "text": "Hey Chrisy, can you look at the linear ticket about the ClickOut's dashboard?", "ms": 79, "chunks": 1, "kept_s": 3.65}
+{"file": "c16.wav", "text": "Pireek said the metronome invoices go out through Stripe on the 1st of the month.", "ms": 85, "chunks": 1, "kept_s": 3.71}
+{"file": "c17.wav", "text": "Write a regex that pulls the endname out of the YAML file and prints it.", "ms": 86, "chunks": 1, "kept_s": 4.93}
+{"file": "c18.wav", "text": "I think the coin model is fine for cleanup but Whisper might be Apple on names.", "ms": 116, "chunks": 1, "kept_s": 3.74}
+{"file": "c19.wav", "text": "Open Xcode, then homebrew install Tmux, and set csh as the default shell.", "ms": 172, "chunks": 1, "kept_s": 4.93}
+{"file": "c20.wav", "text": "The Figma file is a notion in the Cloudflare settings or in the markdown doc.", "ms": 165, "chunks": 1, "kept_s": 3.58}
+{"file": "c21.wav", "text": "Yes, I was thinking we could actually no, let's just ship it today and see what breaks.", "ms": 88, "chunks": 1, "kept_s": 3.9}
+{"file": "c22.wav", "text": "Wait, not the staging one, the prod one. Sorry, the prod superbase project.", "ms": 82, "chunks": 1, "kept_s": 4.16}
+{"file": "c23.wav", "text": "Okay, so the thing is, I keep saying visper blow and it keeps writing something else and it's kind of driving me crazy.", "ms": 103, "chunks": 1, "kept_s": 5.63}
+{"file": "c24.wav", "text": "Send an invoice to finance and cancel the meeting on Thursday.", "ms": 62, "chunks": 1, "kept_s": 2.94}
+{"file": "c25.wav", "text": "What time is the demo with the Blue Jay team tomorrow?", "ms": 64, "chunks": 1, "kept_s": 2.66}
+{"file": "l01.wav", "text": "Okay, so here's the plan for today. First I want Claude to look at the transcription path in WhisperBlow, because Apple's recognizer keeps mishearing names like Claude and Superbase. Then I want to bench a few newer models, maybe Parakeet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins on both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything.", "ms": 324, "chunks": 1, "kept_s": 19.49}
+{"file": "l02.wav", "text": "So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the Swift Uiframe. Can you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet, just tell me when you what you find and we will decide together on Slack with the Christian.", "ms": 492, "chunks": 1, "kept_s": 22.37}
+{"file": "l03.wav", "text": "I want to write a longer message to the team about the launch. We're going to ship the DMG on Friday, and the GitHub release will have the notes. We're cell hosts the website, Cloudflare does a DNS, and the databad link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a developer ID, so please don't tell people to strip the quarantine flag. Thingy in linear if something breaks and I'll look at the Sentry dashboard first thing in the morning.", "ms": 424, "chunks": 1, "kept_s": 20.51}
