@@ -588,8 +588,9 @@ settings, each a loss to change:
   dropped recall to 64%, and almost every term back to the mishear.
 - `boostable` drops a spaced spelling of another term. Given "Bispr Blow" and "BisprBlow", the rescorer
   writes the spaced one.
-- `mishears` aliases only Claude (quad, claw, clawed, clod). Ultra writes "clod", which is a real word,
-  so nothing downstream will respell it. The same table for BisprBlow measured worse.
+- The built-in `mishears` table aliases only Claude (quad, claw, clawed, clod). Ultra writes "clod",
+  which is a real word, so nothing downstream will respell it. The same table for BisprBlow measured
+  worse. Everything else is the user's: `AppSettings.heardAs`, set by clicking a Dictionary row.
 - Dictionary only, not the draft's on-screen terms. Every unspoken term is one more chance to
   replace a word that was heard correctly.
 
@@ -603,6 +604,20 @@ It costs six correct fixes on the clips, each a real word heard for a term: entr
 Cloud → Claude, Christian → Krishin (twice), "works tree" → worktree, CSH → zsh. Term recall
 drops 88% → 82%, WER 10.1% → 10.3%. That trade is deliberate: a missed fix leaves a word that was
 already wrong, a false one breaks a word that was right.
+
+**Heard-as is how the user wins those back, and it is offered, never learned silently.** A word in
+`heardAs` is an alias, so it passes the English guard for that one term: "Christian" listed under
+Krishin brought both clips back (term recall 82% → 85%, WER 10.3% → 9.9%). When the user corrects
+inserted text to a term already in the dictionary, the pill asks "Hear X as Y next time?" with a
+Learn button. It never adds the pair on its own, because one deliberate "model" → "Modal" edit
+would then teach exactly the over-correction the guard exists to stop. It also offers only when the
+recognizer's raw transcript held the word: a word cleanup produced never reaches the rescorer.
+`canAddHeardAs` refuses an alias that is itself a term, because that lets the rescorer swap one
+right word for another.
+
+`Parakeet.aliases` returns sorted lists, and that matters for speed: the boost session is rebuilt
+whenever the aliases change, and with a `Set`'s order every dictation looked like a change. That
+cost about 70ms per dictation (88ms → 158ms median) until it was sorted.
 
 **Batch, not streaming.** Audio is kept at the device rate during the dictation and resampled once on
 release (per-buffer resampling restarts the filter at every boundary), then transcribed whole. That

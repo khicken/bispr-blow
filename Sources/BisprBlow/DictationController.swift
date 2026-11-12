@@ -249,7 +249,7 @@ final class DictationController: ObservableObject {
             if !cleaned.isEmpty {
                 Self.playSound(Self.endSound)
                 if TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
-                    self.watchForCorrection(to: cleaned)
+                    self.watchForCorrection(to: cleaned, heard: raw)
                 } else {
                     self.showNotice("Copied. Press ⌘V to paste")
                 }
@@ -322,9 +322,24 @@ final class DictationController: ObservableObject {
     // owns, and doing that silently is how a dictionary starts respelling good words. Replayed over
     // history first for the same reason; the dictations still holding the mishear are the ones the
     // fix is for, so they are not evidence against it.
-    private func watchForCorrection(to inserted: String) {
+    private func watchForCorrection(to inserted: String, heard raw: String) {
         CorrectionWatcher.watch(inserted: inserted) { [weak self] fix in
             let settings = AppSettings.shared
+            // Fixed to a term already in the dictionary: the dictionary had it, so what failed was
+            // hearing it. A heard-as lets Parakeet replace the mishear next time even when it is a real
+            // word, which its English guard otherwise refuses ("Christian" for Krishin). Offered, never
+            // learned silently: one deliberate "model" → "Modal" edit would otherwise teach exactly the
+            // over-correction the guard exists to stop. Only when the recognizer wrote it, since a
+            // word cleanup produced never reaches the rescorer.
+            let target = fix.corrected.trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
+            if let term = settings.dictionary.first(where: { $0.caseInsensitiveCompare(target) == .orderedSame }) {
+                let heard = fix.misheard.trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
+                guard raw.localizedCaseInsensitiveContains(heard), settings.canAddHeardAs(heard, for: term)
+                else { return }
+                self?.showNotice("Hear “\(heard)” as \(term) next time?", for: 8,
+                                 action: ("Learn", { settings.addHeardAs(heard, for: term) }))
+                return
+            }
             let vocabulary = settings.vocabulary
             let known = Set(vocabulary.map { $0.lowercased() })
             let words = LLMCleaner.learnedWords(from: fix).filter { !known.contains($0.lowercased()) }

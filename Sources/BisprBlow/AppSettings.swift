@@ -42,7 +42,18 @@ final class AppSettings: ObservableObject {
     }
     // Custom vocabulary — names/jargon the recognizer mishears; injected into cleanup calls.
     @Published var dictionary: [String] {
-        didSet { defaults.set(dictionary, forKey: "dictionary") }
+        didSet {
+            defaults.set(dictionary, forKey: "dictionary")
+            let terms = Set(dictionary.map { $0.lowercased() })
+            let kept = heardAs.filter { terms.contains($0.key) }
+            if kept.count != heardAs.count { heardAs = kept }
+        }
+    }
+    // What a dictionary term gets misheard as, keyed by the term lowercased: typed on the Dictionary
+    // page or learned from a correction. Parakeet's rescorer may replace these even though they are
+    // real words ("Christian" for Krishin), which its English guard otherwise refuses.
+    @Published var heardAs: [String: [String]] {
+        didSet { defaults.set(heardAs, forKey: "heardAs") }
     }
     @Published var teamMembers: [TeamMember] {
         didSet {
@@ -225,6 +236,22 @@ final class AppSettings: ObservableObject {
             .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
     }
 
+    // Whether `heard` can be recorded as a mishear of `term`: the term is in the dictionary, and
+    // `heard` is not empty, not already listed, and not itself a term — an alias that is another
+    // term lets the rescorer swap one right word for another.
+    func canAddHeardAs(_ heard: String, for term: String) -> Bool {
+        let spoken = heard.trimmingCharacters(in: .whitespaces).lowercased()
+        let terms = Set(vocabulary.map { $0.lowercased() })
+        return dictionary.contains { $0.caseInsensitiveCompare(term) == .orderedSame }
+            && !spoken.isEmpty && !terms.contains(spoken)
+            && !(heardAs[term.lowercased()] ?? []).contains { $0.lowercased() == spoken }
+    }
+
+    func addHeardAs(_ heard: String, for term: String) {
+        guard canAddHeardAs(heard, for: term) else { return }
+        heardAs[term.lowercased(), default: []].append(heard.trimmingCharacters(in: .whitespaces))
+    }
+
     func addDictionaryWords(_ words: [String]) {
         var seen = Set(dictionary.map { $0.lowercased() })
         for word in words.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !word.isEmpty {
@@ -242,6 +269,7 @@ final class AppSettings: ObservableObject {
         cleanup = Cleanup(rawValue: defaults.string(forKey: "cleanup") ?? "") ?? .fast
         inputDeviceUID = defaults.string(forKey: "inputDeviceUID") ?? ""
         dictionary = defaults.stringArray(forKey: "dictionary") ?? []
+        heardAs = defaults.dictionary(forKey: "heardAs") as? [String: [String]] ?? [:]
         if let data = defaults.data(forKey: "teamMembers"),
            let saved = try? JSONDecoder().decode([TeamMember].self, from: data) {
             teamMembers = saved

@@ -12,6 +12,7 @@ actor Parakeet {
     private var decoderLayers = 2
     private var boost: VocabularyBoostingSession?
     private var boostTerms: [String] = []
+    private var boostAliases: [String: [String]] = [:]
 
     var isReady: Bool { asr != nil }
 
@@ -32,7 +33,7 @@ actor Parakeet {
             asr = manager
             // The first call through a freshly loaded CoreML model pays for its own setup; a second
             // of silence keeps that off the first real dictation.
-            _ = await transcribe(Array(repeating: 0, count: 16_000), vocabulary: [])
+            _ = await transcribe(Array(repeating: 0, count: 16_000), vocabulary: [], heardAs: [:])
             logLine("parakeet ready in \(Int(Date().timeIntervalSince(start) * 1000))ms")
         } catch {
             logLine("parakeet unavailable, staying on Apple: \(error)")
@@ -40,16 +41,17 @@ actor Parakeet {
     }
 
     // `samples` is 16kHz mono. Nil is a failure; the words are lost, so the caller has to say so.
-    func transcribe(_ samples: [Float], vocabulary: [String]) async -> String? {
+    func transcribe(_ samples: [Float], vocabulary: [String], heardAs: [String: [String]]) async -> String? {
         guard let asr else { return nil }
         do {
             var state = TdtDecoderState.make(decoderLayers: decoderLayers)
             let result = try await asr.transcribe(samples, decoderState: &state)
-            guard let session = await boostSession(for: vocabulary) else { return result.text }
+            let aliases = Self.aliases(heardAs)
+            guard let session = await boostSession(for: vocabulary, aliases: aliases) else { return result.text }
             let rescored = await session.rescore(
                 text: result.text, tokenTimings: result.tokenTimings ?? [], audioSamples: samples)
             let kept = (rescored?.replacements ?? []).compactMap { r -> (String, String)? in
-                guard let term = r.replacementWord, Self.isMishear(r.originalWord, of: term) else { return nil }
+                guard let term = r.replacementWord, Self.isMishear(r.originalWord, of: term, aliases: aliases) else { return nil }
                 return (r.originalWord, term)
             }
             guard let text = Self.applying(kept, to: result.text) else {
@@ -90,7 +92,16 @@ actor Parakeet {
 
     // Mishears of a term that real words own, so only acoustics can tell them apart: Ultra writes
     // "clod" for Claude, and nothing downstream respells a real word.
-    private static let mishears = ["Claude": ["quad", "claw", "clawed", "clod"]]
+    private static let mishears = ["claude": ["quad", "claw", "clawed", "clod"]]
+
+    // Built-in mishears plus the user's, keyed by the term lowercased. Spaces kept: FluidAudio
+    // matches an alias against the transcript's words.
+    // Sorted, because the boost session is rebuilt whenever this changes, and a Set's order does.
+    static func aliases(_ heardAs: [String: [String]]) -> [String: [String]] {
+        var all = mishears
+        for (term, heard) in heardAs { all[term, default: []] += heard }
+        return all.mapValues { Array(Set($0.map { $0.lowercased() })).sorted() }
+    }
 
     // The rescorer replaces on acoustics alone, so a term that sounds like a common word takes it:
     // "code" became Xcode, "model" Modal, "error" Terraform, "strip" Stripe, "Claude and" Claude
@@ -99,11 +110,11 @@ actor Parakeet {
     // ("web hook", "CI CD"), and anything with a word that is not English ("Superbase", "We're
     // cell"). The word list has no plurals or possessives, so "models" and "code's" are checked by
     // their stem. Under four letters counts as English: `englishWords` omits them, and nearly all are.
-    static func isMishear(_ original: String, of term: String) -> Bool {
+    static func isMishear(_ original: String, of term: String, aliases: [String: [String]] = aliases([:])) -> Bool {
         let letters = { (text: String) in text.lowercased().filter(\.isLetter) }
         let bareTerm = term.hasSuffix("'s") ? String(term.dropLast(2)) : term
         let heard = letters(original.hasSuffix("'s") ? String(original.dropLast(2)) : original)
-        if heard == letters(bareTerm) || mishears[bareTerm]?.contains(heard) == true { return true }
+        if heard == letters(bareTerm) || aliases[bareTerm.lowercased()]?.contains { letters($0) == heard } == true { return true }
         return !original.lowercased().split(separator: " ").allSatisfy { word in
             // Apostrophes kept: "we're" stripped to "were" would pass for English.
             let bare = String(word.filter { $0.isLetter || $0 == "'" })
@@ -148,13 +159,14 @@ actor Parakeet {
     }
 
     // Rebuilt only when the dictionary changes: building tokenizes every term.
-    private func boostSession(for vocabulary: [String]) async -> VocabularyBoostingSession? {
+    private func boostSession(for vocabulary: [String], aliases: [String: [String]]) async -> VocabularyBoostingSession? {
         guard let ctc, !vocabulary.isEmpty else { return nil }
-        if vocabulary != boostTerms || boost == nil {
+        if vocabulary != boostTerms || aliases != boostAliases || boost == nil {
             boostTerms = vocabulary
+            boostAliases = aliases
             boost = try? await VocabularyBoostingSession(
                 vocabulary: CustomVocabularyContext(terms: Self.boostable(vocabulary).map {
-                    CustomVocabularyTerm(text: $0, aliases: Self.mishears[$0])
+                    CustomVocabularyTerm(text: $0, aliases: aliases[$0.lowercased()])
                 }),
                 ctcModels: ctc)
         }

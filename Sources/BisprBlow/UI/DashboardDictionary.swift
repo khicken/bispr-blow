@@ -269,7 +269,12 @@ struct DictionaryView: View {
     private func rows(trailingInset: CGFloat = 0) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(shown.enumerated()), id: \.element) { index, word in
-                TermRow(word: word, first: index == 0, trailingInset: trailingInset) {
+                TermRow(word: word, first: index == 0, trailingInset: trailingInset,
+                        heardAs: settings.heardAs[word.lowercased()] ?? [],
+                        onHeardAs: { list in
+                            settings.heardAs[word.lowercased()] = nil
+                            list.forEach { settings.addHeardAs($0, for: word) }
+                        }) {
                     withAnimation(.bjSnap) { settings.dictionary.removeAll { $0 == word } }
                 }
             }
@@ -351,8 +356,8 @@ struct DictionaryView: View {
     }
 }
 
-// One term. Removal is the only action, and it appears on hover: a list of a hundred terms should
-// read as words, not as buttons.
+// One term. Clicking the row opens what it gets misheard as; removal appears on hover. A list of a
+// hundred terms should read as words, not as buttons.
 struct TermRow: View {
     var themeID = Appearance.current
     let word: String
@@ -360,8 +365,13 @@ struct TermRow: View {
     // Extra room on the right for the overlay scrollbar, which otherwise draws over the remove
     // button. Only the scrolling list passes it; the divider stays full width either way.
     var trailingInset: CGFloat = 0
+    let heardAs: [String]
+    let onHeardAs: ([String]) -> Void
     let onRemove: () -> Void
     @State private var hovering = false
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -372,6 +382,18 @@ struct TermRow: View {
                 Text(word)
                     .font(.bj(13))
                     .foregroundStyle(Theme.ink)
+                if editing {
+                    TextField("Misheard as, comma separated", text: $draft)
+                        .bjField()
+                        .focused($fieldFocused)
+                        .onSubmit(save)
+                        .onExitCommand { editing = false }
+                } else if !heardAs.isEmpty {
+                    Text("heard as \(heardAs.joined(separator: ", "))")
+                        .font(.bj(12))
+                        .foregroundStyle(Theme.inkSubtle)
+                        .lineLimit(1)
+                }
                 Spacer()
                 // A trash bin rather than an ✕: ✕ is dismiss, and this deletes a saved word. Full row
                 // height and wide enough to hit without aiming.
@@ -394,11 +416,29 @@ struct TermRow: View {
             .padding(.vertical, 4)
             .frame(minHeight: 38)
         }
+        // Off while editing, so a click inside the field places the caret instead of being taken by
+        // the row, and the field gets its I-beam rather than a hand.
+        .contentShape(Rectangle())
+        .gesture(TapGesture().onEnded {
+            draft = heardAs.joined(separator: ", ")
+            editing = true
+            fieldFocused = true
+        }, including: editing ? .subviews : .all)
+        .handCursor(!editing)
+        .help(editing ? "Return to save, Esc to cancel" : "Add what it gets misheard as")
+        .onChange(of: fieldFocused) { _, focused in if !focused, editing { save() } }
         // Full strength, not 60%: the row under the pointer is the one about to lose a term.
-        .background(hovering ? Theme.surfaceActive : .clear)
+        .background(hovering || editing ? Theme.surfaceActive : .clear)
         .onHover { hovering = $0 }
         .animation(.bjHover, value: hovering)
         .transition(.opacity)
+    }
+
+    private func save() {
+        onHeardAs(draft.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0.caseInsensitiveCompare(word) != .orderedSame })
+        editing = false
     }
 }
 

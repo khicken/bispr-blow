@@ -218,6 +218,13 @@ enum SelfCheck {
                               ("We're cell", "Vercel"), ("clod.", "Claude"), ("Visperblow", "BisprBlow")] {
             precondition(Parakeet.isMishear(heard, of: term), "\(heard) → \(term)")
         }
+        // A real word the user said is a mishear of their term: allowed, and only for that term.
+        let learned = Parakeet.aliases(["krishin": ["Christian"], "bisprblow": ["bisp for blow"]])
+        precondition(learned["bisprblow"] == ["bisp for blow"], "FluidAudio needs the alias's spaces")
+        precondition(Parakeet.isMishear("bisp for blow", of: "BisprBlow", aliases: learned))
+        precondition(Parakeet.isMishear("Christian.", of: "Krishin", aliases: learned))
+        precondition(!Parakeet.isMishear("Christian", of: "Krishy", aliases: learned))
+        precondition(!Parakeet.isMishear("Christian", of: "Krishin"))
         // Listed out of text order, as the rescorer does; punctuation the heard word carried stays.
         precondition(Parakeet.applying([("web hook", "webhook"), ("Superbase", "Supabase"), ("clod.", "Claude")],
                                        to: "Superbase web hook, ask clod.")

@@ -205,8 +205,8 @@ final class Transcriber {
             let audio = try captured.flatMap {
                 $0.rate == 16_000 ? $0.samples : try converter.resample($0.samples, from: $0.rate)
             }
-            let vocabulary = await MainActor.run { AppSettings.shared.vocabulary }
-            return await Parakeet.shared.transcribe(audio, vocabulary: vocabulary).map(Self.withoutPauseMarks)
+            let (vocabulary, heardAs) = await MainActor.run { (AppSettings.shared.vocabulary, AppSettings.shared.heardAs) }
+            return await Parakeet.shared.transcribe(audio, vocabulary: vocabulary, heardAs: heardAs).map(Self.withoutPauseMarks)
         } catch {
             logLine("parakeet resample failed: \(error)")
             return nil
