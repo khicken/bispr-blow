@@ -156,11 +156,12 @@ final class Transcriber {
         }
     }
 
-    // Stops the session and returns the full transcript. Nil only when Parakeet failed with audio
-    // in hand, which the caller must report: those words cannot be recovered.
-    func finishSession() async -> String? {
+    // Stops the session and returns the full transcript, with what Parakeet heard when it was the
+    // recognizer. Nil only when Parakeet failed with audio in hand, which the caller must report:
+    // those words cannot be recovered.
+    func finishSession() async -> (text: String, heard: Parakeet.Heard?)? {
         if let parakeet { return await finishParakeetSession(parakeet) }
-        if usingFallback { return await finishSFSession() }
+        if usingFallback { return (await finishSFSession(), nil) }
 
         inputBuilder?.finish()
         do {
@@ -170,7 +171,7 @@ final class Transcriber {
         }
         await resultsTask?.value
         cleanupAnalyzer()
-        return Self.withoutPauseMarks(finalizedText + volatileText)
+        return (Self.withoutPauseMarks(finalizedText + volatileText), nil)
     }
 
     func cancelSession() async {
@@ -195,12 +196,12 @@ final class Transcriber {
 
     // The dictionary only, not `contextTerms`: that is what was measured, and every unspoken term
     // in the list is one more chance to replace a word that was heard right.
-    private func finishParakeetSession(_ stream: ParakeetStream) async -> String? {
+    private func finishParakeetSession(_ stream: ParakeetStream) async -> (text: String, heard: Parakeet.Heard?)? {
         guard let (audio, ctc) = await stream.finish() else { return nil }
-        guard !audio.isEmpty else { return "" }
+        guard !audio.isEmpty else { return ("", nil) }
         let (vocabulary, heardAs) = await MainActor.run { (AppSettings.shared.vocabulary, AppSettings.shared.heardAs) }
         return await Parakeet.shared.transcribe(audio, ctc: ctc, vocabulary: vocabulary, heardAs: heardAs)
-            .map(Self.withoutPauseMarks)
+            .map { (Self.withoutPauseMarks($0.text), $0.heard) }
     }
 
     // MARK: - SpeechAnalyzer path

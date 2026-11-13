@@ -624,6 +624,23 @@ recognizer's raw transcript held the word: a word cleanup produced never reaches
 `canAddHeardAs` refuses an alias that is itself a term, because that lets the rescorer swap one
 right word for another.
 
+**And it offers only when the audio supports the term (`Parakeet.supports`).** Asking is not
+enough on its own: a user who changes "model" to "Modal" because they decided to name the product
+gets the prompt, and Learn then teaches the over-correction anyway. So the dictation's CTC log-probs
+and token timings ride along to the correction watch (`Parakeet.Heard`, about 52 KB per second of
+speech, held by the watch's closure and gone when it settles: the next dictation or 120s), and the
+spotter scores the term and the heard word over where the heard word was spoken, ±0.1s. The prompt
+needs the term within 1 of the heard word, per token. Measured over 29 corrections on the bench clips
+(`--self-check`, `checkHeardAsEvidence`), term minus heard: Christian → Krishin -0.05 and +0.88,
+entry → Sentry -0.20, works tree → worktree -0.33, Docker file → Dockerfile +0.02, 11 labs →
+ElevenLabs +8.76, against every deliberate change at -1.76 or below (code → Xcode -1.76, strip →
+Stripe -1.83, model → Modal -2.48, thing → staging -10.04). Three real mishears score with the
+changes (CSH → zsh -1.07, Cloud → Claude -1.92, coin → Qwen -3.49) and go unoffered: acoustics alone
+cannot tell them apart, and missing a prompt is the recoverable direction. The margin is 0.1s, not
+the session's 0.5s, because at 0.5s the window reached the next word: "Playwright test" with "test"
+changed to Playwright found the spoken Playwright beside it and passed. No Parakeet (the Apple
+fallback, or before it loads) or no dictionary means no evidence, so no prompt.
+
 `Parakeet.aliases` returns sorted lists, and that matters for speed: the boost session is rebuilt
 whenever the aliases change, and with a `Set`'s order every dictation looked like a change. That
 cost about 70ms per dictation (88ms → 158ms median) until it was sorted.

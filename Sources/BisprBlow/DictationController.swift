@@ -222,7 +222,7 @@ final class DictationController: ObservableObject {
             guard self.sessionGeneration == generation else { return }
             // The recognizer failed with the audio in hand. Say so: going quietly idle reads as
             // "it heard nothing", and the words are already gone.
-            guard let raw = finished else {
+            guard let (raw, heard) = finished else {
                 self.showNotice("Couldn't transcribe that. Try again.")
                 self.state = .idle
                 return
@@ -249,7 +249,7 @@ final class DictationController: ObservableObject {
             if !cleaned.isEmpty {
                 Self.playSound(Self.endSound)
                 if TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
-                    self.watchForCorrection(to: cleaned, heard: raw)
+                    self.watchForCorrection(to: cleaned, raw: raw, heard: heard)
                 } else {
                     self.showNotice("Copied. Press ⌘V to paste")
                 }
@@ -322,7 +322,9 @@ final class DictationController: ObservableObject {
     // owns, and doing that silently is how a dictionary starts respelling good words. Replayed over
     // history first for the same reason; the dictations still holding the mishear are the ones the
     // fix is for, so they are not evidence against it.
-    private func watchForCorrection(to inserted: String, heard raw: String) {
+    // `heard` is held by the watch's closure, so it goes when the watch settles: the next
+    // dictation, or the end of the window.
+    private func watchForCorrection(to inserted: String, raw: String, heard evidence: Parakeet.Heard?) {
         CorrectionWatcher.watch(inserted: inserted) { [weak self] fix in
             let settings = AppSettings.shared
             // Fixed to a term already in the dictionary: the dictionary had it, so what failed was
@@ -330,14 +332,20 @@ final class DictationController: ObservableObject {
             // word, which its English guard otherwise refuses ("Christian" for Krishin). Offered, never
             // learned silently: one deliberate "model" → "Modal" edit would otherwise teach exactly the
             // over-correction the guard exists to stop. Only when the recognizer wrote it, since a
-            // word cleanup produced never reaches the rescorer.
+            // word cleanup produced never reaches the rescorer, and only when the audio supports the
+            // term: otherwise the user changed their mind, and nothing was misheard.
             let target = fix.corrected.trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
             if let term = settings.dictionary.first(where: { $0.caseInsensitiveCompare(target) == .orderedSame }) {
                 let heard = fix.misheard.trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
-                guard raw.localizedCaseInsensitiveContains(heard), settings.canAddHeardAs(heard, for: term)
+                guard let evidence, raw.localizedCaseInsensitiveContains(heard), settings.canAddHeardAs(heard, for: term)
                 else { return }
-                self?.showNotice("Hear “\(heard)” as \(term) next time?", for: 8,
-                                 action: ("Learn", { settings.addHeardAs(heard, for: term) }))
+                Task {
+                    let scores = await Parakeet.shared.scores(of: term, against: heard, in: evidence)
+                    logLine("correction to a term: \(scores.map { "term=\($0.term) heard=\($0.heard)" } ?? "not in timings")")
+                    guard let scores, Parakeet.supports(scores) else { return }
+                    self?.showNotice("Hear “\(heard)” as \(term) next time?", for: 8,
+                                     action: ("Learn", { settings.addHeardAs(heard, for: term) }))
+                }
                 return
             }
             let vocabulary = settings.vocabulary

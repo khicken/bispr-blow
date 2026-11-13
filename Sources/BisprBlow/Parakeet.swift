@@ -14,6 +14,7 @@ actor Parakeet {
     private var boost: (session: VocabularyBoostingSession, rescorer: VocabularyRescorer)?
     private var boostTerms: [String] = []
     private var boostAliases: [String: [String]] = [:]
+    private var tokenizer: CtcTokenizer?
 
     var isReady: Bool { asr != nil }
 
@@ -41,26 +42,36 @@ actor Parakeet {
         }
     }
 
+    // What the audio of one dictation said, kept while the user may still correct its text: the
+    // dictionary pass's CTC log-probs and where each token was heard. Log-probs rather than the
+    // audio: already computed, smaller (about 52 KB a second against 64), and no model call.
+    struct Heard: Sendable {
+        let timings: [TokenTiming]
+        let logProbs: [[Float]]
+        let frameDuration: Double
+    }
+
     // `samples` is 16kHz mono, and `ctc` the CTC chunks `ParakeetStream` finished during speech.
-    // Nil is a failure; the words are lost, so the caller has to say so.
+    // Nil is a failure; the words are lost, so the caller has to say so. `heard` is nil without a
+    // dictionary, since the CTC pass only runs for one.
     func transcribe(_ samples: [Float], ctc: [CtcKeywordSpotter.SpotKeywordsResult] = [],
-                    vocabulary: [String], heardAs: [String: [String]]) async -> String? {
+                    vocabulary: [String], heardAs: [String: [String]]) async -> (text: String, heard: Heard?)? {
         guard let asr else { return nil }
         do {
             var state = TdtDecoderState.make(decoderLayers: decoderLayers)
             let result = try await asr.transcribe(samples, decoderState: &state)
             let aliases = Self.aliases(heardAs)
-            guard let boost = await boostSession(for: vocabulary, aliases: aliases) else { return result.text }
-            let replacements = await rescore(result, samples, ctc: ctc, boost: boost)
+            guard let boost = await boostSession(for: vocabulary, aliases: aliases) else { return (result.text, nil) }
+            let (replacements, heard) = await rescore(result, samples, ctc: ctc, boost: boost)
             let kept = replacements.compactMap { r -> (String, String)? in
                 guard let term = r.replacementWord, Self.isMishear(r.originalWord, of: term, aliases: aliases) else { return nil }
                 return (r.originalWord, term)
             }
             guard let text = Self.applying(kept, to: result.text) else {
                 logLine("parakeet: \(kept.count) vocabulary fixes did not line up with the transcript; skipped")
-                return result.text
+                return (result.text, heard)
             }
-            return text
+            return (text, heard)
         } catch {
             logLine("parakeet transcribe failed: \(error)")
             return nil
@@ -71,25 +82,88 @@ actor Parakeet {
     // in `ctc`, then whatever audio is left. Like it, a CTC failure costs the boost, not the words.
     private func rescore(_ result: ASRResult, _ samples: [Float], ctc: [CtcKeywordSpotter.SpotKeywordsResult],
                          boost: (session: VocabularyBoostingSession, rescorer: VocabularyRescorer)) async
-        -> [VocabularyRescorer.RescoringResult] {
+        -> ([VocabularyRescorer.RescoringResult], Heard?) {
         let timings = result.tokenTimings ?? []
-        guard !timings.isEmpty, !samples.isEmpty else { return [] }
+        guard !timings.isEmpty, !samples.isEmpty else { return ([], nil) }
         let logProbs: [[Float]], frameDuration: Double
         do {
             (logProbs, frameDuration) = try await self.logProbs(samples, ctc: ctc)
         } catch {
             logLine("parakeet: vocabulary rescoring failed: \(error)")
-            return []
+            return ([], nil)
         }
-        guard !logProbs.isEmpty else { return [] }
+        guard !logProbs.isEmpty else { return ([], nil) }
         // `VocabularyBoostingSession.rescoreParameters`, which is internal.
         let session = boost.session
         let size = ContextBiasingConstants.rescorerConfig(forVocabSize: session.vocabulary.terms.count)
-        return boost.rescorer.ctcTokenRescore(
+        return (boost.rescorer.ctcTokenRescore(
             transcript: result.text, tokenTimings: timings, logProbs: logProbs, frameDuration: frameDuration,
             cbw: session.thresholds.cbw ?? size.cbw, marginSeconds: session.thresholds.marginSeconds,
             minSimilarity: max(session.thresholds.minSimilarity ?? size.minSimilarity, session.vocabulary.minSimilarity)
-        ).replacements
+        ).replacements, Heard(timings: timings, logProbs: logProbs, frameDuration: frameDuration))
+    }
+
+    // Whether the audio supports `term` where the recognizer wrote another word, which is a mishear
+    // rather than the user changing their mind: the term within 1 of the heard word, per token.
+    // Measured over 29 corrections on the bench clips (`checkHeardAsEvidence`): six true mishears
+    // at -0.33 and up, every deliberate change at -1.76 and below, so 1 sits in the gap. Three
+    // mishears score with the changes (CSH -1.07, Cloud -1.92, coin -3.49) and go unoffered, the
+    // recoverable direction: a Dictionary row still takes a heard-as.
+    static func supports(_ scores: (term: Float, heard: Float)) -> Bool { scores.term + 1 >= scores.heard }
+
+    // How well the audio fits `term` and how well it fits `heard`, over where the recognizer wrote
+    // `heard`: the spotter's per-token log-probability of each. The occurrence most in the term's
+    // favour, or nil when `heard` is not in the timings.
+    func scores(of term: String, against heard: String, in evidence: Heard) async -> (term: Float, heard: Float)? {
+        guard let ctc, evidence.frameDuration > 0 else { return nil }
+        if tokenizer == nil {
+            tokenizer = try? await CtcTokenizer.load(from: CtcModels.defaultCacheDirectory(for: ctc.variant))
+        }
+        guard let tokenizer else { return nil }
+        let key = { (text: String) in text.lowercased().filter { $0.isLetter || $0.isNumber } }
+        var words: [(key: String, start: Double, end: Double)] = []
+        for timing in evidence.timings where !timing.token.isEmpty {
+            if words.isEmpty || isWordBoundary(timing.token) {
+                words.append((key(stripWordBoundaryPrefix(timing.token)), timing.startTime, timing.endTime))
+            } else {
+                words[words.count - 1].key += key(timing.token)
+                words[words.count - 1].end = timing.endTime
+            }
+        }
+        // Runs of words spelling `heard`, spaces aside: the timings can split what the transcript
+        // joins ("front end" for "frontend").
+        let wanted = key(heard)
+        let spans = words.indices.compactMap { first -> (start: Double, end: Double)? in
+            var spelled = ""
+            for last in first..<words.count {
+                spelled += words[last].key
+                if spelled == wanted { return (words[first].start, words[last].end) }
+                if !wanted.hasPrefix(spelled) { return nil }
+            }
+            return nil
+        }
+        // Both tokenizations, as the rescorer scores a term: a word that does not start at a CTC word
+        // boundary is penalised for the boundary token it has no audio for.
+        let vocabulary = CustomVocabularyContext(
+            terms: [term, heard].map { CustomVocabularyTerm(text: $0, ctcTokenIds: tokenizer.encode($0)) }
+                + [term, heard].map { CustomVocabularyTerm(text: $0, ctcTokenIds: tokenizer.encodeWithoutBoundary($0)) }, minTermLength: 0)
+        let spotter = CtcKeywordSpotter(models: ctc, blankId: ctc.vocabulary.count)
+        // FluidAudio's 0.1s, not the session's 0.5s: at 0.5s the window reaches the next word, so
+        // "Playwright test" fixed to "Playwright Playwright" found the term beside it and passed.
+        let margin = ContextBiasingConstants.defaultMarginSeconds
+        var best: (term: Float, heard: Float)?
+        for span in spans {
+            let frames = max(0, Int((span.start - margin) / evidence.frameDuration))
+                ..< min(evidence.logProbs.count, Int(((span.end + margin) / evidence.frameDuration).rounded(.up)))
+            guard !frames.isEmpty else { continue }
+            let found = spotter.spotKeywordsFromLogProbs(
+                logProbs: Array(evidence.logProbs[frames]), frameDuration: evidence.frameDuration,
+                customVocabulary: vocabulary, minScore: -.greatestFiniteMagnitude).detections
+            let score = { (text: String) in found.filter { $0.term.text == text }.map(\.score).max() ?? -.infinity }
+            let pair = (term: score(term), heard: score(heard))
+            if best.map({ pair.term - pair.heard > $0.term - $0.heard }) ?? true { best = pair }
+        }
+        return best
     }
 
     // What `CtcKeywordSpotter.spotKeywordsWithLogProbs` gives for `samples`, from the chunks
@@ -161,7 +235,7 @@ actor Parakeet {
         let rescored = await boost.session.rescore(
             text: result.text, tokenTimings: result.tokenTimings ?? [], audioSamples: samples)
         return (merged.logProbs == whole.logProbs && merged.frameDuration == whole.frameDuration,
-                await rescore(result, samples, ctc: ctc, boost: boost).map(describe),
+                await rescore(result, samples, ctc: ctc, boost: boost).0.map(describe),
                 (rescored?.replacements ?? []).map(describe))
     }
 

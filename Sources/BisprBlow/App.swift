@@ -78,7 +78,7 @@ enum Main {
                         try? await Task.sleep(for: .milliseconds(100))
                     }
                     let start = Date()
-                    let text = await transcriber.finishSession() ?? "FAILED"
+                    let text = await transcriber.finishSession()?.text ?? "FAILED"
                     let line: [String: Any] = ["file": (path as NSString).lastPathComponent, "text": text,
                                                "ms": Int(Date().timeIntervalSince(start) * 1000)]
                     print(String(data: try! JSONSerialization.data(withJSONObject: line), encoding: .utf8)!)

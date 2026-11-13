@@ -461,6 +461,7 @@ enum SelfCheck {
         checkPillHitRegion()
         checkPillClickThrough()
         checkParakeetStream()
+        checkHeardAsEvidence()
 
         print("self-check passed")
     }
@@ -526,6 +527,59 @@ enum SelfCheck {
         precondition(result.1, "incremental CTC log-probs differ from spotKeywordsWithLogProbs")
         precondition(!result.3.isEmpty, "the clip must give the rescorer something to replace")
         precondition(result.2 == result.3, "incremental rescore \(result.2) differs from session.rescore \(result.3)")
+    }
+
+    // The Learn prompt for a heard-as is offered only when the audio fits the term at least as well
+    // as the word the recognizer wrote. On the user's own clips (bench/asr, gitignored): a true
+    // mishear must clear that bar, and a correct word changed to a term on purpose must not.
+    private static func checkHeardAsEvidence() {
+        let bench = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../bench/asr").standardized
+        let caches = [AsrModels.defaultCacheDirectory(for: .ultra), CtcModels.defaultCacheDirectory(for: .ctc110m)]
+        guard caches.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }),
+              FileManager.default.fileExists(atPath: bench.appendingPathComponent("clips").path)
+        else {
+            print("heard-as evidence check skipped: models or bench/asr/clips not on disk")
+            return
+        }
+        let vocabulary = try! String(contentsOf: bench.appendingPathComponent("vocab.txt"), encoding: .utf8)
+            .split(separator: "\n").map(String.init)
+        // (clip, word Parakeet wrote, term the user typed over it, whether the prompt is offered).
+        // Mishears first; Cloud, coin and CSH are mishears the audio cannot tell from a change of mind.
+        let cases: [(String, String, String, Bool)] = [
+            ("c04", "Christian", "Krishin", true), ("l02", "Christian", "Krishin", true),
+            ("c05", "entry", "Sentry", true), ("c01", "works tree", "worktree", true),
+            ("c09", "Docker file", "Dockerfile", true), ("c10", "11 labs", "ElevenLabs", true),
+            ("c13", "Cloud", "Claude", false), ("c18", "coin", "Qwen", false), ("c19", "CSH", "zsh", false),
+            ("c18", "model", "Modal", false), ("c02", "code", "Xcode", false),
+            ("c05", "error", "Terraform", false), ("c17", "Write", "Vite", false),
+            ("l03", "strip", "Stripe", false), ("c23", "thing", "staging", false),
+            ("c07", "frontend", "Vercel", false), ("c18", "Apple", "Claude", false),
+            ("c19", "shell", "zsh", false), ("c24", "invoice", "Stripe", false),
+            ("c14", "config", "Terraform", false), ("c20", "doc", "Notion", false),
+            ("c25", "team", "Bluejay", false), ("c10", "voice", "Vapi", false),
+            ("c11", "test", "Playwright", false), ("c07", "backend", "Modal", false),
+            ("l01", "Mac", "MLX", false), ("c16", "invoices", "Metronome", false),
+            ("c13", "this", "Vite", false), ("c22", "project", "Prisma", false),
+        ]
+        let results = awaitSync { () -> [(term: Float, heard: Float)?] in
+            await Parakeet.shared.load()
+            var out: [(term: Float, heard: Float)?] = []
+            for (clip, heard, term, _) in cases {
+                let file = try! AVAudioFile(forReading: bench.appendingPathComponent("clips/\(clip).wav"))
+                let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+                try! file.read(into: buffer)
+                precondition(file.processingFormat.sampleRate == 16_000, "bench clips are 16kHz")
+                let samples = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
+                let result = await Parakeet.shared.transcribe(samples, vocabulary: vocabulary, heardAs: [:])
+                out.append(await Parakeet.shared.scores(of: term, against: heard, in: result!.heard!))
+            }
+            return out
+        }
+        for (c, score) in zip(cases, results) {
+            precondition(score.map(Parakeet.supports) == c.3, String(
+                format: "heard-as %@ %@ → %@: term %.2f, heard %.2f", c.0, c.1, c.2, score?.term ?? .nan, score?.heard ?? .nan))
+        }
     }
 
     // The pill opens on the sliver you can see, and nothing else. `onHover` ignores
