@@ -32,8 +32,8 @@ extension LLMCleaner {
     // rewrote the real words beside a `near` fix ("front end from Versel" → "frontend prod Vercel").
     // Acoustic correction belongs to the recognizer's rescorer, where the audio still exists.
     //
-    // Ahead of all three is `misheard`, for words the dictionary cannot express safely: "main" as an
-    // entry would make `near` rewrite "mail", "rain", "pain" and "gain" too.
+    // The fourth tier, ahead of all three, is `misheard`, for words the dictionary cannot express
+    // safely: "main" as an entry would make `near` rewrite "mail", "rain", "pain" and "gain" too.
     static func applyVocabulary(_ text: String, vocabulary: [String]) -> String {
         let terms = vocabulary.filter { !$0.isEmpty && !$0.contains(" ") }
 
@@ -72,8 +72,9 @@ extension LLMCleaner {
         // the dictionary may hold either form.
             if w == t + "s" || w == t + "es" || t == w + "s" || t == w + "es" { return .none }
         // `near` fires on spelling alone, so it must never overwrite a word the recognizer got right:
-        // levenshtein("code", "xcode") == 1 shipped "just put a Xcode Vite for it". Across the shipped dictionary "git" ate gift/gist/grit, "Vite" ate
-        // site/cite/bite, "Swift" ate shift, "linter" ate liner/linger/linker, "Claude" ate clause.
+        // levenshtein("code", "xcode") == 1 turned "code" into "Xcode". Across the shipped
+        // dictionary "git" ate gift/gist/grit, "Vite" ate site/cite/bite, "Swift" ate shift,
+        // "linter" ate liner/linger/linker, "Claude" ate clause.
         // Being real English is the discriminator, not being long: "Devy" → "Devi" is four letters
         // and is exactly what the dictionary is for.
             if w.count >= 4, !englishWords.contains(w),
@@ -111,8 +112,6 @@ extension LLMCleaner {
             switch best {
             case let (.exact, term)? where term.contains(where: \.isUppercase) && b != term:
                 replace(i, with: term)
-            case (.exact, _)?:
-                break
             case let (.near, term)?:
                 replace(i, with: term)
             default:

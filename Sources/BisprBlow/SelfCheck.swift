@@ -471,10 +471,16 @@ enum SelfCheck {
     // must reproduce exactly what FluidAudio computes from the whole clip on release — so a
     // FluidAudio bump that changes either internal fails here rather than shifting the dictionary.
     private static func checkParakeetStream() {
+        // `load` would otherwise download ~700 MB, and offline it fails the check outright.
+        let caches = [AsrModels.defaultCacheDirectory(for: .ultra), CtcModels.defaultCacheDirectory(for: .ctc110m)]
+        guard caches.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
+            print("parakeet stream check skipped: models not on disk")
+            return
+        }
         let path = NSTemporaryDirectory() + "bisprblow-self-check.wav"
         let say = Process()
         say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        say.arguments = ["-r", "130", "-o", path, "--file-format=WAVE", "--data-format=LEF32@48000", """
+        say.arguments = ["-v", "Samantha", "-r", "130", "-o", path, "--file-format=WAVE", "--data-format=LEF32@48000", """
             We moved the auth tables to super base last week, and the preview builds now deploy on \
             versel. Ask clod to review the work tree before we merge, because the bisper blow \
             installer still bundles the parakeet weights. Kubernetes is not involved in any of \

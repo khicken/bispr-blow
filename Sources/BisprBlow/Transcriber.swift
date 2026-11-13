@@ -35,8 +35,14 @@ final class Transcriber {
     private var usingFallback = false
 
     // Parakeet path. Left in place after finish or cancel: `feed` reads it on the capture queue, so
-    // only `startSession`, which runs before capture starts, replaces it.
-    private var parakeet: ParakeetStream?
+    // only `startSession`, which runs before capture starts, replaces it. Locked because that read
+    // and `startSession`'s write are on different threads.
+    private let parakeetLock = NSLock()
+    private var _parakeet: ParakeetStream?
+    private var parakeet: ParakeetStream? {
+        get { parakeetLock.withLock { _parakeet } }
+        set { parakeetLock.withLock { _parakeet = newValue } }
+    }
 
     // Drops the ellipsis the recognizer writes where the speaker paused: punctuation it invented,
     // not a word anybody said, and it does two kinds of damage. It reaches the cursor ("again to
@@ -89,8 +95,10 @@ final class Transcriber {
         volatileText = ""
         sfLatest = ""
         usingFallback = false
-        // Left by a dictation whose cancel was skipped because this one had already started.
-        await parakeet?.cancel()
+        // Left by a dictation whose cancel was skipped because this one had already started. Not
+        // awaited: it can be waiting on a CTC window, and this is the path before the mic opens.
+        let old = parakeet
+        Task { await old?.cancel() }
         parakeet = await Parakeet.shared.isReady ? ParakeetStream() : nil
         if parakeet != nil { return }
         do {

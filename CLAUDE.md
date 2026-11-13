@@ -640,7 +640,7 @@ last window and merges. That copies two FluidAudio internals, the overlap and `m
 replacements differ from `VocabularyBoostingSession.rescore` over the whole clip. Measured with
 `--transcribe` (which now feeds 100ms buffers in real time) over the 48kHz clips, wait after release:
 20 s dictations ~400ms → ~280-350ms, 60 s 1035ms → 550ms, and under 15 s unchanged (~120ms), since a
-short clip is one CTC window and that window is the release one. Text identical on all 29 clips.
+short clip is one CTC window and that window is the release one. Text identical on all 28 clips.
 Cancel waits for the in-flight CTC window, so no work outlives its dictation.
 
 **Apple stays as the fallback, and it is live for the first ~40s after an install.** `Parakeet.load`

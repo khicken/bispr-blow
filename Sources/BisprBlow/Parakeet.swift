@@ -344,6 +344,7 @@ final class ParakeetStream: @unchecked Sendable {
         let captured = lock.withLock { () -> [Float]? in
             flush()
             chunks.finish()
+            defer { audio = [] }
             return failed ? nil : audio
         }
         let done = (try? await ctc.value) ?? []
