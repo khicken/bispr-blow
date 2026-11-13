@@ -1,6 +1,8 @@
 import AppKit
+import AVFoundation
 import Carbon.HIToolbox
 import CoreGraphics
+import FluidAudio
 import Foundation
 import SwiftUI
 
@@ -458,8 +460,66 @@ enum SelfCheck {
         checkVersionCompare()
         checkPillHitRegion()
         checkPillClickThrough()
+        checkParakeetStream()
 
         print("self-check passed")
+    }
+
+    // `ParakeetStream` resamples and runs the dictionary's CTC pass during speech, on copies of two
+    // FluidAudio internals (the 15 s windows' 2 s overlap and how overlapping frames merge). Fed a
+    // spoken clip in 100ms buffers, with a sample-rate change part way as a device switch gives, it
+    // must reproduce exactly what FluidAudio computes from the whole clip on release — so a
+    // FluidAudio bump that changes either internal fails here rather than shifting the dictionary.
+    private static func checkParakeetStream() {
+        let path = NSTemporaryDirectory() + "bisprblow-self-check.wav"
+        let say = Process()
+        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        say.arguments = ["-r", "130", "-o", path, "--file-format=WAVE", "--data-format=LEF32@48000", """
+            We moved the auth tables to super base last week, and the preview builds now deploy on \
+            versel. Ask clod to review the work tree before we merge, because the bisper blow \
+            installer still bundles the parakeet weights. Kubernetes is not involved in any of \
+            this. After that, the plan is to clean up the web hook handler, update the read me, \
+            and cut a release once the cubernetes staging cluster is green again. Then we will ask \
+            clawed to rewrite the super base migration and push it to versel before the demo on Friday.
+            """]
+        try! say.run()
+        say.waitUntilExit()
+        let file = try! AVAudioFile(forReading: URL(fileURLWithPath: path))
+        let whole = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+        try! file.read(into: whole)
+        let samples = Array(UnsafeBufferPointer(start: whole.floatChannelData![0], count: Int(whole.frameLength)))
+        let split = samples.count / 2
+        precondition(Double(samples.count) / 48_000 > 30, "the clip must span three CTC windows")
+
+        let vocabulary = ["Supabase", "Vercel", "Claude", "worktree", "BisprBlow", "Kubernetes", "webhook", "README"]
+        let result = awaitSync { () -> (Bool, Bool, [String], [String]) in
+            await Parakeet.shared.load()
+            let ready = await Parakeet.shared.isReady
+            precondition(ready, "Parakeet did not load")
+            let stream = ParakeetStream()
+            // The second half is labelled 44.1kHz: a device change, which must start a new converter.
+            for (part, rate) in [(samples[..<split], 48_000.0), (samples[split...], 44_100.0)] {
+                let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false)!
+                for start in stride(from: part.startIndex, to: part.endIndex, by: Int(rate) / 10) {
+                    let piece = part[start..<min(start + Int(rate) / 10, part.endIndex)]
+                    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(piece.count))!
+                    buffer.frameLength = buffer.frameCapacity
+                    piece.withUnsafeBufferPointer { buffer.floatChannelData![0].update(from: $0.baseAddress!, count: piece.count) }
+                    stream.append(buffer)
+                }
+            }
+            let (audio, ctc) = (await stream.finish())!
+            let converter = AudioConverter()
+            let expected = try! converter.resample(Array(samples[..<split]), from: 48_000)
+                + converter.resample(Array(samples[split...]), from: 44_100)
+            let check = try! await Parakeet.shared.checkIncremental(audio, ctc: ctc, vocabulary: vocabulary)
+            precondition(ctc.count >= 2, "the whole windows must be done during speech, not on release")
+            return (audio == expected, check.sameLogProbs, check.incremental, check.whole)
+        }
+        precondition(result.0, "streamed resample differs from AudioConverter.resample")
+        precondition(result.1, "incremental CTC log-probs differ from spotKeywordsWithLogProbs")
+        precondition(!result.3.isEmpty, "the clip must give the rescorer something to replace")
+        precondition(result.2 == result.3, "incremental rescore \(result.2) differs from session.rescore \(result.3)")
     }
 
     // The pill opens on the sliver you can see, and nothing else. `onHover` ignores
