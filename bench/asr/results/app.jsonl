@@ -1,28 +1,28 @@
-{"text":"Ask Claude to open the BisprBlow works tree and run the build.","ms":281,"file":"c01.wav"}
-{"text":"I say Claude a lot so Claude code should never come out as Claude or Claude.","ms":100,"file":"c02.wav"}
-{"text":"Supabase webhook is failing on staging but not in prod.","ms":82,"file":"c03.wav"}
-{"text":"Open a pull request on GitHub and ping Christian on Slack when the CI\/CD run is green.","ms":97,"file":"c04.wav"}
-{"text":"Can you check this entry error in the middleware and see if it is the endpoint?","ms":89,"file":"c05.wav"}
-{"text":"BisprBlow should read what is already in the text box before it writes anything.","file":"c06.wav","ms":98}
-{"text":"We move the frontend from Vercel to railway and the backend still runs in modal.","ms":89,"file":"c07.wav"}
-{"text":"Run pnpm installed and npm run dev and open localhost on port 3000.","ms":100,"file":"c08.wav"}
-{"text":"The Docker file pins Postgres 16 and the Prisma migration runs before dbmate.","file":"c09.wav","ms":102}
-{"text":"BlueJay uses LiveKit and vapi for voice and 11 labs for the text speech.","ms":94,"file":"c10.wav"}
-{"text":"Add a playwright test that clicks the button and checks the JSON in the response.","ms":88,"file":"c11.wav"}
-{"text":"The Swift UiView uses AppKit underneath because the event tab needs it.","ms":96,"file":"c12.wav"}
-{"text":"Can you ask Anthropic whether Cloud supports this, or should we try Gemini or OpenAI?","file":"c13.wav","ms":99}
-{"text":"Put the Terraform config in the repo and make the Linter and Prettier happy.","file":"c14.wav","ms":88}
-{"text":"Hey Krishy, can you look at the linear ticket about the ClickHouse's dashboard?","ms":94,"file":"c15.wav"}
-{"text":"Parikh said the metronome invoices go out through Stripe on the first of the month.","ms":93,"file":"c16.wav"}
-{"text":"Write a regex that pulls the endname out of the YAML file and prints it.","file":"c17.wav","ms":98}
-{"text":"I think the coin model is fine for cleanup, but Whisper might be Apple on names.","ms":90,"file":"c18.wav"}
-{"text":"Open Xcode, then homebrew install Tmux, and set CSH as the default shell.","file":"c19.wav","ms":94}
-{"text":"The Figma file is in notion in the Cloudflare settings or in the markdown doc.","ms":88,"file":"c20.wav"}
-{"text":"Yes, I was thinking um we could actually no, let's just ship it today and see what breaks.","file":"c21.wav","ms":93}
-{"text":"Wait, not the staging one, the prod one. Sorry, the prod Supabase project.","ms":89,"file":"c22.wav"}
-{"text":"Okay, so the thing is I keep saying BisprBlow and it keeps writing something else and it's kind of driving me crazy.","ms":112,"file":"c23.wav"}
-{"text":"Send the invoice to finance it canceled the meeting on Thursday.","file":"c24.wav","ms":81}
-{"text":"What time is a demo with a Bluejay team tomorrow?","file":"c25.wav","ms":75}
-{"file":"l01.wav","ms":330,"text":"Okay, so here's the plan for today. First I want Claude to look at the transcription path in BisprBlow, because Apple's recognizer keeps mishearing names like Claude and Supabase. Then I want to bench a few newer models, maybe Parakeet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins on both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything."}
-{"file":"l02.wav","text":"So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the Swift Uiframe. Can you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet, just tell me when you what you find and we will decide together on Slack with Christian.","ms":316}
-{"file":"l03.wav","text":"I want to write a longer message to the team about the launch. We're going to ship the DMG on Friday and the GitHub release will have the notes. Vercel hosts the website, Cloudflare does a DNS and the data link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a developer ID, so please don't tell people to strip the quarantine flag. Thing in linear if something breaks and I'll look at the sentry dashboard first thing in the morning.","ms":341}
+{"text":"Ask Claude to open the BisprBlow works tree and run the build.","ms":219,"file":"c01.wav"}
+{"text":"I say Claude a lot so Claude code should never come out as Claude or Claude.","ms":114,"file":"c02.wav"}
+{"text":"Supabase webhook is failing on staging but not in prod.","ms":129,"file":"c03.wav"}
+{"file":"c04.wav","text":"Open a pull request on GitHub and ping Christian on Slack when the CI\/CD run is green.","ms":122}
+{"text":"Can you check this entry error in the middleware and see if it is the endpoint?","ms":110,"file":"c05.wav"}
+{"file":"c06.wav","text":"BisprBlow should read what is already in the text box before it writes anything.","ms":122}
+{"text":"We move the frontend from Vercel to railway and the backend still runs in modal.","ms":104,"file":"c07.wav"}
+{"file":"c08.wav","text":"Run pnpm installed and npm run dev and open localhost on port 3000.","ms":198}
+{"text":"The Docker file pins Postgres 16 and the Prisma migration runs before dbmate.","ms":114,"file":"c09.wav"}
+{"text":"BlueJay uses LiveKit and vapi for voice and 11 labs for the text speech.","ms":112,"file":"c10.wav"}
+{"text":"Add a playwright test that clicks the button and checks the JSON in the response.","ms":85,"file":"c11.wav"}
+{"text":"The Swift UiView uses AppKit underneath because the event tab needs it.","ms":97,"file":"c12.wav"}
+{"file":"c13.wav","text":"Can you ask Anthropic whether Cloud supports this, or should we try Gemini or OpenAI?","ms":128}
+{"text":"Put the Terraform config in the repo and make the Linter and Prettier happy.","ms":88,"file":"c14.wav"}
+{"text":"Hey Krishy, can you look at the linear ticket about the ClickHouse's dashboard?","ms":128,"file":"c15.wav"}
+{"file":"c16.wav","text":"Parikh said the metronome invoices go out through Stripe on the first of the month.","ms":89}
+{"text":"Write a regex that pulls the endname out of the YAML file and prints it.","ms":131,"file":"c17.wav"}
+{"text":"I think the coin model is fine for cleanup, but Whisper might be Apple on names.","ms":96,"file":"c18.wav"}
+{"file":"c19.wav","text":"Open Xcode, then homebrew install Tmux, and set CSH as the default shell.","ms":131}
+{"text":"The Figma file is in notion in the Cloudflare settings or in the markdown doc.","ms":91,"file":"c20.wav"}
+{"text":"Yes, I was thinking um we could actually no, let's just ship it today and see what breaks.","ms":106,"file":"c21.wav"}
+{"file":"c22.wav","text":"Wait, not the staging one, the prod one. Sorry, the prod Supabase project.","ms":93}
+{"text":"Okay, so the thing is I keep saying BisprBlow and it keeps writing something else and it's kind of driving me crazy.","ms":121,"file":"c23.wav"}
+{"text":"Send the invoice to finance it canceled the meeting on Thursday.","ms":86,"file":"c24.wav"}
+{"text":"What time is a demo with a Bluejay team tomorrow?","ms":75,"file":"c25.wav"}
+{"text":"Okay, so here's the plan for today. First I want Claude to look at the transcription path in BisprBlow, because Apple's recognizer keeps mishearing names like Claude and Supabase. Then I want to bench a few newer models, maybe Parakeet, maybe Whisper, and see which one is fastest on my Mac. If one of them wins on both speed and accuracy, we swap it in. If not, we keep Apple and fix the dictionary instead. Either way, I want the numbers before we change anything.","ms":786,"file":"l01.wav"}
+{"text":"So the bug report from yesterday was that the pill jumps when the dictation ends, and I think it is the panel resizing itself, not the Swift Uiframe. Can you open the pill demo file, run it with the left center anchor, and tell me how many points it moves? Then check the git log for the commit that changed the sizing options because I'm pretty sure that is where it started. Do not push anything yet, just tell me when you what you find and we will decide together on Slack with Christian.","ms":407,"file":"l02.wav"}
+{"file":"l03.wav","text":"I want to write a longer message to the team about the launch. We're going to ship the DMG on Friday and the GitHub release will have the notes. Vercel hosts the website, Cloudflare does a DNS and the data link points at the release page. If anyone sees Gatekeeper complain, that is expected until we have a developer ID, so please don't tell people to strip the quarantine flag. Thing in linear if something breaks and I'll look at the sentry dashboard first thing in the morning.","ms":285}
