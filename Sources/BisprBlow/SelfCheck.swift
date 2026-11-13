@@ -529,8 +529,8 @@ enum SelfCheck {
         precondition(result.2 == result.3, "incremental rescore \(result.2) differs from session.rescore \(result.3)")
     }
 
-    // The Learn prompt for a heard-as is offered only when the audio fits the term at least as well
-    // as the word the recognizer wrote. On the user's own clips (bench/asr, gitignored): a true
+    // The Learn prompt for a heard-as is offered only when the audio fits the term within 1 per
+    // token of the word the recognizer wrote. On the user's own clips (bench/asr, gitignored): a true
     // mishear must clear that bar, and a correct word changed to a term on purpose must not.
     private static func checkHeardAsEvidence() {
         let bench = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -544,13 +544,12 @@ enum SelfCheck {
         }
         let vocabulary = try! String(contentsOf: bench.appendingPathComponent("vocab.txt"), encoding: .utf8)
             .split(separator: "\n").map(String.init)
-        // (clip, word Parakeet wrote, term the user typed over it, whether the prompt is offered).
-        // Mishears first; Cloud, coin and CSH are mishears the audio cannot tell from a change of mind.
+        // (clip, word Parakeet wrote, term the user typed over it, whether it was a mishear). The
+        // mishears the audio cannot tell from a change of mind (Cloud, coin, CSH) are left out.
         let cases: [(String, String, String, Bool)] = [
             ("c04", "Christian", "Krishin", true), ("l02", "Christian", "Krishin", true),
             ("c05", "entry", "Sentry", true), ("c01", "works tree", "worktree", true),
             ("c09", "Docker file", "Dockerfile", true), ("c10", "11 labs", "ElevenLabs", true),
-            ("c13", "Cloud", "Claude", false), ("c18", "coin", "Qwen", false), ("c19", "CSH", "zsh", false),
             ("c18", "model", "Modal", false), ("c02", "code", "Xcode", false),
             ("c05", "error", "Terraform", false), ("c17", "Write", "Vite", false),
             ("l03", "strip", "Stripe", false), ("c23", "thing", "staging", false),
@@ -576,10 +575,23 @@ enum SelfCheck {
             }
             return out
         }
+        // Distance from the threshold, positive on the side each case belongs to. A change of mind
+        // with no evidence gets no prompt, which is the side it belongs to.
+        var closest = (mishear: Float.infinity, change: Float.infinity)
         for (c, score) in zip(cases, results) {
-            precondition(score.map(Parakeet.supports) == c.3, String(
-                format: "heard-as %@ %@ → %@: term %.2f, heard %.2f", c.0, c.1, c.2, score?.term ?? .nan, score?.heard ?? .nan))
+            let label = String(format: "heard-as %@ %@ → %@: term %.2f, heard %.2f",
+                               c.0, c.1, c.2, score?.term ?? .nan, score?.heard ?? .nan)
+            if c.3 {
+                guard let score else { preconditionFailure("\(label): no evidence for a mishear") }
+                precondition(Parakeet.supports(score), label)
+                closest.mishear = min(closest.mishear, score.term + 1 - score.heard)
+            } else if let score {
+                precondition(!Parakeet.supports(score), label)
+                closest.change = min(closest.change, score.heard - score.term - 1)
+            }
         }
+        print(String(format: "heard-as evidence: smallest margin %.2f over mishears, %.2f over changes of mind",
+                     closest.mishear, closest.change))
     }
 
     // The pill opens on the sliver you can see, and nothing else. `onHover` ignores

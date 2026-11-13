@@ -104,16 +104,15 @@ actor Parakeet {
     }
 
     // Whether the audio supports `term` where the recognizer wrote another word, which is a mishear
-    // rather than the user changing their mind: the term within 1 of the heard word, per token.
-    // Measured over 29 corrections on the bench clips (`checkHeardAsEvidence`): six true mishears
-    // at -0.33 and up, every deliberate change at -1.76 and below, so 1 sits in the gap. Three
-    // mishears score with the changes (CSH -1.07, Cloud -1.92, coin -3.49) and go unoffered, the
-    // recoverable direction: a Dictionary row still takes a heard-as.
+    // rather than the user changing their mind: the term within 1 of the heard word, per token. 1 is
+    // the gap between the true mishears and the deliberate changes on the bench clips (CLAUDE.md has
+    // the scores); a mishear that scores with the changes goes unoffered, the recoverable direction.
     static func supports(_ scores: (term: Float, heard: Float)) -> Bool { scores.term + 1 >= scores.heard }
 
     // How well the audio fits `term` and how well it fits `heard`, over where the recognizer wrote
-    // `heard`: the spotter's per-token log-probability of each. The occurrence most in the term's
-    // favour, or nil when `heard` is not in the timings.
+    // `heard`: the spotter's per-token log-probability of each. Nil unless `heard` occurs exactly
+    // once in the timings and the spotter finds both words there: a repeated word could be scored at
+    // the wrong occurrence, so it gets no prompt.
     func scores(of term: String, against heard: String, in evidence: Heard) async -> (term: Float, heard: Float)? {
         guard let ctc, evidence.frameDuration > 0 else { return nil }
         if tokenizer == nil {
@@ -151,19 +150,17 @@ actor Parakeet {
         // FluidAudio's 0.1s, not the session's 0.5s: at 0.5s the window reaches the next word, so
         // "Playwright test" fixed to "Playwright Playwright" found the term beside it and passed.
         let margin = ContextBiasingConstants.defaultMarginSeconds
-        var best: (term: Float, heard: Float)?
-        for span in spans {
-            let frames = max(0, Int((span.start - margin) / evidence.frameDuration))
-                ..< min(evidence.logProbs.count, Int(((span.end + margin) / evidence.frameDuration).rounded(.up)))
-            guard !frames.isEmpty else { continue }
-            let found = spotter.spotKeywordsFromLogProbs(
-                logProbs: Array(evidence.logProbs[frames]), frameDuration: evidence.frameDuration,
-                customVocabulary: vocabulary, minScore: -.greatestFiniteMagnitude).detections
-            let score = { (text: String) in found.filter { $0.term.text == text }.map(\.score).max() ?? -.infinity }
-            let pair = (term: score(term), heard: score(heard))
-            if best.map({ pair.term - pair.heard > $0.term - $0.heard }) ?? true { best = pair }
-        }
-        return best
+        guard spans.count == 1, let span = spans.first else { return nil }
+        let lo = max(0, Int((span.start - margin) / evidence.frameDuration))
+        let hi = min(evidence.logProbs.count, Int(((span.end + margin) / evidence.frameDuration).rounded(.up)))
+        guard lo < hi else { return nil }
+        let found = spotter.spotKeywordsFromLogProbs(
+            logProbs: Array(evidence.logProbs[lo..<hi]), frameDuration: evidence.frameDuration,
+            customVocabulary: vocabulary, minScore: -.greatestFiniteMagnitude).detections
+        let score = { (text: String) in found.filter { $0.term.text == text }.map(\.score).max() }
+        guard let termScore = score(term), let heardScore = score(heard), termScore.isFinite, heardScore.isFinite
+        else { return nil }
+        return (termScore, heardScore)
     }
 
     // What `CtcKeywordSpotter.spotKeywordsWithLogProbs` gives for `samples`, from the chunks

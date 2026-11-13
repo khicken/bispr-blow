@@ -639,7 +639,9 @@ changes (CSH → zsh -1.07, Cloud → Claude -1.92, coin → Qwen -3.49) and go 
 cannot tell them apart, and missing a prompt is the recoverable direction. The margin is 0.1s, not
 the session's 0.5s, because at 0.5s the window reached the next word: "Playwright test" with "test"
 changed to Playwright found the spoken Playwright beside it and passed. No Parakeet (the Apple
-fallback, or before it loads) or no dictionary means no evidence, so no prompt.
+fallback, or before it loads) or no dictionary means no evidence, so no prompt; so does a heard word
+the spotter cannot score (no finite score for either word), or one that occurs more than once in
+the dictation, since the wrong occurrence could be scored.
 
 `Parakeet.aliases` returns sorted lists, and that matters for speed: the boost session is rebuilt
 whenever the aliases change, and with a `Set`'s order every dictation looked like a change. That

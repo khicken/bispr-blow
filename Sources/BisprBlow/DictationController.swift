@@ -322,8 +322,6 @@ final class DictationController: ObservableObject {
     // owns, and doing that silently is how a dictionary starts respelling good words. Replayed over
     // history first for the same reason; the dictations still holding the mishear are the ones the
     // fix is for, so they are not evidence against it.
-    // `heard` is held by the watch's closure, so it goes when the watch settles: the next
-    // dictation, or the end of the window.
     private func watchForCorrection(to inserted: String, raw: String, heard evidence: Parakeet.Heard?) {
         CorrectionWatcher.watch(inserted: inserted) { [weak self] fix in
             let settings = AppSettings.shared
@@ -341,7 +339,7 @@ final class DictationController: ObservableObject {
                 else { return }
                 Task {
                     let scores = await Parakeet.shared.scores(of: term, against: heard, in: evidence)
-                    logLine("correction to a term: \(scores.map { "term=\($0.term) heard=\($0.heard)" } ?? "not in timings")")
+                    logLine("correction to a term: \(scores.map { "term=\($0.term) heard=\($0.heard)" } ?? "no evidence")")
                     guard let scores, Parakeet.supports(scores) else { return }
                     self?.showNotice("Hear “\(heard)” as \(term) next time?", for: 8,
                                      action: ("Learn", { settings.addHeardAs(heard, for: term) }))
