@@ -7,9 +7,9 @@ import SwiftUI
 // `Task`: `main()` on a `@main` type is MainActor-isolated, so a plain `Task` inherits that isolation
 // and can only run when the main thread yields — which the semaphore never lets it do. It deadlocks
 // outright and presents as a hung model with no log output.
-private final class ResultBox<V>: @unchecked Sendable { var value: V? }
+final class ResultBox<V>: @unchecked Sendable { var value: V? }
 
-private func awaitSync<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
+func awaitSync<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
     let box = ResultBox<T>()
     let done = DispatchSemaphore(value: 0)
     Task.detached { box.value = await body(); done.signal() }
@@ -64,7 +64,19 @@ enum Main {
                           (try? file.read(into: buffer)) != nil
                     else { print("FAIL — cannot read \(path)"); exit(1) }
                     await transcriber.startSession()
-                    transcriber.feed(buffer)
+                    // In 100ms buffers, as capture delivers them, so the work done during speech
+                    // runs during "speech" here too and `ms` is the wait after release.
+                    let step = AVAudioFrameCount(buffer.format.sampleRate / 10)
+                    for offset in stride(from: 0, to: Int(buffer.frameLength), by: Int(step)) {
+                        let slice = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: step)!
+                        slice.frameLength = min(step, buffer.frameLength - AVAudioFrameCount(offset))
+                        for channel in 0..<Int(buffer.format.channelCount) {
+                            slice.floatChannelData![channel].update(
+                                from: buffer.floatChannelData![channel] + offset, count: Int(slice.frameLength))
+                        }
+                        transcriber.feed(slice)
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
                     let start = Date()
                     let text = await transcriber.finishSession() ?? "FAILED"
                     let line: [String: Any] = ["file": (path as NSString).lastPathComponent, "text": text,

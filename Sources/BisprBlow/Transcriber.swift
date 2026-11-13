@@ -1,10 +1,9 @@
 import AVFoundation
-import FluidAudio
 import Speech
 
-// On-device transcription. Primary path: Parakeet (see Parakeet.swift), which records the clip and
-// transcribes it on release. Until its models are loaded, or if they fail to: the macOS 26
-// `SpeechAnalyzer` + `SpeechTranscriber` API, and behind that `SFSpeechRecognizer`.
+// On-device transcription. Primary path: Parakeet (see Parakeet.swift), which prepares the clip
+// during speech and transcribes it on release. Until its models are loaded, or if they fail to: the
+// macOS 26 `SpeechAnalyzer` + `SpeechTranscriber` API, and behind that `SFSpeechRecognizer`.
 final class Transcriber {
     enum TranscriberError: Error, LocalizedError {
         case localeUnsupported
@@ -35,11 +34,9 @@ final class Transcriber {
     private var sfLatest = ""
     private var usingFallback = false
 
-    // Parakeet path. `feed` runs on the capture queue, so the audio sits behind a lock. One segment
-    // per sample rate, so a device change mid-dictation does not resample earlier audio wrongly.
-    private var usingParakeet = false
-    private let sampleLock = NSLock()
-    private var segments: [(rate: Double, samples: [Float])] = []
+    // Parakeet path. Left in place after finish or cancel: `feed` reads it on the capture queue, so
+    // only `startSession`, which runs before capture starts, replaces it.
+    private var parakeet: ParakeetStream?
 
     // Drops the ellipsis the recognizer writes where the speaker paused: punctuation it invented,
     // not a word anybody said, and it does two kinds of damage. It reaches the cursor ("again to
@@ -92,9 +89,10 @@ final class Transcriber {
         volatileText = ""
         sfLatest = ""
         usingFallback = false
-        sampleLock.withLock { segments = [] }
-        usingParakeet = await Parakeet.shared.isReady
-        if usingParakeet { return }
+        // Left by a dictation whose cancel was skipped because this one had already started.
+        await parakeet?.cancel()
+        parakeet = await Parakeet.shared.isReady ? ParakeetStream() : nil
+        if parakeet != nil { return }
         do {
             try await startAnalyzerSession()
         } catch {
@@ -105,16 +103,8 @@ final class Transcriber {
     }
 
     func feed(_ buffer: AVAudioPCMBuffer) {
-        if usingParakeet {
-            // Kept at the device's rate and resampled once on release: resampling buffer by buffer
-            // restarts the filter at every boundary. Channel 0 only, as `AudioRecorder.measure` does.
-            guard let channel = buffer.floatChannelData?[0] else { return }
-            let chunk = UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))
-            let rate = buffer.format.sampleRate
-            sampleLock.withLock {
-                if segments.last?.rate != rate { segments.append((rate, [])) }
-                segments[segments.count - 1].samples.append(contentsOf: chunk)
-            }
+        if let parakeet {
+            parakeet.append(buffer)
             return
         }
         if usingFallback {
@@ -161,7 +151,7 @@ final class Transcriber {
     // Stops the session and returns the full transcript. Nil only when Parakeet failed with audio
     // in hand, which the caller must report: those words cannot be recovered.
     func finishSession() async -> String? {
-        if usingParakeet { return await finishParakeetSession() }
+        if let parakeet { return await finishParakeetSession(parakeet) }
         if usingFallback { return await finishSFSession() }
 
         inputBuilder?.finish()
@@ -176,8 +166,8 @@ final class Transcriber {
     }
 
     func cancelSession() async {
-        if usingParakeet {
-            sampleLock.withLock { segments = [] }
+        if let parakeet {
+            await parakeet.cancel()
             return
         }
         if usingFallback {
@@ -197,20 +187,12 @@ final class Transcriber {
 
     // The dictionary only, not `contextTerms`: that is what was measured, and every unspoken term
     // in the list is one more chance to replace a word that was heard right.
-    private func finishParakeetSession() async -> String? {
-        let captured = sampleLock.withLock { defer { segments = [] }; return segments }
-        guard !captured.isEmpty else { return "" }
-        do {
-            let converter = AudioConverter()
-            let audio = try captured.flatMap {
-                $0.rate == 16_000 ? $0.samples : try converter.resample($0.samples, from: $0.rate)
-            }
-            let (vocabulary, heardAs) = await MainActor.run { (AppSettings.shared.vocabulary, AppSettings.shared.heardAs) }
-            return await Parakeet.shared.transcribe(audio, vocabulary: vocabulary, heardAs: heardAs).map(Self.withoutPauseMarks)
-        } catch {
-            logLine("parakeet resample failed: \(error)")
-            return nil
-        }
+    private func finishParakeetSession(_ stream: ParakeetStream) async -> String? {
+        guard let (audio, ctc) = await stream.finish() else { return nil }
+        guard !audio.isEmpty else { return "" }
+        let (vocabulary, heardAs) = await MainActor.run { (AppSettings.shared.vocabulary, AppSettings.shared.heardAs) }
+        return await Parakeet.shared.transcribe(audio, ctc: ctc, vocabulary: vocabulary, heardAs: heardAs)
+            .map(Self.withoutPauseMarks)
     }
 
     // MARK: - SpeechAnalyzer path

@@ -619,10 +619,20 @@ right word for another.
 whenever the aliases change, and with a `Set`'s order every dictation looked like a change. That
 cost about 70ms per dictation (88ms → 158ms median) until it was sorted.
 
-**Batch, not streaming.** Audio is kept at the device rate during the dictation and resampled once on
-release (per-buffer resampling restarts the filter at every boundary), then transcribed whole. That
-is still faster than Apple finishing its stream. Nemotron streaming and Moonshine stream, and both
-lost on accuracy.
+**Batch recognition, with the preparation done during speech (`ParakeetStream`).** Parakeet still
+transcribes the whole clip on release; Nemotron streaming and Moonshine stream, and both lost on
+accuracy. What moved is the work around it, and the text is bit-identical to doing it all on release.
+The resample to 16kHz runs as audio arrives, through one converter per dictation that carries its
+filter state across buffers (a converter per buffer restarts the filter at every boundary, which is
+what made this look impossible), and a sample-rate change starts a new one. The dictionary's CTC pass
+runs on FluidAudio's own 15 s windows (2 s overlap) as each one fills, so release computes only the
+last window and merges. That copies two FluidAudio internals, the overlap and `mergeOverlapFrame`;
+`--self-check` feeds a `say` clip in 100ms buffers and fails if the log-probs or the rescorer's
+replacements differ from `VocabularyBoostingSession.rescore` over the whole clip. Measured with
+`--transcribe` (which now feeds 100ms buffers in real time) over the 48kHz clips, wait after release:
+20 s dictations ~400ms → ~280-350ms, 60 s 1035ms → 550ms, and under 15 s unchanged (~120ms), since a
+short clip is one CTC window and that window is the release one. Text identical on all 29 clips.
+Cancel waits for the in-flight CTC window, so no work outlives its dictation.
 
 **Apple stays as the fallback, and it is live for the first ~40s after an install.** `Parakeet.load`
 downloads about 700MB into `~/Library/Application Support/FluidAudio/Models` on first run, then
