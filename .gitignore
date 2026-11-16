@@ -1,6 +1,6 @@
 .build/
 .DS_Store
-AppIcon.iconset/   # make-icon.swift scratch, removed on success
+AppIcon.iconset/
 bench/__pycache__/
 
 # ASR bench: local venvs, model caches, recordings
