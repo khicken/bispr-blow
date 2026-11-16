@@ -1,6 +1,6 @@
 .build/
 .DS_Store
-icon-1024.png   # regenerate with `swift make-icon.swift`
+AppIcon.iconset/   # make-icon.swift scratch, removed on success
 bench/__pycache__/
 
 # ASR bench: local venvs, model caches, recordings
