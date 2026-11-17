@@ -1,4 +1,4 @@
-import AuthenticationServices
+import AppKit
 import Foundation
 import Security
 
@@ -35,10 +35,14 @@ final class CloudClient: ObservableObject {
         await refreshOrg()
     }
 
-    // Google, in a system browser sheet: Supabase redirects to Google and then to
+    // Google, in the user's default browser: Supabase redirects to Google and then to
     // `bisprblow://auth-callback` with the tokens in the URL fragment, so nothing here posts
     // credentials. Requires a Google client configured in the project and this callback in its
     // redirect allow-list; until then Supabase answers with an error in its own words.
+    //
+    // Not `ASWebAuthenticationSession`, which opens Safari for any default browser that does not
+    // adopt its API. The callback returns through `application(_:open:)`, which calls
+    // `finishGoogle`. A closed tab sends nothing back, so a second click supersedes the wait.
     func signInWithGoogle() async throws {
         guard let base = CloudConfig.url else { throw CloudError(message: "Accounts aren't set up.") }
         var components = URLComponents(
@@ -47,17 +51,40 @@ final class CloudClient: ObservableObject {
             .init(name: "provider", value: "google"),
             .init(name: "redirect_to", value: CloudConfig.callbackURL),
         ]
-        // Asked before the sheet opens, because an unconfigured provider answers this URL with a
+        // Asked before the browser opens, because an unconfigured provider answers this URL with a
         // JSON error PAGE rather than a redirect, so the user would get a browser window full of
         // `{"code":400,...}`. Measured against the live project: "Unsupported provider: provider is
         // not enabled".
-        try await checkProviderEnabled(components.url!)
-        try await signIn(callback: try await WebAuth.run(url: components.url!,
-                                                         scheme: CloudConfig.callbackScheme))
+        let url = components.url!
+        try await checkProviderEnabled(url)
+        if let superseded = googleCallback {
+            googleCallback = nil
+            superseded.resume(throwing: CancellationError())
+        }
+        let callback = try await withCheckedThrowingContinuation { continuation in
+            googleCallback = continuation
+            guard NSWorkspace.shared.open(url) else {
+                googleCallback = nil
+                continuation.resume(throwing: CloudError(
+                    message: "Couldn't open a browser for Google sign-in."))
+                return
+            }
+        }
+        try await signIn(callback: callback)
+    }
+
+    private var googleCallback: CheckedContinuation<URL, Error>?
+
+    // True when a Google sign-in was waiting for this callback. False means it is an email link.
+    func finishGoogle(_ callback: URL) -> Bool {
+        guard let waiting = googleCallback else { return false }
+        googleCallback = nil
+        waiting.resume(returning: callback)
+        return true
     }
 
     // A `bisprblow://auth-callback` URL becomes a session. Two things arrive here: the tail of the
-    // Google sheet, and the app opened by the link in a sign-in email. One path for both.
+    // Google browser tab, and the app opened by the link in a sign-in email. One path for both.
     func signIn(callback: URL) async throws {
         let tokens = try Self.tokens(fromCallback: callback)
         let who = try await user(accessToken: tokens.accessToken)
@@ -376,54 +403,5 @@ private enum Keychain {
 
     static func delete() {
         SecItemDelete(query as CFDictionary)
-    }
-}
-
-// `ASWebAuthenticationSession` as one `await`. The session has to outlive the call that starts it
-// or the sheet closes immediately, and its delegate is a separate object, so both are held here
-// until the callback lands. `prefersEphemeralWebBrowserSession` is false on purpose: a signed-in
-// Google in Safari is the difference between a click and typing a password.
-@MainActor
-private final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
-    private static var live: WebAuth?
-
-    static func run(url: URL, scheme: String) async throws -> URL {
-        let auth = WebAuth()
-        live = auth
-        defer { live = nil }
-        return try await auth.start(url: url, scheme: scheme)
-    }
-
-    private func start(url: URL, scheme: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: url, callbackURLScheme: scheme
-            ) { callback, error in
-                if let callback {
-                    continuation.resume(returning: callback)
-                } else if let error = error as? ASWebAuthenticationSessionError,
-                          error.code == .canceledLogin {
-                    continuation.resume(throwing: CancellationError())
-                } else {
-                    continuation.resume(throwing: CloudError(
-                        message: error?.localizedDescription ?? "Google sign-in didn't finish."))
-                }
-            }
-            session.presentationContextProvider = self
-            self.session = session
-            guard session.start() else {
-                continuation.resume(throwing: CloudError(
-                    message: "Couldn't open a browser for Google sign-in."))
-                return
-            }
-        }
-    }
-
-    private var session: ASWebAuthenticationSession?
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // The dashboard window when it is open. An accessory app can have no window at all, and
-        // `ASPresentationAnchor()` is the documented "no particular window" anchor.
-        NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible } ?? ASPresentationAnchor()
     }
 }

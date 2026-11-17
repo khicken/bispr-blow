@@ -484,13 +484,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    // The sign-in link in the emailed code lands here — `bisprblow://auth-callback` with the tokens
-    // in the fragment (registered via CFBundleURLTypes). The Google sheet does not:
-    // `ASWebAuthenticationSession` intercepts its own callback. A failure shows the dashboard
-    // anyway, since an expired link has to say so somewhere.
+    // Both sign-in callbacks land here — `bisprblow://auth-callback` with the tokens in the
+    // fragment (registered via CFBundleURLTypes). Google's goes back to the waiting
+    // `signInWithGoogle`, which shows its own errors. An email link has no one waiting, so a
+    // failure shows the dashboard anyway, since an expired link has to say so somewhere.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let callback = urls.first(where: { $0.scheme == CloudConfig.callbackScheme })
         else { return }
+        if CloudClient.shared.finishGoogle(callback) {
+            NSApp.activate()
+            return
+        }
         dashboard.show(.team)
         Task { @MainActor in
             do { try await CloudClient.shared.signIn(callback: callback) }

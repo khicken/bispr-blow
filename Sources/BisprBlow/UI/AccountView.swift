@@ -324,6 +324,7 @@ struct SignInView: View {
     @State private var code = ""
     @State private var codeSent = false
     @State private var busy: Action?
+    @State private var runID = 0
     @State private var note: String?
 
     private enum Action { case email, google }
@@ -353,7 +354,7 @@ struct SignInView: View {
                     BusyLabel(title: codeSent ? "Sign in" : "Email me a code", busy: busy == .email)
                 }
                 .buttonStyle(CapsuleButtonStyle())
-                .disabled(busy != nil || trimmedEmail.isEmpty
+                .disabled(busy == .email || trimmedEmail.isEmpty
                           || (codeSent && code.trimmingCharacters(in: .whitespaces).isEmpty))
             }
             if codeSent {
@@ -376,7 +377,7 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(CapsuleButtonStyle(filled: false))
-            .disabled(busy != nil)
+            .disabled(busy == .email)
             if let note {
                 Text(note)
                     .font(.bj(11.5))
@@ -391,7 +392,7 @@ struct SignInView: View {
     }
 
     private func submit() {
-        guard busy == nil, !trimmedEmail.isEmpty else { return }
+        guard busy != .email, !trimmedEmail.isEmpty else { return }
         run(.email) {
             if codeSent {
                 try await cloud.signIn(email: trimmedEmail,
@@ -405,20 +406,24 @@ struct SignInView: View {
         }
     }
 
+    // Not blocked by a Google wait: a closed tab never reports back, so clicking again restarts it.
     private func google() {
-        guard busy == nil else { return }
+        guard busy != .email else { return }
         run(.google) { try await cloud.signInWithGoogle() }
     }
 
-    // Closing the Google sheet is a decision, not a failure, so it leaves no red line behind.
+    // A Google wait can outlive later runs (a second click, or an email sign-in meanwhile), so only
+    // the newest run clears `busy`. A superseded wait is cancelled, which is not an error.
     private func run(_ action: Action, _ work: @escaping () async throws -> Void) {
+        runID += 1
+        let id = runID
         busy = action
         note = nil
         Task { @MainActor in
             do { try await work() }
             catch is CancellationError {}
             catch { note = error.localizedDescription }
-            busy = nil
+            if runID == id { busy = nil }
         }
     }
 
