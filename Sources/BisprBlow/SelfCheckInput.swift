@@ -19,7 +19,7 @@ extension SelfCheck {
         // The lit target is the landing spot, so a point inside a zone must be near its landing.
         precondition(Anchor.leftCentre.zone(in: screen)
             .contains(NSPoint(x: 60, y: 440)))
-        precondition(Anchor.leftCentre.landing(in: screen).size == CGSize(width: 48, height: 122))
+        precondition(Anchor.leftCentre.landing(in: screen).size == CGSize(width: 48, height: PillView.idleWidth + 12))
         precondition(Anchor.leftCentre.origin(size: pill, in: screen) == NSPoint(x: 4, y: 415))
         precondition(Anchor.rightCentre.origin(size: pill, in: screen) == NSPoint(x: 1226, y: 415))
         precondition(Anchor.bottomCentre.origin(size: pill, in: screen) == NSPoint(x: 615, y: 0))

@@ -13,7 +13,10 @@ final class DictationController: ObservableObject {
         case processing
     }
 
-    @Published private(set) var state: State = .idle
+    @Published private(set) var state: State = .idle {
+        // Ends an annotation however its recording ended: with text, cancelled, or silent.
+        didSet { if state == .idle, oldValue != .idle, annotating { Task { await finishAnnotation() } } }
+    }
     // Mic level for the pill's wave, ~43 a second while recording. A subject, not @Published, so
     // views that observe the controller for its state do not redraw at that rate.
     let levels = PassthroughSubject<Float, Never>()
@@ -27,6 +30,9 @@ final class DictationController: ObservableObject {
     // Device name flashed on the pill — only when the input device changed since last time.
     // The current device is always visible in Settings.
     @Published private(set) var micFlash: String?
+    // On while the pill's annotate button is: dictations become notes instead of being inserted.
+    @Published private(set) var annotating = false
+    private let annotator = Annotator()
 
     private var axPollTimer: Timer?
 
@@ -49,6 +55,7 @@ final class DictationController: ObservableObject {
     private var pendingTreeClose: (pid: pid_t, work: DispatchWorkItem)?
 
     func start() {
+        watchMeetings()
         monitor.onStart = { [weak self] action in
             Task { @MainActor in self?.beginRecording(action) }
         }
@@ -103,6 +110,91 @@ final class DictationController: ObservableObject {
     // Stop button on the pill during a hands-free session.
     func stopHandsFree() {
         monitor.endLockedSession()
+    }
+
+    @Published private(set) var takingNotes = false
+    private let noteTaker = NoteTaker()
+
+    // The meeting app seen on the mic, how many 3s polls it has been gone, and whether the current
+    // notes began inside it (only those end on their own; a note started by hand runs until stopped).
+    private var meetingApp: String?
+    private var meetingGone = 0
+    private var notesInMeeting = false
+    private var meetingTimer: Timer?
+
+    // Offers notes when a meeting starts and ends them when it does. ~45s of no mic use counts as
+    // leaving, so muting in a browser call does not cut the notes short.
+    func watchMeetings() {
+        meetingTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if MeetingDetector.active() != nil {
+                    self.meetingGone = 0
+                    if self.meetingApp == nil {
+                        self.meetingApp = MeetingDetector.active()
+                        if !self.takingNotes {
+                            self.showNotice("Meeting detected", for: 20, action: ("Take notes", { [weak self] in self?.toggleNotes {} }))
+                        }
+                    }
+                } else if self.meetingApp != nil {
+                    self.meetingGone += 1
+                    guard self.meetingGone >= 15 else { return }
+                    self.meetingApp = nil
+                    if self.takingNotes, self.notesInMeeting { self.toggleNotes {}; self.showNotice("Meeting ended, notes saved") }
+                }
+            }
+        }
+    }
+
+    // Pill button: records the call (you on the mic, everyone else on system audio) until pressed again.
+    func toggleNotes(onSaved: @escaping () -> Void) {
+        Task {
+            if takingNotes {
+                takingNotes = false
+                guard await noteTaker.stop() != nil else { return showNotice("Notes failed") }
+                NotificationCenter.default.post(name: .notesSaved, object: nil)
+                onSaved()
+            } else if await noteTaker.start() {
+                takingNotes = true
+                notesInMeeting = meetingApp != nil
+                showNotice("Taking notes")
+            } else {
+                showNotice("Allow Screen Recording", for: 6)
+            }
+        }
+    }
+
+    // Pill button: an annotation is one hands-free recording with the screen captured alongside it.
+    // The recording's stop button ends it, and `state` going idle hands it over.
+    func toggleAnnotate() {
+        guard state == .idle, !annotating else { return }
+        guard annotator.start() else {
+            showNotice("Allow Screen Recording", for: 6)
+            return
+        }
+        annotating = true
+        startHandsFree()
+    }
+
+    // Copies the annotation, and pastes it too when the app in front is where an agent takes input;
+    // anywhere else a paste would land in the page being annotated.
+    private func finishAnnotation() async {
+        annotating = false
+        guard let markdown = await annotator.finish(cleaner: cleaner) else {
+            showNotice("Nothing said")
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(markdown, forType: .string)
+        let front = ContextDetector.current()
+        let agentHost = front.category == .coding
+            || ["anthropic", "openai", "cmux"].contains { front.bundleID.lowercased().contains($0) }
+        // The clipboard already holds the annotation, so the restore after the paste keeps it there.
+        if agentHost, TextInserter.insert(markdown) {
+            showNotice("Pasted")
+        } else {
+            showNotice("Copied, ⌘V to paste")
+        }
     }
 
     // Pill button: start a hands-free dictation into the focused app.
@@ -248,7 +340,10 @@ final class DictationController: ObservableObject {
             guard self.sessionGeneration == generation else { return }
             if !cleaned.isEmpty {
                 Self.playSound(Self.endSound)
-                if TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
+                if self.annotating {
+                    self.annotator.add(cleaned, from: self.recordingStartedAt, to: released,
+                                       place: [context.appName, context.windowTitle].filter { !$0.isEmpty }.joined(separator: " · "))
+                } else if TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
                     self.watchForCorrection(to: cleaned, raw: raw, heard: heard)
                 } else {
                     self.showNotice("Copied. Press ⌘V to paste")
@@ -303,8 +398,12 @@ final class DictationController: ObservableObject {
     // Held as instances because `NSSound(named:)` reads from disk on first use and the start cue
     // fires on the pre-mic path; `preloadSounds` pays that at launch. `stop()` before `play()`
     // because a reused instance ignores `play()` while still playing.
-    private static let startSound = NSSound(named: "Purr")
-    private static let endSound = NSSound(named: "Pop")
+    // Wispr Flow's own cues when it is installed, read from its bundle rather than shipped here.
+    private static let wisprSounds = "/Applications/Wispr Flow.app/Contents/Resources/assets/sounds/"
+    private static let startSound = NSSound(contentsOfFile: wisprSounds + "dictation-start.wav", byReference: true)
+        ?? NSSound(named: "Purr")
+    private static let endSound = NSSound(contentsOfFile: wisprSounds + "dictation-stop.wav", byReference: true)
+        ?? NSSound(named: "Pop")
 
     static func preloadSounds() {
         _ = startSound

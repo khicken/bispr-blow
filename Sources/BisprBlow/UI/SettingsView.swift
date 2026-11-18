@@ -99,6 +99,18 @@ struct SettingsView: View {
                           isOn: $settings.endWithPeriod)
             }
 
+            // Right-click a button on the bar to move it; this is where a removed one comes back.
+            settingsGroup("Bar buttons", padding: 5) {
+                ForEach(PillButton.allCases, id: \.self) { button in
+                    ToggleRow(button.name, help: "Right-click it on the bar to move it.", isOn: Binding(
+                        get: { settings.pillButtons.contains(button) },
+                        set: { on in
+                            if on { settings.pillButtons.append(button) }
+                            else if settings.pillButtons.count > 1 { settings.pillButtons.removeAll { $0 == button } }
+                        }))
+                }
+            }
+
             // The things the app does when you are not dictating. Wispr Flow splits these across
             // System and Notifications; there are four of them, so they are one card.
             settingsGroup("App", padding: 5) {

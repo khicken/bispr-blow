@@ -107,6 +107,7 @@ struct ToastView: View {
 
     // A notice is something the user needs; a mic change is something they might like to know.
     private var message: String? {
+        if let label = model.hoverLabel { return label }
         if let notice = controller.notice, !notice.isEmpty { return notice }
         if let mic = controller.micFlash, !mic.isEmpty { return mic }
         return nil
@@ -116,13 +117,13 @@ struct ToastView: View {
         VStack {
             if let message {
                 HStack(spacing: 6) {
-                    if controller.notice == nil {
+                    if message == controller.micFlash {
                         Image(systemName: "mic.fill")
                             .font(.bj(9, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Text(message)
-                        .font(.bj(11, weight: .medium))
+                        .font(.bj(13, weight: .medium))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                     if let action = controller.noticeAction {
@@ -136,8 +137,8 @@ struct ToastView: View {
                             .handCursor()
                     }
                 }
-                .padding(.horizontal, 12)
-                .frame(height: 26)
+                .padding(.horizontal, 14)
+                .frame(height: 30)
                 .background(
                     Capsule().fill(Theme.pillBackground)
                         .shadow(color: .black.opacity(0.3), radius: 4, y: 1)

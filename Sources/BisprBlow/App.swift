@@ -24,6 +24,32 @@ enum Main {
             SelfCheck.run()
             return
         }
+        // Records call notes for 20 seconds and prints the transcript. Play a video or speak during it.
+        // Launch with `open -n BisprBlow.app --args --notes-check` so Screen Recording trusts it.
+        if CommandLine.arguments.contains("--notes-check") {
+            let notes = NoteTaker()
+            guard awaitSync({ await notes.start() }) else { logLine("notes-check: start failed"); exit(1) }
+            Thread.sleep(forTimeInterval: 20)
+            let file = awaitSync { await notes.stop() }
+            logLine("notes-check: \(file.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "no file")")
+            return
+        }
+        // Six seconds of annotate wherever the pointer is, then logs the markdown with its crops and
+        // element names. Launched the same way as --notes-check.
+        if CommandLine.arguments.contains("--annotate-check") {
+            MainActor.assumeIsolated {
+                let annotator = Annotator()
+                guard annotator.start() else { logLine("annotate-check: no screen recording"); exit(1) }
+                let from = Date()
+                RunLoop.main.run(until: Date().addingTimeInterval(6))
+                annotator.add("check", from: from, to: Date(), place: "")
+                var md: String??
+                Task { md = await annotator.finish(cleaner: LLMCleaner()) }
+                while md == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+                for line in (md! ?? "nothing").split(separator: "\n") { logLine("annotate-check: \(line)") }
+            }
+            return
+        }
         // Drives the real `AudioRecorder` for two seconds and reports what arrived. A dictation
         // needs the keyboard, so before this the capture path could only be tested by asking the
         // user — which is how an input-only mic capturing nothing shipped twice. Exercises the

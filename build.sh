@@ -43,6 +43,8 @@ APP=.build/BisprBlow.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/BisprBlow "$APP/Contents/MacOS/"
+# Debug symbols are 40% of the binary and nothing in the bundle reads them.
+strip -x "$APP/Contents/MacOS/BisprBlow"
 # Not beside the executable in the bundle: codesign treats any file in MacOS/ as nested code and
 # refuses to seal a metallib. MLX's SwiftPM search path (Resources/mlx-swift_Cmlx.bundle/default
 # .metallib) is sealed as a resource instead; the CLI binary keeps the colocated copy.
