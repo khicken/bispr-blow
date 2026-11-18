@@ -21,7 +21,10 @@ enum WisprImport {
     static func learnedWords(alongside vocabulary: [String]) -> [String]? {
         var db: OpaquePointer?
         defer { sqlite3_close(db) }
-        guard sqlite3_open_v2(database.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+        // immutable: a plain read-only open of Wispr's database failed with SQLITE_CANTOPEN on a
+        // machine where the immutable open of the same file succeeds.
+        guard sqlite3_open_v2(database.absoluteString + "?immutable=1", &db,
+                              SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK,
               let words = rows(db, """
                   SELECT phrase FROM Dictionary
                   WHERE isDeleted = 0 AND isSnippet = 0 AND coalesce(replacement, '') = ''
