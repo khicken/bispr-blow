@@ -14,6 +14,9 @@ final class PillModel: ObservableObject {
     var onDrawnRect: ((CGRect) -> Void)?
     // Which edge the pill is parked on. Drives the 90° turn on the side anchors.
     @Published var anchor: RecordingPillController.Anchor = .bottomCentre
+    // The name of the pill button under the pointer, shown by the toast. A `.help` tooltip never
+    // appears here: the pill is a non-activating panel, and AppKit only shows tooltips for the active app.
+    @Published var hoverLabel: String?
     // Screen coordinates of the pointer while dragging the pill to a new place.
     var onDragChanged: ((NSPoint) -> Void)?
     var onDragEnded: ((NSPoint) -> Void)?
@@ -37,6 +40,21 @@ final class PillModel: ObservableObject {
     }
 }
 
+// The buttons the pill can carry. Raw values are what `AppSettings.pillButtons` stores.
+enum PillButton: String, CaseIterable {
+    case dictate, home, annotate, notes, history
+
+    var name: String {
+        switch self {
+        case .dictate: "Dictate"
+        case .home: "Home"
+        case .annotate: "Annotate"
+        case .notes: "Notes"
+        case .history: "History"
+        }
+    }
+}
+
 // MARK: - SwiftUI pill
 
 struct PillView: View {
@@ -49,6 +67,8 @@ struct PillView: View {
     @State private var waveSamples: [Float] = Array(repeating: 0, count: PillView.barCount)
 
     static let barCount = 14
+    // GitHub's success green: on, not alarming.
+    static let notesGreen = Color(red: 0.18, green: 0.63, blue: 0.26)
 
     init(model: PillModel) {
         self.model = model
@@ -64,11 +84,16 @@ struct PillView: View {
     // a hover-sized panel collapses under a stationary cursor. The idle panel is therefore always
     // big enough for the hover row, and `PillHitRegion` narrows the hover and drag target back down
     // to the capsule being drawn.
+    // 26pt circles 7pt apart, 9pt padding each side.
+    static var idleWidth: CGFloat {
+        let n = CGFloat(AppSettings.shared.pillButtons.count)
+        return n * 26 + (n - 1) * 7 + 18
+    }
+
     static func size(for state: DictationController.State) -> CGSize {
         let content: CGSize = switch state {
         case .idle:
-            // 3 × 26pt circles + 2 × 7pt spacing + 9pt padding each side.
-            CGSize(width: 110, height: 36)
+            CGSize(width: idleWidth, height: 36)
         case .recording(let locked):
             // 14 bars × 2.5pt + 13 × 2.5pt spacing + 13pt padding each side, plus the stop button.
             CGSize(width: locked ? 125.5 : 93.5, height: 28)
@@ -155,7 +180,7 @@ struct PillView: View {
     // one thing that table ignores — hover, which changes what is drawn, not what the panel claims.
     private var capsuleSize: CGSize {
         switch controller.state {
-        case .idle: hovering ? CGSize(width: 110, height: 36) : CGSize(width: 42, height: 9)
+        case .idle: hovering ? CGSize(width: Self.idleWidth, height: 36) : CGSize(width: 42, height: 9)
         case .recording, .processing: box
         }
     }
@@ -195,6 +220,10 @@ struct PillView: View {
                 hovering = hitRegion.path(in: CGRect(origin: .zero, size: box)).contains(point)
             }
             .padding(Self.margin)
+            // The buttons vanish when the pill collapses or starts recording, so their own
+            // hover-out never comes and the label would stay up.
+            .onChange(of: hovering) { _, now in if !now { model.hoverLabel = nil } }
+            .onChange(of: controller.state) { model.hoverLabel = nil }
     }
 
     // What is drawn, what can be grabbed, and what opens the pill — one shape, because they were
@@ -234,6 +263,8 @@ struct PillView: View {
     private func capsule(_ content: some View) -> some View {
         content.background(
             Capsule().fill(Theme.pillBackground)
+                // A hairline so the resting sliver shows on a dark window as well as a light one.
+                .overlay(Capsule().strokeBorder(controller.takingNotes ? Self.notesGreen : .white.opacity(0.35), lineWidth: 1))
                 // Fits inside `margin`. A shadow wider than the panel gets clipped by the window
                 // edge, and a clipped gaussian reads as a translucent rectangle around the pill.
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
@@ -243,18 +274,39 @@ struct PillView: View {
     // The glyphs counter-rotate: the bar turns 90° on a side edge, but an icon lying on its side is
     // wrong to look at. The capsule and the waveform still turn with the bar.
     private var hoverButtons: some View {
+        HStack(spacing: 7) {
+            ForEach(settings.pillButtons, id: \.self) { button in
+                pillButton(button)
+                    .contextMenu {
+                        let order = settings.pillButtons
+                        let i = order.firstIndex(of: button) ?? 0
+                        Button("Move Left") { settings.pillButtons.swapAt(i, i - 1) }.disabled(i == 0)
+                        Button("Move Right") { settings.pillButtons.swapAt(i, i + 1) }.disabled(i == order.count - 1)
+                        Divider()
+                        Button("Remove from Bar") { settings.pillButtons.remove(at: i) }.disabled(order.count == 1)
+                    }
+            }
+        }
+        .padding(.horizontal, 9)
+        // The `.idle` row in `size(for:)`. Explicit, so the overlay keeps its natural size instead
+        // of being squashed into the 42x9 sliver on the way in.
+        .frame(width: Self.idleWidth, height: 36)
+    }
+
+    @ViewBuilder
+    private func pillButton(_ button: PillButton) -> some View {
         let upright = -model.anchor.rotation
-        return HStack(spacing: 7) {
-            PillCircleButton(help: AppSettings.shared.holdPhrase
-                .map { "Dictate hands-free (or \($0.prefix(1).lowercased() + $0.dropFirst()))" }
-                ?? "Dictate hands-free", counterRotation: upright) {
+        switch button {
+        case .dictate:
+            PillCircleButton(model: model, help: button.name, counterRotation: upright) {
                 model.tapped { controller.startHandsFree() }
             } label: {
                 Image(systemName: "mic.fill")
                     .font(.bj(11, weight: .medium))
                     .foregroundStyle(.white)
             }
-            PillCircleButton(help: "Open BisprBlow", counterRotation: upright) {
+        case .home:
+            PillCircleButton(model: model, help: button.name, counterRotation: upright) {
                 model.tapped { model.onOpenDashboard(.home) }
             } label: {
                 if let logo = Theme.logo("Symbol_White") {
@@ -268,7 +320,25 @@ struct PillView: View {
                         .foregroundStyle(.white)
                 }
             }
-            PillCircleButton(help: "Recent dictations", counterRotation: upright) {
+        case .annotate:
+            PillCircleButton(model: model, help: button.name, counterRotation: upright) {
+                model.tapped { controller.toggleAnnotate() }
+            } label: {
+                AnnotateGlyph()
+                    .stroke(.white, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                    .frame(width: 14, height: 14)
+            }
+        case .notes:
+            PillCircleButton(model: model, help: controller.takingNotes ? "Stop notes" : button.name,
+                             counterRotation: upright) {
+                model.tapped { controller.toggleNotes { model.onOpenDashboard(.notes) } }
+            } label: {
+                Image(systemName: controller.takingNotes ? "record.circle.fill" : "record.circle")
+                    .font(.bj(11, weight: .medium))
+                    .foregroundStyle(controller.takingNotes ? Self.notesGreen : .white)
+            }
+        case .history:
+            PillCircleButton(model: model, help: button.name, counterRotation: upright) {
                 model.tapped { model.onOpenDashboard(.history) }
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
@@ -276,10 +346,6 @@ struct PillView: View {
                     .foregroundStyle(.white)
             }
         }
-        .padding(.horizontal, 9)
-        // The `.idle` row in `size(for:)`. Explicit, so the overlay keeps its natural size instead
-        // of being squashed into the 42x9 sliver on the way in.
-        .frame(width: 110, height: 36)
     }
 
     private func recordingPill(locked: Bool) -> some View {
@@ -360,6 +426,7 @@ struct PillHitRegion: Shape {
 
 // Circular action button on the hover pill, with its own hover highlight.
 struct PillCircleButton<Label: View>: View {
+    let model: PillModel
     let help: String
     // Turned back upright when the bar itself is rotated onto a side edge.
     var counterRotation: Double = 0
@@ -377,9 +444,28 @@ struct PillCircleButton<Label: View>: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .help(help)
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            if inside { model.hoverLabel = help } else if model.hoverLabel == help { model.hoverLabel = nil }
+        }
         .animation(.easeOut(duration: 0.1), value: hovering)
+    }
+}
+
+// A pointer with click rays: point at the screen while you talk. Thin rounded strokes on a 24pt grid,
+// to sit beside SF Symbols the way Wispr Flow's line icons do.
+struct AnnotateGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let k = min(rect.width, rect.height) / 24
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * k, y: rect.minY + y * k) }
+        var path = Path()
+        path.addLines([p(9.2, 9.2), p(20.4, 13.8), p(15.6, 15.6), p(13.8, 20.4)])
+        path.closeSubpath()
+        for (a, b) in [((14, 4.1), (12, 6)), ((5.1, 8), (2.2, 7.2)), ((6, 12), (4.1, 14)), ((7.2, 2.2), (8, 5.1))] {
+            path.move(to: p(a.0, a.1))
+            path.addLine(to: p(b.0, b.1))
+        }
+        return path
     }
 }
 

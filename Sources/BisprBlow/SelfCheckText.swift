@@ -184,6 +184,27 @@ extension SelfCheck {
 
     // Spoken enumerations become numbered lists. The first case is a real dictation (Wispr
     // Flow's history on this machine), and so are most of the false positives below.
+    static func checkBullets() {
+        let b = LLMCleaner.bulleted
+        let points = "We should not do multi-select at all. We've already removed that, which is good. "
+            + "The version history is messed up, so we need to fix that. Basically it should just have the version "
+            + "name with the current one as a little subtitle on it. Yeah, we should update bulk edit as well and make "
+            + "it faster for everyone. And default persona name should be updated to a name that does not sound like "
+            + "a person's name. Org switch I already fixed that in a separate chat earlier today with the team."
+        let out = b(points).components(separatedBy: "\n")
+        precondition(out.count == 6 && out.allSatisfy { $0.hasPrefix("- ") }, "one bullet per point: \(out)")
+        precondition(out[2].contains("Basically") && out[4].hasPrefix("- And default"), "carry-ons join, a new \"and\" point does not: \(out)")
+        precondition(b("Short one. Two. Three.") == "Short one. Two. Three.", "short dictations stay prose")
+    }
+
+    static func checkSpokenPunctuation() {
+        let p = LLMCleaner.spokenPunctuation
+        precondition(p("Status exclamation point.") == "Status!")
+        precondition(p("Is it done question mark") == "Is it done?")
+        precondition(p("Wait, exclamation mark, really question mark.") == "Wait! really?")
+        precondition(p("Can you do question marks and exclamation points") == "Can you do question marks and exclamation points")
+    }
+
     static func checkNumberedList() {
         let list = LLMCleaner.numberedList
 

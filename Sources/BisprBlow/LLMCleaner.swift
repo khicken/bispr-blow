@@ -44,7 +44,7 @@ actor LLMCleaner {
     // here because all six exits of `cleaned` end at the cursor.
     func clean(_ raw: String, context: AppContext) async -> (text: String, provider: String) {
         let result = await cleaned(raw, context: context)
-        var text = Self.numberedList(Self.applyVocabulary(result.text, vocabulary: settings.vocabulary))
+        var text = Self.bulleted(Self.numberedList(Self.spokenPunctuation(Self.applyVocabulary(result.text, vocabulary: settings.vocabulary))))
         if settings.lowercaseSentences {
             text = Self.lowercaseSentenceStarts(text, keeping: settings.vocabulary)
         }
@@ -350,6 +350,14 @@ actor LLMCleaner {
     }
 
     // MARK: - Chat call
+
+    // A short answer from the model cleanup uses, for judgments outside cleanup. Nil without one.
+    func ask(system: String, _ user: String) async -> String? {
+        if resolutionIsStale || resolved == nil { resolved = await resolveEndpoint() }
+        guard let (endpoint, model, _) = resolved else { return nil }
+        return try? await complete(endpoint: endpoint, model: model,
+                                   messages: [["role": "system", "content": system], ["role": "user", "content": user]])
+    }
 
     private func complete(endpoint: Endpoint, model: String, messages: [[String: String]]) async throws -> String {
         // Qwen3 is a hybrid reasoner and the MLX runtimes ignore reasoning_effort and

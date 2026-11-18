@@ -212,6 +212,14 @@ extension LLMCleaner {
     // The trailing period is the model's habit, not something the speaker said, and reads as noise on
     // a short dictation. Off by default via `AppSettings.endWithPeriod`. Only a lone final "." comes
     // off: question marks and exclamations carry meaning.
+    // "Status exclamation point" -> "Status!". Singular only, so "do question marks work" stays prose.
+    static func spokenPunctuation(_ text: String) -> String {
+        [("question mark", "?"), ("exclamation (?:point|mark)", "!")].reduce(text) { text, rule in
+            text.replacingOccurrences(of: "[\\s,.]*\\b\(rule.0)\\b[.,]?", with: rule.1,
+                                      options: [.regularExpression, .caseInsensitive])
+        }
+    }
+
     static func droppingTrailingPeriod(_ text: String) -> String {
         text.hasSuffix(".") && !text.hasSuffix("..") ? String(text.dropLast()) : text
     }

@@ -207,6 +207,8 @@ enum SelfCheck {
 
         checkLowercaseSentences()
         checkNumberedList()
+        checkSpokenPunctuation()
+        checkBullets()
         // Given both spellings, Parakeet's rescorer writes the spaced one. Unrelated phrases stay.
         precondition(Parakeet.boostable(["Bispr Blow", "BisprBlow", "Claude Code", "Claude"])
             == ["BisprBlow", "Claude Code", "Claude"])
@@ -460,6 +462,7 @@ enum SelfCheck {
         checkVersionCompare()
         checkPillHitRegion()
         checkPillClickThrough()
+        checkAnnotationFrames()
         checkParakeetStream()
         checkHeardAsEvidence()
 
@@ -652,6 +655,32 @@ enum SelfCheck {
     // The update banner appears only when this says so, and it is wrong in the direction that
     // matters: a string compare puts 0.10.0 below 0.9.0, so the first release past .9 would tell
     // nobody. A tag it cannot parse must never nag.
+    private static func checkAnnotationFrames() {
+        let t0 = Date()
+        func f(_ s: Double, x: CGFloat = 0) -> Annotator.Frame {
+            Annotator.Frame(t: t0.addingTimeInterval(s), jpeg: Data(), mouse: CGPoint(x: x, y: 0),
+                            print: [UInt8](repeating: 0, count: 1024))
+        }
+        let frames = [f(-30), f(-5), f(2, x: 200), f(9, x: 400)]
+        let got = Annotator.pick(frames, from: t0, to: t0.addingTimeInterval(4)).map { $0.t.timeIntervalSince(t0) }
+        precondition(got == [-5, 2], "screen at the start, then what changed while speaking: \(got)")
+        let many = (0..<10).map { f(Double($0)) }
+        precondition(Annotator.pick(many, from: t0, to: t0.addingTimeInterval(10)).count == 4, "four screenshots at most")
+        var clicked = (0..<10).map { f(Double($0)) }
+        clicked[3].kind = .click
+        clicked[7].kind = .hover
+        let picked = Annotator.pick(clicked, from: t0, to: t0.addingTimeInterval(10)).map { $0.t.timeIntervalSince(t0) }
+        precondition(picked.count == 4 && picked.contains(3) && picked.contains(7) && picked == picked.sorted(),
+                     "clicks and hovers survive the cap, in time order: \(picked)")
+        precondition(!Annotator.differs(f(0), f(1, x: 50)) && Annotator.differs(f(0), f(1, x: 200)),
+                     "a nudge is the same frame, a move is a new one")
+        let said = Annotator.sentences("This button should say save. Make the modal slide in smoother.")
+        precondition(said.count == 2 && said[0].mid < 0.5 && said[1].mid > 0.5, "sentences placed by position: \(said)")
+        precondition(Annotator.keywordMotion(said[1].text) && !Annotator.keywordMotion(said[0].text),
+                     "motion words pick the filmstrip sentence")
+        precondition(Annotator.keywordMotion("make this animation more flowy"))
+    }
+
     private static func checkVersionCompare() {
         precondition(UpdateChecker.isNewer("v0.3.0", than: "0.2.0"))
         precondition(UpdateChecker.isNewer("v0.10.0", than: "0.9.0"))

@@ -141,6 +141,41 @@ enum ContextDetector {
         else { return nil }
         return title as? String
     }
+
+    // What sits under a screen point (top-left origin), as `button "Mute (m)"`, and the app and window
+    // it is in. Annotate pairs this with the cropped screenshot: exact where pixels are ambiguous.
+    // Only titles, descriptions and static text are read, never what is typed into a field.
+    static func element(at point: CGPoint) -> (element: String, place: String)? {
+        guard AXIsProcessTrusted() else { return nil }
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.1)
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit) == .success,
+              let hit else { return nil }
+        func read(_ e: AXUIElement, _ a: String) -> CFTypeRef? {
+            var v: CFTypeRef?
+            return AXUIElementCopyAttributeValue(e, a as CFString, &v) == .success ? v : nil
+        }
+        let role = read(hit, kAXRoleDescriptionAttribute) as? String ?? ""
+        var name = "", node = hit
+        // A bare label or icon inside a button names nothing itself, so look up a few levels.
+        for _ in 0..<4 {
+            let words = [kAXTitleAttribute, kAXDescriptionAttribute].compactMap { read(node, $0) as? String }
+                + (read(node, kAXRoleAttribute) as? String == kAXStaticTextRole ? [read(node, kAXValueAttribute) as? String ?? ""] : [])
+            if let w = words.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }).first(where: { !$0.isEmpty }) {
+                name = w.count > 80 ? String(w.prefix(80)) + "…" : w
+                break
+            }
+            guard let up = read(node, kAXParentAttribute), CFGetTypeID(up) == AXUIElementGetTypeID() else { break }
+            node = up as! AXUIElement
+        }
+        var pid: pid_t = 0
+        AXUIElementGetPid(hit, &pid)
+        let app = NSRunningApplication(processIdentifier: pid)?.localizedName ?? ""
+        let window = read(hit, kAXWindowAttribute).flatMap { read($0 as! AXUIElement, kAXTitleAttribute) as? String } ?? ""
+        return ([role, name.isEmpty ? "" : "\"\(name)\""].filter { !$0.isEmpty }.joined(separator: " "),
+                [app, window].filter { !$0.isEmpty }.joined(separator: " · "))
+    }
 }
 
 extension AppContext {

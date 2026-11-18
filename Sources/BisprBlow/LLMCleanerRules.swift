@@ -104,6 +104,27 @@ extension LLMCleaner {
             pattern: "(?i)\\b(\(words.joined(separator: "|")))(?:\\s*[,:.](?=\\s)|\\s+is\\b)\\s*"))
     }
 
+    // A long dictation listing several points becomes one bullet per point. A sentence that carries
+    // on the last one (starts with "so", "that", "basically"... or is under five words) joins its bullet.
+    // ponytail: sentence-start heuristic; a model pass if points start mid-sentence too often.
+    static func bulleted(_ text: String) -> String {
+        guard !text.contains("\n"), text.split(separator: " ").count >= 80 else { return text }
+        let carryOn: Set<String> = ["so", "basically", "again", "like", "this", "that", "it", "which",
+                                    "but", "because", "or", "plus", "then"]
+        var points: [String] = []
+        text.enumerateSubstrings(in: text.startIndex..., options: .bySentences) { sentence, _, _, _ in
+            guard let sentence = sentence?.trimmingCharacters(in: .whitespaces), !sentence.isEmpty else { return }
+            let words = sentence.split(separator: " ")
+            let first = words.first.map { $0.lowercased().trimmingCharacters(in: .punctuationCharacters) } ?? ""
+            if let last = points.last, words.count < 5 || carryOn.contains(first) {
+                points[points.count - 1] = last + " " + sentence
+            } else {
+                points.append(sentence)
+            }
+        }
+        return points.count >= 4 ? points.map { "- " + $0 }.joined(separator: "\n") : text
+    }
+
     // "One, X, two, Y, and three, Z" becomes a numbered list, one item per line. Why each condition
     // exists, with the real dictation behind it, is in CLAUDE.md and `checkNumberedList`. The last item
     // ends with its sentence, because nothing spoken marks where a list stops.

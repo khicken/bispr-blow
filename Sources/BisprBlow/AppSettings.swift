@@ -67,6 +67,10 @@ final class AppSettings: ObservableObject {
     @Published var soundsEnabled: Bool {
         didSet { defaults.set(soundsEnabled, forKey: "launchSoundEnabled") }
     }
+    // The pill's buttons, left to right. A button missing from the list has been taken off the pill.
+    @Published var pillButtons: [PillButton] {
+        didSet { defaults.set(pillButtons.map(\.rawValue), forKey: "pillButtons") }
+    }
     // Keep the pill on screen while idle. Off, it only appears once you start dictating — the
     // window still opens from the menu bar item, so nothing becomes unreachable.
     @Published var alwaysShowPill: Bool {
@@ -278,6 +282,8 @@ final class AppSettings: ObservableObject {
         }
         soundsEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
         alwaysShowPill = defaults.object(forKey: "alwaysShowPill") as? Bool ?? true
+        pillButtons = defaults.stringArray(forKey: "pillButtons")?.compactMap(PillButton.init(rawValue:))
+            ?? PillButton.allCases
         showInDock = defaults.bool(forKey: "showInDock")
         launchAtLogin = SMAppService.mainApp.status == .enabled
         syncStats = defaults.bool(forKey: "syncStats")
