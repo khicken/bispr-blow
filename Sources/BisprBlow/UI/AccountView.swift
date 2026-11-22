@@ -6,6 +6,7 @@ import SwiftUI
 struct AccountSection: View {
     @ObservedObject var cloud: CloudClient
     @ObservedObject var settings: AppSettings
+    @State private var confirmSignOut = false
 
     var body: some View {
         Group {
@@ -28,7 +29,7 @@ struct AccountSection: View {
                     .foregroundStyle(Theme.ink)
                 Spacer()
                 Button("Sign out") {
-                    Task { await cloud.signOut() }
+                    if settings.syncStats { confirmSignOut = true } else { Task { await cloud.signOut() } }
                 }
                 .buttonStyle(QuietButtonStyle())
             }
@@ -47,6 +48,12 @@ struct AccountSection: View {
             }
         }
         .animation(.bjSoft, value: settings.syncStats)
+        .alert("Sign out?", isPresented: $confirmSignOut) {
+            Button("Sign out", role: .destructive) { Task { await cloud.signOut() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Backup stops until you sign in again.")
+        }
     }
 }
 
@@ -68,8 +75,9 @@ struct TeamCloudSection: View {
     @State private var creating = false
     @State private var busy: Action?
     @State private var note: String?
+    @State private var confirmLeave = false
 
-    private enum Action { case create, join, invite, rename }
+    private enum Action { case create, join, invite, rename, leave }
 
     var body: some View {
         Group {
@@ -88,7 +96,7 @@ struct TeamCloudSection: View {
     // One form at a time: joining is the common case, so starting a team is the quiet link.
     private var joinOrCreate: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(creating ? "Start a team" : "Join your team")
+            Text(creating ? "Start a team" : "Join a team")
                 .font(.bj(TypeSize.headline, weight: .semibold))
                 .foregroundStyle(Theme.ink)
             HStack(spacing: 8) {
@@ -171,6 +179,11 @@ struct TeamCloudSection: View {
                     }
                 }
                 Spacer()
+                if !org.isOwner && !renaming {
+                    Button("Leave team") { confirmLeave = true }
+                        .buttonStyle(QuietButtonStyle())
+                        .disabled(busy != nil)
+                }
             }
             if org.isOwner {
                 HStack(spacing: 8) {
@@ -217,6 +230,12 @@ struct TeamCloudSection: View {
             noteLine
         }
         .animation(.bjSoft, value: inviteCode)
+        .alert("Leave \(org.name)?", isPresented: $confirmLeave) {
+            Button("Leave team", role: .destructive) { run(.leave) { try await cloud.leaveOrg() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You will need a new invite to rejoin.")
+        }
     }
 
     private func field(_ prompt: String, text: Binding<String>,
@@ -282,7 +301,10 @@ struct TeamCloudSection: View {
         busy = action
         note = nil
         Task { @MainActor in
-            do { try await work() } catch { note = error.localizedDescription }
+            do { try await work() } catch {
+                logLine("team action failed: \(error.localizedDescription)")
+                note = error.localizedDescription
+            }
             busy = nil
         }
     }
@@ -376,6 +398,7 @@ struct SignInView: View {
     @State private var codeSent = false
     @State private var busy: Action?
     @State private var runID = 0
+    @State private var googleTask: Task<Void, Never>?
     @State private var note: String?
 
     private enum Action { case email, google }
@@ -397,6 +420,7 @@ struct SignInView: View {
                     .bjField()
                     .frame(maxWidth: .infinity)
                     .onSubmit(submit)
+                    .disabled(codeSent)
                 if codeSent {
                     TextField("Code", text: $code)
                         .monospacedDigit()
@@ -414,9 +438,17 @@ struct SignInView: View {
                           || (codeSent && code.trimmingCharacters(in: .whitespaces).isEmpty))
             }
             if codeSent {
-                Text("Check \(trimmedEmail) for a code.")
-                    .font(.bj(TypeSize.micro))
-                    .foregroundStyle(Theme.inkSubtle)
+                HStack(spacing: 10) {
+                    Text("Check \(trimmedEmail) for a code. It expires in 1 hour.")
+                        .font(.bj(TypeSize.micro))
+                        .foregroundStyle(Theme.inkSubtle)
+                    Button("Use a different email", action: backToEmail)
+                        .buttonStyle(QuietButtonStyle())
+                        .disabled(busy == .email)
+                    Button("Resend", action: resend)
+                        .buttonStyle(QuietButtonStyle())
+                        .disabled(busy == .email)
+                }
             }
             HStack(spacing: 10) {
                 Rectangle().fill(Theme.border.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: 1)
@@ -433,7 +465,17 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(CapsuleButtonStyle(filled: false))
-            .disabled(busy == .email)
+            .disabled(busy == .email || busy == .google)
+            if busy == .google {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for browser…")
+                        .font(.bj(TypeSize.micro))
+                        .foregroundStyle(Theme.inkSubtle)
+                    Button("Cancel", action: cancelGoogle)
+                        .buttonStyle(QuietButtonStyle())
+                }
+            }
             if let note {
                 Text(note)
                     .font(.bj(TypeSize.micro))
@@ -462,6 +504,25 @@ struct SignInView: View {
         }
     }
 
+    private func backToEmail() {
+        code = ""
+        codeSent = false
+        note = nil
+    }
+
+    private func resend() {
+        guard busy != .email, !trimmedEmail.isEmpty else { return }
+        code = ""
+        run(.email) { try await cloud.requestCode(email: trimmedEmail) }
+    }
+
+    private func cancelGoogle() {
+        runID += 1
+        googleTask?.cancel()
+        googleTask = nil
+        busy = nil
+    }
+
     // Not blocked by a Google wait: a closed tab never reports back, so clicking again restarts it.
     private func google() {
         guard busy != .email else { return }
@@ -475,12 +536,14 @@ struct SignInView: View {
         let id = runID
         busy = action
         note = nil
-        Task { @MainActor in
+        googleTask?.cancel()
+        let task = Task { @MainActor in
             do { try await work() }
             catch is CancellationError {}
             catch { note = error.localizedDescription }
             if runID == id { busy = nil }
         }
+        googleTask = action == .google ? task : nil
     }
 
 }
