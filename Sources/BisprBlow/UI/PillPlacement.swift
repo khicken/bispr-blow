@@ -18,11 +18,19 @@ final class PlacementModel: ObservableObject {
 // Dims the screen and shows where the pill can go while the user drags it. Click-through, like the
 // toast: the drag it belongs to is already tracked by the pill, and a full-screen panel that
 // accepted mouse events would swallow the whole screen.
+extension NSScreen {
+    // The display the user is looking at: the one under the pointer, else the main one.
+    static var underPointer: NSScreen? {
+        let point = NSEvent.mouseLocation
+        return screens.first { NSMouseInRect(point, $0.frame, false) } ?? main ?? screens.first
+    }
+}
+
 final class PlacementOverlayController {
     private let panel: NSPanel
 
     init(model: PlacementModel) {
-        panel = NSPanel(contentRect: NSScreen.main?.frame ?? .zero,
+        panel = NSPanel(contentRect: NSScreen.underPointer?.frame ?? .zero,
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         // Just under the pill, so the pill stays visible above the dim.

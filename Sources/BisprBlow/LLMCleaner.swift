@@ -329,6 +329,12 @@ actor LLMCleaner {
         ["qwen3-4b-2507", "qwen3-4b", "gpt-oss", "ministral", "qwen3-1.7b",
          "qwen", "llama", "mistral", "gemma"]
 
+    // True when some provider answers with a usable model, so the UI can say so before asking.
+    func hasModel() async -> Bool {
+        if resolved == nil { resolved = await resolveEndpoint() }
+        return resolved != nil
+    }
+
     // Dictionary terms for a topic (e.g. "Kubernetes and cloud infra"). [] if no provider is reachable.
     func generateTerms(topic: String) async -> [String] {
         if resolved == nil { resolved = await resolveEndpoint() }

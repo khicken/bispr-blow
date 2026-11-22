@@ -14,7 +14,7 @@ final class ToastController {
     @MainActor
     init(controller: DictationController, model: PillModel) {
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 34),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 48),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -77,7 +77,7 @@ final class ToastController {
     // then clamped to the screen edge. `ToastView` aligns its capsule to the same edge, so the
     // visible pill of text lands against the pill rather than 210pt away.
     func reposition() {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = NSScreen.underPointer else { return }
         // The same frame the pill uses, or the toast detaches from it in a fullscreen space.
         let frame = RecordingPillController.layoutFrame(screen)
         let size = panel.frame.size
@@ -124,7 +124,8 @@ struct ToastView: View {
                     Text(message)
                         .font(.bj(11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let action = controller.noticeAction {
                         Button(action.label) { action.run() }
                             .buttonStyle(.plain)
@@ -136,8 +137,9 @@ struct ToastView: View {
                             .handCursor()
                     }
                 }
+                .onHover { controller.noticeHovered = $0 }
                 .padding(.horizontal, 12)
-                .frame(height: 26)
+                .frame(minHeight: 26)
                 .background(
                     Capsule().fill(Theme.pillBackground)
                         .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
