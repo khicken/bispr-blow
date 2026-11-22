@@ -80,7 +80,7 @@ struct PlacementView: View {
     // the cursor.
     private func proxy(at cursor: NSPoint) -> some View {
         let centre = point(cursor)
-        return LogoView(name: "Symbol_White", size: Self.proxySize)
+        return LogoView(name: "Logo_Mono", size: Self.proxySize, tint: .white)
             .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
             .offset(x: centre.x - Self.proxySize / 2, y: centre.y - Self.proxySize / 2)
     }

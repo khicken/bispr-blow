@@ -257,16 +257,7 @@ struct PillView: View {
             PillCircleButton(help: "Open BisprBlow", counterRotation: upright) {
                 model.tapped { model.onOpenDashboard(.home) }
             } label: {
-                if let logo = Theme.logo("Symbol_White") {
-                    Image(nsImage: logo)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 13, height: 13)
-                } else {
-                    Image(systemName: "house.fill")
-                        .font(.bj(11, weight: .medium))
-                        .foregroundStyle(.white)
-                }
+                LogoView(name: "Logo_Mono", size: 13, tint: .white)
             }
             PillCircleButton(help: "Recent dictations", counterRotation: upright) {
                 model.tapped { model.onOpenDashboard(.history) }

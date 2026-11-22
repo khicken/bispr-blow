@@ -239,20 +239,14 @@ struct SidebarItem: View {
 }
 
 // Sidebar wordmark. 18pt symbol on the nav icons' 18pt column, 9pt spacing putting the text on
-// their 45pt label column. It spins while dictating, driven by the clock so it never snaps back.
+// their 45pt label column.
 struct BrandLockup: View {
     var themeID = Appearance.current
     let state: DictationController.State
 
-    private var live: Bool { state != .idle }
-
     var body: some View {
         HStack(spacing: 9) {
-            TimelineView(.animation(minimumInterval: 1 / 30, paused: !live)) { ctx in
-                LogoView(name: Appearance.current.isDark ? "Symbol_White" : "Symbol_Black", size: 18)
-                    .rotationEffect(.degrees(ctx.date.timeIntervalSinceReferenceDate * 115))
-            }
-            .frame(width: 18, height: 18)
+            LogoView(name: Appearance.current.isDark ? "Logo_Blue_Dark" : "Logo_Blue", size: 18)
             Text("BisprBlow")
                 .font(.bj(13.5, weight: .semibold))
                 .tracking(-0.2)
@@ -265,13 +259,23 @@ struct LogoView: View {
     var themeID = Appearance.current
     let name: String
     let size: CGFloat
+    var tint: Color?
 
     var body: some View {
         if let image = Theme.logo(name) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: size, height: size)
+            if let tint {
+                Image(nsImage: image)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+                    .foregroundStyle(tint)
+            } else {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+            }
         } else {
             Image(systemName: "bird")
                 .font(.bj(size - 6))
