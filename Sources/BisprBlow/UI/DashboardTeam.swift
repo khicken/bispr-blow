@@ -17,7 +17,7 @@ struct TeamPage: View {
         } else if cloud.session == nil {
             Page(title: "Team", subtitle: "Sign in to join your team.") {
                 SignInView(cloud: cloud, showsBlurb: false)
-                    .card(padding: 16)
+                    .card(padding: Metric.cardPad)
             }
         } else {
             TeamView(settings: settings, cloud: cloud)
@@ -44,7 +44,7 @@ struct TeamView: View {
                                               : "Names you add here get spelled right.") {
             if let cloud {
                 TeamCloudSection(cloud: cloud)
-                    .card(padding: 18)
+                    .card(padding: Metric.cardPad)
             }
             if let cloud, inTeam {
                 RosterSection(cloud: cloud, settings: settings)
@@ -60,7 +60,7 @@ struct TeamView: View {
             VStack(alignment: .leading, spacing: 3) {
                 SectionLabel("Members")
                 Text("Names here get spelled right.")
-                    .font(.bj(12))
+                    .font(.bj(TypeSize.caption))
                     .foregroundStyle(Theme.inkSubtle)
             }
             HStack(spacing: 8) {
@@ -164,11 +164,11 @@ struct MemberRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(member.displayName)
-                            .font(.bj(13, weight: .medium))
+                            .font(.bj(TypeSize.body, weight: .medium))
                             .foregroundStyle(Theme.ink)
                         if member.isOwner {
                             Text("Owner")
-                                .font(.bj(10.5, weight: .medium))
+                                .font(.bj(TypeSize.micro, weight: .medium))
                                 .foregroundStyle(Theme.inkSubtle)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
@@ -177,7 +177,7 @@ struct MemberRow: View {
                     }
                     if let email = member.email, !email.isEmpty {
                         Text(email)
-                            .font(.bj(11))
+                            .font(.bj(TypeSize.micro))
                             .foregroundStyle(Theme.inkSubtle)
                     }
                 }
@@ -192,7 +192,7 @@ struct MemberRow: View {
                     .transition(.opacity)
             }
         }
-        .card(padding: 11)
+        .card(padding: Metric.rowPad)
         .animation(.bjSoft, value: open)
     }
 
@@ -203,11 +203,11 @@ struct MemberRow: View {
                 ProgressView().controlSize(.small)
             } else if let note {
                 Text(note)
-                    .font(.bj(11.5))
+                    .font(.bj(TypeSize.micro))
                     .foregroundStyle(Theme.red)
             } else if let words, words.isEmpty {
                 Text("No words yet.")
-                    .font(.bj(12))
+                    .font(.bj(TypeSize.caption))
                     .foregroundStyle(Theme.inkSubtle)
             } else if let words {
                 WrapStack(spacing: 6) {
@@ -232,8 +232,8 @@ struct MemberRow: View {
             if on { picked.remove(word) } else { picked.insert(word) }
         } label: {
             Text(word)
-                .font(.bj(12.5))
-                .foregroundStyle(have ? Theme.inkSubtle : (on ? Theme.blue : Theme.ink))
+                .font(.bj(TypeSize.caption))
+                .foregroundStyle(have ? Theme.inkSubtle : (on ? Theme.accentText : Theme.ink))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(on && !have ? Theme.blueSoft : Theme.surfaceActive.opacity(have ? 0.5 : 1)))
@@ -279,11 +279,11 @@ struct TeamRow: View {
             InitialCircle(letter: String(member.name.prefix(1)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(member.name)
-                    .font(.bj(13, weight: .medium))
+                    .font(.bj(TypeSize.body, weight: .medium))
                     .foregroundStyle(Theme.ink)
                 if !member.role.isEmpty {
                     Text(member.role)
-                        .font(.bj(11))
+                        .font(.bj(TypeSize.micro))
                         .foregroundStyle(Theme.inkSubtle)
                 }
             }
@@ -291,7 +291,7 @@ struct TeamRow: View {
             if hovering {
                 Button(action: onRemove) {
                     Image(systemName: "trash")
-                        .font(.bj(11))
+                        .font(.bj(TypeSize.micro))
                         .foregroundStyle(Theme.red)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -301,7 +301,7 @@ struct TeamRow: View {
                 .help("Remove \(member.name)")
             }
         }
-        .card(padding: 11)
+        .card(padding: Metric.rowPad)
         .onHover { hovering = $0 }
         .animation(.bjHover, value: hovering)
     }

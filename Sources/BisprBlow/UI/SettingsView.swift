@@ -77,7 +77,7 @@ struct SettingsView: View {
                     downloadRow(fraction)
                 } else if let failure = downloader.failure {
                     Text(failure)
-                        .font(.bj(11))
+                        .font(.bj(TypeSize.micro))
                         .foregroundStyle(Theme.inkSubtle)
                         .padding(.horizontal, 11)
                         .padding(.bottom, 6)
@@ -125,7 +125,7 @@ struct SettingsView: View {
             settingsGroup("Microphone", padding: 5) {
                 HStack(spacing: 8) {
                     Image(systemName: "mic")
-                        .font(.bj(12))
+                        .font(.bj(TypeSize.caption))
                         .foregroundStyle(Theme.blue)
                         .symbolEffect(.bounce, value: settings.inputDeviceUID)
                     Picker("", selection: $settings.inputDeviceUID) {
@@ -163,10 +163,10 @@ struct SettingsView: View {
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Import from Wispr Flow")
-                                .font(.bj(13, weight: .medium))
+                                .font(.bj(TypeSize.body, weight: .medium))
                                 .foregroundStyle(Theme.ink)
                             Text(wisprImportResult ?? "Your dictionary and corrected names.")
-                                .font(.bj(12))
+                                .font(.bj(TypeSize.caption))
                                 .foregroundStyle(Theme.inkSubtle)
                         }
                         Spacer(minLength: 12)
@@ -249,11 +249,11 @@ struct SettingsView: View {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(Theme.red)
             Text(name)
-                .font(.bj(13, weight: .medium))
+                .font(.bj(TypeSize.body, weight: .medium))
                 .foregroundStyle(Theme.ink)
             if let hint {
                 Text(hint)
-                    .font(.bj(12))
+                    .font(.bj(TypeSize.caption))
                     .foregroundStyle(Theme.inkSubtle)
             }
         }
@@ -266,12 +266,12 @@ struct SettingsView: View {
                 .progressViewStyle(.linear)
                 .frame(maxWidth: 180)
             Text("Downloading Accurate, \(Int(fraction * 100))%")
-                .font(.bj(11))
+                .font(.bj(TypeSize.micro))
                 .foregroundStyle(Theme.inkSubtle)
             Spacer()
             Button("Stop") { downloader.cancel() }
                 .buttonStyle(.plain)
-                .font(.bj(11))
+                .font(.bj(TypeSize.micro))
                 .foregroundStyle(Theme.inkSubtle)
                 .handCursor()
         }
@@ -298,7 +298,7 @@ struct ToggleRow: View {
         Button { withAnimation(.bjSnap) { isOn.toggle() } } label: {
             HStack(spacing: 12) {
                 Text(title)
-                    .font(.bj(13))
+                    .font(.bj(TypeSize.body))
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: 12)
                 Toggle("", isOn: $isOn)
@@ -336,23 +336,23 @@ private struct ChoiceRow: View {
                 // A marker column, so the two names start at the same x and the eye reads down
                 // the list rather than around a tick that moves the text.
                 Image(systemName: "checkmark")
-                    .font(.bj(10.5, weight: .bold))
+                    .font(.bj(TypeSize.micro, weight: .bold))
                     .foregroundStyle(Theme.blue)
                     .frame(width: 12, alignment: .leading)
                     .opacity(selected ? 1 : 0)
                 Text(title)
-                    .font(.bj(13, weight: selected ? .semibold : .regular))
+                    .font(.bj(TypeSize.body, weight: selected ? .semibold : .regular))
                     .foregroundStyle(Theme.ink)
                     .frame(width: 68, alignment: .leading)
                 Text(detail)
-                    .font(.bj(12))
+                    .font(.bj(TypeSize.caption))
                     .foregroundStyle(Theme.inkSubtle)
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
                     .fill(selected ? Theme.surfaceActive
                                    : Theme.surfaceActive.opacity(hovering ? 0.5 : 0))
             )
@@ -398,11 +398,11 @@ struct ThemeSwatch: View {
                     .frame(height: 96)
                 HStack(spacing: 6) {
                     Text(appearance.rawValue)
-                        .font(.bj(12.5, weight: .medium))
+                        .font(.bj(TypeSize.caption, weight: .medium))
                         .foregroundStyle(Theme.ink)
                     Spacer(minLength: 4)
                     Image(systemName: "checkmark")
-                        .font(.bj(10.5, weight: .bold))
+                        .font(.bj(TypeSize.micro, weight: .bold))
                         .foregroundStyle(Theme.blue)
                         .opacity(selected ? 1 : 0)
                 }
@@ -410,14 +410,14 @@ struct ThemeSwatch: View {
                 .padding(.vertical, 9)
             }
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.cream))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous).fill(Theme.cream))
+            .clipShape(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: Metric.radius, style: .continuous)
                     .stroke(selected ? Theme.blue : Theme.border,
                             lineWidth: selected ? 2 : 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous))
         }
         .buttonStyle(.plain)
         .handCursor()

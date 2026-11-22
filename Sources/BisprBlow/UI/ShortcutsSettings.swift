@@ -34,25 +34,25 @@ private struct ShortcutRow: View {
         Button(action: open) {
             HStack(spacing: 8) {
                 Text(action.title)
-                    .font(.bj(13))
+                    .font(.bj(TypeSize.body))
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: 12)
                 if bindings.isEmpty {
                     Text("Not set")
-                        .font(.bj(12))
+                        .font(.bj(TypeSize.caption))
                         .foregroundStyle(Theme.inkSubtle)
                 } else {
                     ForEach(bindings) { KeyCap(text: $0.display) }
                 }
                 Image(systemName: "chevron.right")
-                    .font(.bj(9, weight: .bold))
+                    .font(.bj(TypeSize.micro, weight: .bold))
                     .foregroundStyle(Theme.inkSubtle)
             }
             .padding(.vertical, 7)
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
                     .fill(hovering ? Theme.surfaceActive.opacity(0.7) : .clear)
             )
             .contentShape(Rectangle())
@@ -71,7 +71,7 @@ struct KeyCap: View {
 
     var body: some View {
         Text(text)
-            .font(.bj(11.5, weight: .medium))
+            .font(.bj(TypeSize.micro, weight: .medium))
             .foregroundStyle(Theme.inkSecondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
@@ -99,7 +99,7 @@ private struct BindingRow<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .background(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
                     .fill(hoverable && hovering ? Theme.surfaceActive.opacity(0.7) : .clear)
             )
             .contentShape(Rectangle())
@@ -127,10 +127,10 @@ struct ShortcutSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(action.title)
-                    .font(.bj(16, weight: .semibold))
+                    .font(.bj(TypeSize.headline, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                 Text(action.blurb)
-                    .font(.bj(12))
+                    .font(.bj(TypeSize.caption))
                     .foregroundStyle(Theme.inkTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -152,7 +152,7 @@ struct ShortcutSheet: View {
                                     settings.remove(shortcut, from: action)
                                 } label: {
                                     Image(systemName: "xmark")
-                                        .font(.bj(9, weight: .bold))
+                                        .font(.bj(TypeSize.micro, weight: .bold))
                                 }
                                 .buttonStyle(QuietButtonStyle())
                                 .help("Remove this shortcut")
@@ -168,21 +168,21 @@ struct ShortcutSheet: View {
                                 if let holding {
                                     KeyCap(text: holding.display)
                                     Text("Release to save")
-                                        .font(.bj(12))
+                                        .font(.bj(TypeSize.caption))
                                 } else {
                                     // The dot belongs to the waiting state only: once you are
                                     // holding keys the cap says that already.
                                     Image(systemName: "record.circle")
-                                        .font(.bj(11, weight: .bold))
+                                        .font(.bj(TypeSize.micro, weight: .bold))
                                         .symbolEffect(.pulse)
                                     Text("Listening…")
-                                        .font(.bj(12, weight: .medium))
+                                        .font(.bj(TypeSize.caption, weight: .medium))
                                 }
                                 Spacer(minLength: 8)
                                 Button("Cancel") { disarm() }
                                     .buttonStyle(QuietButtonStyle())
                             }
-                            .foregroundStyle(Theme.blue)
+                            .foregroundStyle(Theme.accentText)
                         }
                         .transition(.opacity)
                     } else {
@@ -190,12 +190,12 @@ struct ShortcutSheet: View {
                             BindingRow(hoverable: true) {
                                 HStack(spacing: 7) {
                                     Image(systemName: "plus")
-                                        .font(.bj(10, weight: .bold))
+                                        .font(.bj(TypeSize.micro, weight: .bold))
                                     Text(bindings.isEmpty ? "Record a shortcut" : "Add another")
-                                        .font(.bj(12.5))
+                                        .font(.bj(TypeSize.caption))
                                     Spacer(minLength: 0)
                                 }
-                                .foregroundStyle(Theme.blue)
+                                .foregroundStyle(Theme.accentText)
                             }
                         }
                         .buttonStyle(.plain)

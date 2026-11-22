@@ -10,6 +10,11 @@ struct Palette {
     // a literal that is invisible in a light theme and a flashbang in a dark one.
     let field: Color
     let pillBackground, pillWave: Color
+    // Ink for text on an accent fill, where white fails 4.5:1. Accent as text is its own darker
+    // `accentText`, checked against the surfaces it sits on.
+    let onAccent, accentText: Color
+    // The Dictionary intro panel's gradient, dark in every theme under white text.
+    let heroFrom, heroTo: Color
     // Brand imagery by resource name, or nil where a theme wants none. Optional rather than checked
     // per view: a surface asks for the picture it would draw and gets nothing back.
     var sidebarImage: String?
@@ -70,7 +75,11 @@ enum Appearance: String, CaseIterable, Identifiable {
         // are white, so the floor is contrast against a light wallpaper rather than taste, and 0.70
         // IS that floor — below it the bars start disappearing into a bright desktop.
         pillBackground: Color(hex: 0x1C1D1F).opacity(0.70),
-        pillWave: .white
+        pillWave: .white,
+        onAccent: Color(hex: 0x10131A),       // 6.79:1 on blue
+        accentText: Color(hex: 0x0A6CB0),     // 4.75:1 on surfaceActive
+        heroFrom: Color(hex: 0x0B2A45),
+        heroTo: Color(hex: 0x123A5C)
     )
 
     // The light palette turned over, not inverted, and deliberately charcoal rather than black:
@@ -97,7 +106,11 @@ enum Appearance: String, CaseIterable, Identifiable {
         green: Color(hex: 0x4ADE80),
         field: Color(hex: 0x2E3238),
         pillBackground: Color(hex: 0x1C1D1F).opacity(0.70),
-        pillWave: .white
+        pillWave: .white,
+        onAccent: Color(hex: 0x10131A),       // 7.97:1 on blue
+        accentText: Color(hex: 0x5CBEFF),     // 5.61:1 on surfaceActive
+        heroFrom: Color(hex: 0x0F3350),
+        heroTo: Color(hex: 0x1B4E7A)
     )
 
     // Sampled from the brand world renders in assets/world: cyan skies, lavender clouds, magenta
@@ -119,6 +132,10 @@ enum Appearance: String, CaseIterable, Identifiable {
         field: .white,
         pillBackground: Color(hex: 0x241638).opacity(0.72),
         pillWave: Color(hex: 0xB8F0FA),
+        onAccent: Color(hex: 0x1B1233),       // 8.51:1 on blue
+        accentText: Color(hex: 0x066577),     // 5.15:1 on surfaceActive
+        heroFrom: Color(hex: 0x2A1B4A),
+        heroTo: Color(hex: 0x4A2F86),
         sidebarImage: "World_Secondary",
         panelImage: "World_Abstract"
     )
@@ -144,6 +161,10 @@ enum Appearance: String, CaseIterable, Identifiable {
         field: Color(hex: 0xFFFBD6),
         pillBackground: Color(hex: 0x7C1FBF).opacity(0.74),
         pillWave: Color(hex: 0xC6FF3D),
+        onAccent: Color(hex: 0x1B0033),       // 5.32:1 on blue
+        accentText: Color(hex: 0xB80078),     // 4.81:1 on surfaceActive
+        heroFrom: Color(hex: 0x3D0066),
+        heroTo: Color(hex: 0x7C1FBF),
         fontNames: ["Comic Sans MS", "Chalkboard SE", "Marker Felt"]
     )
 }
@@ -165,6 +186,12 @@ enum Theme {
     static var inkSubtle: Color { palette.inkSubtle }
     static var blue: Color { palette.blue }
     static var blueDeep: Color { palette.blueDeep }
+    static var onAccent: Color { palette.onAccent }
+    static var accentText: Color { palette.accentText }
+    // Text on the hero gradient: white, over a gradient that is dark in every theme.
+    static var onHero: Color { .white }
+    static var heroFrom: Color { palette.heroFrom }
+    static var heroTo: Color { palette.heroTo }
     static var blueSoft: Color { palette.blue.opacity(0.12) }
     static var red: Color { palette.red }
     static var green: Color { palette.green }
@@ -221,6 +248,24 @@ enum Theme {
     }
 }
 
+// Spacing and shape shared by cards, rows and controls.
+enum Metric {
+    static let cardPad: CGFloat = 16
+    static let rowPad: CGFloat = 12
+    static let radius: CGFloat = 12
+    static let radiusSmall: CGFloat = 8
+    static let controlHeight: CGFloat = 34
+}
+
+// The type scale. Every `.bj` call takes one of these; no half points.
+enum TypeSize {
+    static let title: CGFloat = 28
+    static let headline: CGFloat = 15
+    static let body: CGFloat = 13
+    static let caption: CGFloat = 12
+    static let micro: CGFloat = 11
+}
+
 extension Font {
     // Every piece of type in the app goes through here instead of `.system(size:)`, so a theme can
     // own the face as well as the colours. It is the only place that knows a custom face has to carry
@@ -254,7 +299,7 @@ struct SectionLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.bj(12, weight: .semibold))
+            .font(.bj(TypeSize.caption, weight: .semibold))
             .foregroundStyle(Theme.inkTertiary)
     }
 }
@@ -262,18 +307,18 @@ struct SectionLabel: View {
 // Flat card: soft fill, no border.
 struct Card: ViewModifier {
     var themeID = Appearance.current
-    var padding: CGFloat = 16
+    var padding: CGFloat = Metric.cardPad
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tableHeader))
+            .background(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous).fill(Theme.tableHeader))
     }
 }
 
 extension View {
-    func card(padding: CGFloat = 16) -> some View { modifier(Card(padding: padding)) }
+    func card(padding: CGFloat = Metric.cardPad) -> some View { modifier(Card(padding: padding)) }
 
     // Fade + rise on first appearance; `delay` staggers siblings.
     func appearIn(_ delay: Double = 0) -> some View { modifier(AppearIn(delay: delay)) }
@@ -345,10 +390,10 @@ struct CapsuleButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.bj(13, weight: .medium))
-                .foregroundStyle(filled ? .white : Theme.ink)
+                .font(.bj(TypeSize.body, weight: .medium))
+                .foregroundStyle(filled ? Theme.onAccent : Theme.ink)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 9)
+                .frame(minHeight: Metric.controlHeight)
                 .background(Capsule().fill(filled ? tint : Theme.surfaceActive))
                 .contentShape(Capsule())
                 .handCursor(isEnabled)
@@ -374,15 +419,15 @@ struct QuietButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.bj(12))
+                .font(.bj(TypeSize.caption))
                 .foregroundStyle(Theme.inkSubtle)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
                         .fill(configuration.isPressed ? Theme.surfaceActive : .clear)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous))
                 .handCursor(isEnabled)
                 .opacity(isEnabled ? 1 : 0.4)
                 .scaleEffect(configuration.isPressed ? 0.94 : 1)

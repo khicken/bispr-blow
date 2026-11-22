@@ -49,13 +49,13 @@ struct HomeView: View {
 
             // One strip with hairlines between the figures: three tiles read as three buttons.
             HStack(spacing: 0) {
-                StatCard(value: "\(history.totalWords)", label: "Words")
+                StatCard(value: history.totalWords.formatted(), label: "Words")
                 StatDivider()
-                StatCard(value: "\(averageWPM)", label: "Words per minute")
+                StatCard(value: averageWPM.formatted(), label: "Words per minute")
                 StatDivider()
-                StatCard(value: "\(streakDays)", label: "Day streak")
+                StatCard(value: streakDays.formatted(), label: "Day streak")
             }
-            .card(padding: 18)
+            .card(padding: Metric.cardPad)
 
             LeaderboardSection(cloud: CloudClient.shared)
 
@@ -93,13 +93,13 @@ struct UpdateBanner: View {
             Button { NSWorkspace.shared.open(UpdateChecker.releasePage) } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "arrow.down.circle")
-                        .font(.bj(12))
+                        .font(.bj(TypeSize.caption))
                         .foregroundStyle(Theme.blue)
                     Text("BisprBlow \(latest) is out")
-                        .font(.bj(13, weight: .medium))
+                        .font(.bj(TypeSize.body, weight: .medium))
                         .foregroundStyle(Theme.ink)
                     Text("Get it on GitHub")
-                        .font(.bj(12))
+                        .font(.bj(TypeSize.caption))
                         .foregroundStyle(Theme.inkSubtle)
                     Spacer()
                 }
@@ -122,18 +122,17 @@ struct StatCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.bj(32, weight: .bold))
+                .font(.bj(TypeSize.title, weight: .bold))
                 .monospacedDigit()
                 .tracking(-0.8)
                 .foregroundStyle(Theme.ink)
                 .contentTransition(.numericText())   // digits roll as stats update
                 .animation(.bjSoft, value: value)
             Text(label)
-                .font(.bj(12))
+                .font(.bj(TypeSize.caption))
                 .foregroundStyle(Theme.inkSubtle)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 4)
     }
 }
 
@@ -155,14 +154,14 @@ struct EmptyHint: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "waveform")
-                .font(.bj(13, weight: .medium))
+                .font(.bj(TypeSize.body, weight: .medium))
                 .foregroundStyle(Theme.blue)
                 .frame(width: 30, height: 30)
                 .background(Circle().fill(Theme.blueSoft))
             Text(text)
-                .font(.bj(13))
+                .font(.bj(TypeSize.body))
                 .foregroundStyle(Theme.inkTertiary)
         }
-        .card(padding: 18)
+        .card(padding: Metric.cardPad)
     }
 }
