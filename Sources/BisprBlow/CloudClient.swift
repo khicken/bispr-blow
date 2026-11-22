@@ -161,6 +161,19 @@ final class CloudClient: ObservableObject {
         SyncEngine.shared.noteOrgChanged()
     }
 
+    // Removes the caller's own membership row (policy members_delete_owner_or_self). Owners cannot
+    // leave: the UI hides the button, and this refuses too, so a team is never left without one.
+    func leaveOrg() async throws {
+        guard let org, let session else { throw CloudError(message: "Join a team first.") }
+        guard !org.isOwner else { throw CloudError(message: "Owners can't leave their team.") }
+        _ = try await rest("DELETE", "rest/v1/org_members", query: [
+            .init(name: "org_id", value: "eq.\(org.id.uuidString)"),
+            .init(name: "user_id", value: "eq.\(session.userID.uuidString)"),
+        ], prefer: "return=minimal")
+        setOrg(nil)
+        SyncEngine.shared.noteOrgChanged()
+    }
+
     // Issues a code for one teammate's email — the code alone is inert without it (policies.sql).
     // Handing it over is the inviter's job; nothing is emailed.
     func createInvite(email: String) async throws -> String {

@@ -220,7 +220,7 @@ struct SettingsView: View {
             let added = words.map { WisprImport.add($0, to: settings).count }
             withAnimation(.bjSnap) {
                 wisprImportResult = switch added {
-                case nil: "Couldn't read Wispr Flow's data"
+                case nil: WisprImport.failureMessage
                 case 0?: "Nothing new to add"
                 case 1?: "Added 1 word"
                 case let count?: "Added \(count) words"

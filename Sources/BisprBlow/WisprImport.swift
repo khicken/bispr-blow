@@ -9,6 +9,13 @@ enum WisprImport {
 
     static var isInstalled: Bool { FileManager.default.fileExists(atPath: database.path) }
 
+    // Why a read failed, for the one line of UI copy. Not installed is checked first, because a
+    // missing database also makes the read fail.
+    static var failureMessage: String {
+        isInstalled ? "Couldn't read Wispr Flow's data. Quit it and try again"
+                    : "Wispr Flow isn't installed"
+    }
+
     static var appIcon: NSImage? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.electron.wispr-flow")
             .map { NSWorkspace.shared.icon(forFile: $0.path) }

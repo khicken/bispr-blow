@@ -40,7 +40,7 @@ struct TeamView: View {
     var body: some View {
         // What it does, not how it works: a name you say out loud comes back spelled wrong until it
         // is in here.
-        Page(title: "Team", subtitle: inTeam ? "Your teammates, and the words they've taught it."
+        Page(title: "Team", subtitle: inTeam ? "Your teammates and the words they've added."
                                               : "Names you add here get spelled right.") {
             if let cloud {
                 TeamCloudSection(cloud: cloud)
@@ -57,12 +57,7 @@ struct TeamView: View {
     @ViewBuilder
     private var localNames: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                SectionLabel("Members")
-                Text("Names here get spelled right.")
-                    .font(.bj(12))
-                    .foregroundStyle(Theme.inkSubtle)
-            }
+            SectionLabel("Members")
             HStack(spacing: 8) {
                 TextField("Name", text: $newName)
                     .bjField()
@@ -79,7 +74,7 @@ struct TeamView: View {
         }
 
         if settings.teamMembers.isEmpty {
-            EmptyHint(text: "No names yet.")
+            EmptyHint(text: "No names yet")
         } else {
             VStack(spacing: 6) {
                 ForEach(settings.teamMembers) { member in
@@ -112,14 +107,20 @@ struct RosterSection: View {
     @ObservedObject var cloud: CloudClient
     @ObservedObject var settings: AppSettings
     @State private var note: String?
+    @State private var loaded = false
+    @State private var reloadTick = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionLabel("Members")
             if let note {
-                EmptyHint(text: note)
+                HStack(spacing: 10) {
+                    EmptyHint(text: note)
+                    Button("Try again") { reloadTick += 1 }
+                        .buttonStyle(QuietButtonStyle())
+                }
             } else if cloud.roster.isEmpty {
-                EmptyHint(text: "Loading members.")
+                EmptyHint(text: loaded ? "No members yet" : "Loading members")
             } else {
                 VStack(spacing: 6) {
                     ForEach(cloud.roster) { member in
@@ -129,12 +130,15 @@ struct RosterSection: View {
                 }
             }
         }
-        .task(id: cloud.org?.id) {
+        .task(id: "\(cloud.org?.id.uuidString ?? "")-\(reloadTick)") {
+            loaded = false
             do {
                 try await cloud.refreshRoster()
                 note = nil
+                loaded = true
             } catch {
-                note = error.localizedDescription
+                logLine("roster load failed: \(error.localizedDescription)")
+                note = "Couldn't load members."
             }
         }
     }
@@ -202,11 +206,15 @@ struct MemberRow: View {
             if loading {
                 ProgressView().controlSize(.small)
             } else if let note {
-                Text(note)
-                    .font(.bj(11.5))
-                    .foregroundStyle(Theme.red)
+                HStack(spacing: 10) {
+                    Text(note)
+                        .font(.bj(11.5))
+                        .foregroundStyle(Theme.red)
+                    Button("Try again") { reload() }
+                        .buttonStyle(QuietButtonStyle())
+                }
             } else if let words, words.isEmpty {
-                Text("No words yet.")
+                Text("No words yet")
                     .font(.bj(12))
                     .foregroundStyle(Theme.inkSubtle)
             } else if let words {
@@ -248,13 +256,19 @@ struct MemberRow: View {
     private func toggle() {
         open.toggle()
         guard open, words == nil, !loading else { return }
+        reload()
+    }
+
+    private func reload() {
+        guard !loading else { return }
         loading = true
         note = nil
         Task { @MainActor in
             do {
                 words = DictionaryWords.clean(try await cloud.dictionaryWords(of: member.userID))
             } catch {
-                note = error.localizedDescription
+                logLine("member words load failed: \(error.localizedDescription)")
+                note = "Couldn't load their words."
             }
             loading = false
         }

@@ -102,7 +102,12 @@ struct LeaderboardSection: View {
     @ViewBuilder
     private var board: some View {
         if let note {
-            EmptyHint(text: note)
+            HStack(spacing: 10) {
+                EmptyHint(text: note)
+                Button("Try again") { Task { await reload() } }
+                    .buttonStyle(QuietButtonStyle())
+                    .disabled(loading)
+            }
         } else if rows.isEmpty && loadedOnce && !loading {
             EmptyHint(text: "Nothing on the board \(period.emptyPhrase). \(AppSettings.shared.holdHint).")
         } else {
@@ -126,7 +131,8 @@ struct LeaderboardSection: View {
             rows = try await cloud.leaderboard(period: period.rawValue)
             note = nil
         } catch {
-            note = error.localizedDescription
+            logLine("leaderboard load failed: \(error.localizedDescription)")
+            note = "Couldn't load the leaderboard."
         }
         loading = false
         loadedOnce = true
