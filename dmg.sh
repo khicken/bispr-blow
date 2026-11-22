@@ -7,9 +7,9 @@
 # disk image cannot do. package.sh is still there and still correct for anyone who wants
 # the /Library install; this is the one to put behind a download link.
 #
-# NOT NOTARIZED. Downloaded from a browser this gets a quarantine flag, and macOS will
-# refuse to open it with a message about unverified developer. That is not a bug in this
-# script — it needs the Developer ID membership. See README, "Signing and notarization".
+# Signed with the Developer ID (build.sh picks it), then notarized and stapled when the
+# notarytool profile exists, so a browser download opens without a Gatekeeper warning.
+# Store the profile once: xcrun notarytool store-credentials bisprblow --apple-id <id> --team-id <team>
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -35,6 +35,24 @@ ln -s /Applications "$OUT/Applications"   # the drag target, and the whole UI of
 
 hdiutil create -volname BisprBlow -srcfolder "$OUT" -ov -format UDZO -quiet "$DMG"
 
-echo "Built $DMG ($(du -sh "$DMG" | cut -f1))."
 codesign --verify --deep --strict .build/BisprBlow.app \
-    && echo "Bundle signature verifies." || echo "Bundle signature does NOT verify." >&2
+    || { echo "Bundle signature does NOT verify." >&2; exit 1; }
+
+DEVID=$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)
+if [ -z "$DEVID" ]; then
+    echo "Built $DMG ($(du -sh "$DMG" | cut -f1)). No Developer ID, so not notarized." >&2
+    exit 0
+fi
+codesign --force -s "$DEVID" --timestamp "$DMG"
+
+PROFILE=${NOTARY_PROFILE:-bisprblow}
+if xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
+    # --wait blocks until Apple answers, usually a few minutes for a file this size.
+    xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+    xcrun stapler staple "$DMG"
+    spctl -a -t open --context context:primary-signature -vv "$DMG"
+    echo "Built, notarized and stapled $DMG ($(du -sh "$DMG" | cut -f1))."
+else
+    echo "Built and signed $DMG, NOT notarized: no notarytool profile \"$PROFILE\"." >&2
+fi
