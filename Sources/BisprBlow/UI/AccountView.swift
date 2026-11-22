@@ -62,12 +62,14 @@ struct TeamCloudSection: View {
     @State private var inviteCode: String?
     @State private var inviteFor = ""
     @State private var codeCopied = false
-    @State private var memberNames: [String] = []
+    @State private var renaming = false
+    @State private var draftName = ""
+    @FocusState private var nameFocused: Bool
     @State private var creating = false
     @State private var busy: Action?
     @State private var note: String?
 
-    private enum Action { case create, join, invite }
+    private enum Action { case create, join, invite, rename }
 
     var body: some View {
         Group {
@@ -80,7 +82,6 @@ struct TeamCloudSection: View {
         .task(id: cloud.session?.userID) {
             guard cloud.session != nil else { return }
             await cloud.refreshOrg()
-            await loadMembers()
         }
     }
 
@@ -122,14 +123,45 @@ struct TeamCloudSection: View {
             HStack(spacing: 12) {
                 InitialCircle(letter: String(org.name.prefix(1)))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(org.name)
-                        .font(.bj(15, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
-                    if !memberNames.isEmpty {
-                        Text(memberNames.joined(separator: ", "))
+                    if renaming {
+                        HStack(spacing: 8) {
+                            TextField("Team name", text: $draftName)
+                                .bjField()
+                                .focused($nameFocused)
+                                .onAppear { nameFocused = true }
+                                .onSubmit { saveName(org) }
+                                .onExitCommand(perform: cancelRename)
+                                .disabled(busy == .rename)
+                            if busy == .rename { ProgressView().controlSize(.small) }
+                        }
+                    } else if org.isOwner {
+                        Button {
+                            draftName = org.name
+                            note = nil
+                            renaming = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(org.name)
+                                    .font(.bj(15, weight: .semibold))
+                                    .foregroundStyle(Theme.ink)
+                                Image(systemName: "pencil")
+                                    .font(.bj(11))
+                                    .foregroundStyle(Theme.inkSubtle)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .handCursor()
+                        .help("Rename team")
+                    } else {
+                        Text(org.name)
+                            .font(.bj(15, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                    }
+                    if !cloud.roster.isEmpty && !renaming {
+                        Text(cloud.roster.count == 1 ? "1 member" : "\(cloud.roster.count) members")
                             .font(.bj(12))
                             .foregroundStyle(Theme.inkSubtle)
-                            .lineLimit(2)
                     }
                 }
                 Spacer()
@@ -199,7 +231,6 @@ struct TeamCloudSection: View {
         run(.create) {
             try await cloud.createOrg(named: name)
             teamName = ""
-            await loadMembers()
         }
     }
 
@@ -209,7 +240,6 @@ struct TeamCloudSection: View {
         run(.join) {
             try await cloud.joinOrg(code: code)
             joinCode = ""
-            await loadMembers()
         }
     }
 
@@ -223,8 +253,20 @@ struct TeamCloudSection: View {
         }
     }
 
-    private func loadMembers() async {
-        memberNames = (try? await cloud.members().map(\.displayName)) ?? []
+    private func saveName(_ org: CloudOrg) {
+        let name = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard busy == nil else { return }
+        guard !name.isEmpty, name != org.name else { return cancelRename() }
+        run(.rename) {
+            try await cloud.renameOrg(to: name)
+            renaming = false
+        }
+    }
+
+    private func cancelRename() {
+        guard busy == nil else { return }
+        renaming = false
+        note = nil
     }
 
     // One shape for every async action: clear the note, show the error if there is one.

@@ -40,6 +40,20 @@ extension SelfCheck {
         precondition(row["raw"] == nil && row["cleaned"] == nil, "transcript text on the stats path")
         // No org means the column is simply absent, and Postgres keeps it null.
         precondition(SyncEngine.metricRow(entry, userID: c, orgID: nil)["org_id"] == nil)
+        // NaN or infinity would raise an uncatchable exception in JSONSerialization; NUL is refused
+        // by Postgres. Both are cleaned on the way out, and only payload-shaped 4xx get split.
+        let bad = DictationEntry(id: a, date: Date(), raw: "a\u{0000}b", cleaned: "c\u{0000}",
+                                 appName: "x\u{0000}y", bundleID: "", provider: "",
+                                 durationSeconds: .nan)
+        let badRow = SyncEngine.metricRow(bad, userID: c, orgID: nil)
+        precondition(badRow["duration_seconds"] as? Double == 0 && badRow["app_name"] as? String == "xy")
+        precondition(SyncEngine.metricRow(bad, userID: c, orgID: nil)["org_id"] == nil)
+        precondition(SyncEngine.finiteDuration(.infinity) == 0 && SyncEngine.finiteDuration(-1) == 0)
+        precondition(JSONSerialization.isValidJSONObject([badRow]))
+        precondition(SyncEngine.textRow(bad)["raw"] as? String == "ab")
+        precondition(SyncEngine.isRowRejection(400) && SyncEngine.isRowRejection(422))
+        precondition(!SyncEngine.isRowRejection(401) && !SyncEngine.isRowRejection(429)
+                     && !SyncEngine.isRowRejection(503) && !SyncEngine.isRowRejection(nil))
         // Text is its own row against the same id, under its own opt-in.
         let text = SyncEngine.textRow(entry)
         precondition(text["dictation_id"] as? String == a.uuidString)
@@ -89,12 +103,72 @@ extension SelfCheck {
         let half = URL(string: "bisprblow://auth-callback#access_token=abc")!
         precondition(rejectsCallback(half))
 
+        checkTeamDictionary()
+
         // Invite codes: fixed length, an alphabet with no 0/O or 1/I/L, and no repeats in a batch.
         let codes = (0..<500).map { _ in CloudClient.newInviteCode() }
         precondition(Set(codes).count == codes.count)
         precondition(codes.allSatisfy { code in
             code.count == 8 && code.allSatisfy { "23456789ABCDEFGHJKMNPQRSTUVWXYZ".contains($0) }
         })
+    }
+
+    // Roster decoding, the dictionary diff, the `in.()` quoting and the vocabulary merge: the parts of
+    // the Team page that can be wrong without any network.
+    static func checkTeamDictionary() {
+        // The roster's embedded `users` object, a member with `users` null, and a blank team name.
+        let sample = """
+        [{"user_id":"11111111-1111-1111-1111-111111111111","display_name":"Ada Lovelace","role":"owner",
+          "joined_at":"2026-01-01T00:00:00Z","users":{"email":"ada@x.co","display_name":"Ada L"}},
+         {"user_id":"22222222-2222-2222-2222-222222222222","display_name":"","role":"member",
+          "joined_at":"2026-01-02T00:00:00Z","users":{"email":"bo@x.co","display_name":"Bo"}},
+         {"user_id":"33333333-3333-3333-3333-333333333333","display_name":"","role":"member",
+          "joined_at":"2026-01-03T00:00:00Z","users":null}]
+        """
+        let roster = try! JSONDecoder().decode([OrgMember].self, from: Data(sample.utf8))
+        precondition(roster.count == 3)
+        precondition(roster[0].isOwner && roster[0].email == "ada@x.co" && roster[0].displayName == "Ada Lovelace")
+        precondition(!roster[1].isOwner && roster[1].displayName == "Bo")
+        precondition(roster[2].email == nil && roster[2].displayName == "Teammate")
+
+        // Clean: trimmed, no empties, capped at 200, unique ignoring case with the first spelling kept.
+        let long = String(repeating: "x", count: 300)
+        let cleaned = DictionaryWords.clean([" Claude ", "claude", "", "  ", "Vite", long, "a\u{0000}b"])
+        precondition(cleaned == ["Claude", "Vite", String(repeating: "x", count: 200), "ab"], "\(cleaned)")
+
+        // Diff against what this Mac last sent: new words go up, removed ones come down, and a
+        // recased word is both. Words only another device sent are never in `synced`, so never deleted.
+        let plan = DictionaryWords.plan(local: ["Vite", "Claude", "Zed"], synced: ["Vite", "claude", "Old"])
+        precondition(plan.upsert == ["Claude", "Zed"], "\(plan.upsert)")
+        precondition(plan.delete == ["Old", "claude"], "\(plan.delete)")
+        let none = DictionaryWords.plan(local: ["a"], synced: ["a"])
+        precondition(none.upsert.isEmpty && none.delete.isEmpty)
+
+        // Importing skips what is already here, ignoring case, and repeats within their list.
+        precondition(DictionaryWords.importable(theirs: ["vite", "Kubernetes", "kubernetes", "Zed"],
+                                                mine: ["Vite", "zed"]) == ["Kubernetes"])
+
+        // `in.()` quoting: every value quoted; commas, parentheses, quotes and backslashes are data.
+        precondition(DictionaryWords.inList(["a", "b c"]) == #"in.("a","b c")"#)
+        precondition(DictionaryWords.inList([#"say "hi""#]) == #"in.("say \"hi\"")"#)
+        precondition(DictionaryWords.inList([#"a\b"#, "x,y", "f(x)"]) == #"in.("a\\b","x,y","f(x)")"#)
+        // And it survives the trip into a URL: `+` is escaped (a raw one reads as a space server
+        // side), `&` and `=` stay inside the one value.
+        let base = URL(string: "https://x.co")!
+        let url = CloudClient.url(base, "rest/v1/dictionary_words",
+                                  [.init(name: "word", value: DictionaryWords.inList(["C++", "a&b=c"]))])
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        precondition(items.count == 1 && items[0].value == #"in.("C++","a&b=c")"#, url.absoluteString)
+        precondition(!url.absoluteString.contains("+") && !url.absoluteString.contains("&"))
+
+        // Vocabulary: groups in priority order, deduped ignoring case, first spelling wins.
+        let merged = AppSettings.mergedVocabulary(["Claude", " "], ["Ada", "vite"], ["ada", "Bo", "Vite"],
+                                                  ["claude", "GitHub"])
+        precondition(merged == ["Claude", "Ada", "vite", "Bo", "GitHub"], "\(merged)")
+
+        // The state file written before words existed still decodes with an empty set.
+        precondition(try! JSONDecoder().decode(SyncEngine.State.self, from: Data(#"{"metrics":[]}"#.utf8))
+            .words.isEmpty)
     }
 
     // Accurate resolving to the same model as Fast is the trigger for offering the download, and it

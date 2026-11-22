@@ -62,6 +62,12 @@ final class AppSettings: ObservableObject {
             }
         }
     }
+    // Display names from the cloud team roster. Kept apart from `teamMembers` so the hand-typed
+    // list is never rewritten by a sync, and stored so the names still count before the roster
+    // has loaded at launch.
+    @Published var rosterNames: [String] {
+        didSet { defaults.set(rosterNames, forKey: "rosterNames") }
+    }
     // A click when the mic opens and one when the text lands. The only feedback that reaches you
     // while you are looking at the app you are dictating into rather than at the pill.
     @Published var soundsEnabled: Bool {
@@ -230,8 +236,13 @@ final class AppSettings: ObservableObject {
     // Terms the cleanup model should correct toward: dictionary, team member names, then built-ins,
     // so the user's casing wins.
     var vocabulary: [String] {
+        Self.mergedVocabulary(dictionary, teamMembers.map(\.name), rosterNames, Self.builtInWords)
+    }
+
+    // Groups in priority order, trimmed and unique ignoring case; the first spelling wins.
+    nonisolated static func mergedVocabulary(_ groups: [String]...) -> [String] {
         var seen = Set<String>()
-        return (dictionary + teamMembers.map(\.name) + Self.builtInWords)
+        return groups.joined()
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
     }
@@ -276,6 +287,7 @@ final class AppSettings: ObservableObject {
         } else {
             teamMembers = []
         }
+        rosterNames = defaults.stringArray(forKey: "rosterNames") ?? []
         soundsEnabled = defaults.object(forKey: "launchSoundEnabled") as? Bool ?? true
         alwaysShowPill = defaults.object(forKey: "alwaysShowPill") as? Bool ?? true
         showInDock = defaults.bool(forKey: "showInDock")

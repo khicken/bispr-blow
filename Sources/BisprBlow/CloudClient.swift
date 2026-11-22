@@ -10,6 +10,8 @@ final class CloudClient: ObservableObject {
 
     @Published private(set) var session: CloudSession?
     @Published private(set) var org: CloudOrg?
+    @Published private(set) var roster: [OrgMember] = []
+    private var refreshTask: Task<String, Error>?
 
     private init() {
         session = Keychain.load().flatMap { try? JSONDecoder().decode(CloudSession.self, from: $0) }
@@ -140,7 +142,7 @@ final class CloudClient: ObservableObject {
             _ = try? await URLSession.shared.data(for: request)
         }
         session = nil
-        org = nil
+        setOrg(nil)
         Keychain.delete()
         SyncEngine.shared.reset()
     }
@@ -149,13 +151,13 @@ final class CloudClient: ObservableObject {
 
     func createOrg(named name: String) async throws {
         _ = try await rest("POST", "rest/v1/rpc/create_org", json: ["name": name])
-        await refreshOrg()
+        try await fetchOrg()
         SyncEngine.shared.noteOrgChanged()
     }
 
     func joinOrg(code: String) async throws {
         _ = try await rest("POST", "rest/v1/rpc/accept_invite", json: ["invite_code": code])
-        await refreshOrg()
+        try await fetchOrg()
         SyncEngine.shared.noteOrgChanged()
     }
 
@@ -174,40 +176,103 @@ final class CloudClient: ObservableObject {
         return code
     }
 
-    func members() async throws -> [OrgMember] {
-        guard let org else { return [] }
+    // Owner only; the server enforces it. A non-owner's PATCH matches no rows and still answers
+    // 204, so the UI never offers this to anyone else.
+    func renameOrg(to name: String) async throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let org else { throw CloudError(message: "Join a team first.") }
+        guard !trimmed.isEmpty else { throw CloudError(message: "Give the team a name.") }
+        _ = try await rest("PATCH", "rest/v1/orgs",
+                           query: [.init(name: "id", value: "eq.\(org.id.uuidString)")],
+                           json: ["name": trimmed], prefer: "return=minimal")
+        if self.org?.id == org.id {
+            self.org = CloudOrg(id: org.id, name: trimmed, role: org.role)
+        }
+    }
+
+    // The roster, which also feeds the recognizer: teammates' names are the words most worth
+    // spelling right. Kept on the client so it works without the Team page ever being opened.
+    func refreshRoster() async throws {
+        guard let org else { return }
         let data = try await rest("GET", "rest/v1/org_members", query: [
             .init(name: "org_id", value: "eq.\(org.id.uuidString)"),
-            .init(name: "select", value: "user_id,display_name,role"),
+            .init(name: "select", value: "user_id,display_name,role,joined_at,users(email,display_name)"),
             .init(name: "order", value: "joined_at.asc"),
         ])
-        return try JSONDecoder().decode([OrgMember].self, from: data)
+        let rows = try JSONDecoder().decode([OrgMember].self, from: data)
+        guard self.org?.id == org.id else { return }
+        roster = rows
+        AppSettings.shared.rosterNames = rows.map(\.displayName)
+    }
+
+    func dictionaryWords(of userID: UUID) async throws -> [String] {
+        let data = try await rest("GET", "rest/v1/dictionary_words", query: [
+            .init(name: "user_id", value: "eq.\(userID.uuidString)"),
+            .init(name: "select", value: "word"),
+            .init(name: "order", value: "word.asc"),
+        ])
+        struct Row: Decodable { let word: String }
+        return try JSONDecoder().decode([Row].self, from: data).map(\.word)
+    }
+
+    func upsertDictionaryWords(_ words: [String]) async throws {
+        guard let session, !words.isEmpty else { return }
+        _ = try await rest("POST", "rest/v1/dictionary_words",
+                           json: words.map { ["user_id": session.userID.uuidString, "word": $0] },
+                           prefer: "resolution=merge-duplicates,return=minimal")
+    }
+
+    func deleteDictionaryWords(_ words: [String]) async throws {
+        guard let session, !words.isEmpty else { return }
+        _ = try await rest("DELETE", "rest/v1/dictionary_words", query: [
+            .init(name: "user_id", value: "eq.\(session.userID.uuidString)"),
+            .init(name: "word", value: DictionaryWords.inList(words)),
+        ], prefer: "return=minimal")
     }
 
     // Which org this account belongs to, if any. Safe to call repeatedly; failures leave `org` as it
     // was and are logged rather than shown.
     func refreshOrg() async {
-        guard let session else { return }
         do {
-            let data = try await rest("GET", "rest/v1/org_members", query: [
-                .init(name: "user_id", value: "eq.\(session.userID.uuidString)"),
-                .init(name: "select", value: "role,orgs(id,name)"),
-                .init(name: "order", value: "joined_at.asc"),
-                .init(name: "limit", value: "1"),
-            ])
-            struct Row: Decodable {
-                let role: String
-                let orgs: Ref
-                struct Ref: Decodable {
-                    let id: UUID
-                    let name: String
-                }
-            }
-            let rows = try JSONDecoder().decode([Row].self, from: data)
-            org = rows.first.map { CloudOrg(id: $0.orgs.id, name: $0.orgs.name, role: $0.role) }
+            try await fetchOrg()
         } catch {
             logLine("cloud org fetch failed: \(error.localizedDescription)")
         }
+    }
+
+    // Throwing form for create/join: their RPC has already committed, so a failed fetch must reach
+    // the caller or the form stays up with `org` nil and a second tap creates a duplicate.
+    private func fetchOrg() async throws {
+        guard let session else { return }
+        let data = try await rest("GET", "rest/v1/org_members", query: [
+            .init(name: "user_id", value: "eq.\(session.userID.uuidString)"),
+            .init(name: "select", value: "role,orgs(id,name)"),
+            .init(name: "order", value: "joined_at.asc"),
+            .init(name: "limit", value: "1"),
+        ])
+        struct Row: Decodable {
+            let role: String
+            let orgs: Ref
+            struct Ref: Decodable {
+                let id: UUID
+                let name: String
+            }
+        }
+        let rows = try JSONDecoder().decode([Row].self, from: data)
+        setOrg(rows.first.map { CloudOrg(id: $0.orgs.id, name: $0.orgs.name, role: $0.role) })
+        if org != nil {
+            do { try await refreshRoster() } catch { logLine("cloud roster fetch failed: \(error.localizedDescription)") }
+        }
+    }
+
+    // The one place `org` changes, so the roster and the names it feeds the recognizer never
+    // outlive the team they came from.
+    private func setOrg(_ new: CloudOrg?) {
+        if new?.id != org?.id {
+            roster = []
+            AppSettings.shared.rosterNames = []
+        }
+        org = new
     }
 
     // MARK: - Data
@@ -275,13 +340,24 @@ final class CloudClient: ObservableObject {
         return try await send(request)
     }
 
+    // URLComponents leaves `+` raw in a query value, and PostgREST reads a raw `+` as a space, so
+    // a word like "C++" would match the wrong row. Every real plus is a plus, since spaces are
+    // already %20 by this point.
+    nonisolated static func url(_ base: URL, _ path: String, _ query: [URLQueryItem]) -> URL {
+        var components = URLComponents(url: base.appendingPathComponent(path),
+                                       resolvingAgainstBaseURL: false)!
+        if !query.isEmpty {
+            components.queryItems = query
+            components.percentEncodedQuery = components.percentEncodedQuery?
+                .replacingOccurrences(of: "+", with: "%2B")
+        }
+        return components.url!
+    }
+
     private func rest(_ method: String, _ path: String, query: [URLQueryItem] = [],
                       json: Any? = nil, prefer: String? = nil) async throws -> Data {
         guard let base = CloudConfig.url else { throw CloudError(message: "Accounts aren't set up.") }
-        var components = URLComponents(url: base.appendingPathComponent(path),
-                                       resolvingAgainstBaseURL: false)!
-        if !query.isEmpty { components.queryItems = query }
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: Self.url(base, path, query))
         request.httpMethod = method
         request.setValue(CloudConfig.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(try await accessToken())", forHTTPHeaderField: "Authorization")
@@ -311,17 +387,44 @@ final class CloudClient: ObservableObject {
     private func accessToken() async throws -> String {
         guard let current = session else { throw CloudError(message: "Sign in first.") }
         if current.expiresAt > Date().addingTimeInterval(60) { return current.accessToken }
+        return try await refreshSession(current)
+    }
+
+    // One refresh shared by every caller that finds the token expired: GoTrue rotates refresh
+    // tokens, so a second concurrent POST would get `refresh_token_already_used` and sign the
+    // person out for nothing.
+    private func refreshSession(_ current: CloudSession) async throws -> String {
+        if let refreshTask { return try await refreshTask.value }
+        let task = Task { try await performRefresh(current) }
+        refreshTask = task
+        defer { refreshTask = nil }
+        return try await task.value
+    }
+
+    private func performRefresh(_ current: CloudSession) async throws -> String {
         do {
-            let data = try await auth("token?grant_type=refresh_token",
-                                      json: ["refresh_token": current.refreshToken])
-            try adopt(tokenData: data, fallbackEmail: current.email)
-        } catch let error as CloudError where [400, 401, 403].contains(error.status) {
+            let data = try await auth("token", json: ["refresh_token": current.refreshToken],
+                                      query: [URLQueryItem(name: "grant_type", value: "refresh_token")])
+            do {
+                try adopt(tokenData: data, fallbackEmail: current.email)
+            } catch is DecodingError {
+                throw CloudError(message: "That didn't work. Try again in a moment.")
+            }
+        } catch let error as CloudError where Self.endsSession(error.status) {
             session = nil
-            org = nil
+            setOrg(nil)
             Keychain.delete()
             throw CloudError(message: "You've been signed out. Sign in again from Settings.")
         }
-        return session!.accessToken
+        guard let session else { throw CloudError(message: "Sign in first.") }
+        return session.accessToken
+    }
+
+    // Any 4xx means the server looked at this refresh token and refused it, except the two that
+    // say "try again": 408 and 429.
+    private static func endsSession(_ status: Int?) -> Bool {
+        guard let status else { return false }
+        return (400..<500).contains(status) && status != 408 && status != 429
     }
 
     private func adopt(tokenData: Data, fallbackEmail: String) throws {

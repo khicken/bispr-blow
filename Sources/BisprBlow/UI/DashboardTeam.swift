@@ -29,50 +29,70 @@ struct TeamView: View {
     @ObservedObject var settings: AppSettings
     // nil in a build with no project configured, where there is no cloud team to show.
     var cloud: CloudClient?
+    // Re-renders this page when the team changes; `cloud` is this same shared object, which a
+    // plain `var` would not observe.
+    @ObservedObject private var live = CloudClient.shared
     @State private var newName = ""
     @State private var newRole = ""
 
+    private var inTeam: Bool { cloud != nil && live.org != nil }
+
     var body: some View {
-        // What it does, not how it works: a teammate list is worth having because a name you say out
-        // loud comes back spelled wrong until it is in here.
-        Page(title: "Team", subtitle: "Names you add here get spelled right.") {
+        // What it does, not how it works: a name you say out loud comes back spelled wrong until it
+        // is in here.
+        Page(title: "Team", subtitle: inTeam ? "Your teammates, and the words they've taught it."
+                                              : "Names you add here get spelled right.") {
             if let cloud {
                 TeamCloudSection(cloud: cloud)
                     .card(padding: 18)
             }
-            VStack(alignment: .leading, spacing: 10) {
-                SectionLabel("Names")
-                HStack(spacing: 8) {
-                    TextField("Name", text: $newName)
-                        .bjField()
-                        .frame(maxWidth: .infinity)
-                        .onSubmit(addMember)
-                    TextField("Role (optional)", text: $newRole)
-                        .bjField()
-                        .frame(maxWidth: .infinity)
-                        .onSubmit(addMember)
-                    Button("Add", action: addMember)
-                        .buttonStyle(CapsuleButtonStyle())
-                        .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-
-            if settings.teamMembers.isEmpty {
-                EmptyHint(text: "No names yet.")
+            if let cloud, inTeam {
+                RosterSection(cloud: cloud, settings: settings)
             } else {
-                VStack(spacing: 6) {
-                    ForEach(settings.teamMembers) { member in
-                        TeamRow(member: member) {
-                            withAnimation(.bjSnap) { settings.teamMembers.removeAll { $0.id == member.id } }
-                        }
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .top).combined(with: .opacity),
-                            removal: .scale(scale: 0.94).combined(with: .opacity)
-                        ))
-                    }
-                }
-                .animation(.bjSnap, value: settings.teamMembers.map(\.id))
+                localNames
             }
+        }
+    }
+
+    @ViewBuilder
+    private var localNames: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                SectionLabel("Members")
+                Text("Names here get spelled right.")
+                    .font(.bj(12))
+                    .foregroundStyle(Theme.inkSubtle)
+            }
+            HStack(spacing: 8) {
+                TextField("Name", text: $newName)
+                    .bjField()
+                    .frame(maxWidth: .infinity)
+                    .onSubmit(addMember)
+                TextField("Role (optional)", text: $newRole)
+                    .bjField()
+                    .frame(maxWidth: .infinity)
+                    .onSubmit(addMember)
+                Button("Add", action: addMember)
+                    .buttonStyle(CapsuleButtonStyle())
+                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+
+        if settings.teamMembers.isEmpty {
+            EmptyHint(text: "No names yet.")
+        } else {
+            VStack(spacing: 6) {
+                ForEach(settings.teamMembers) { member in
+                    TeamRow(member: member) {
+                        withAnimation(.bjSnap) { settings.teamMembers.removeAll { $0.id == member.id } }
+                    }
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .scale(scale: 0.94).combined(with: .opacity)
+                    ))
+                }
+            }
+            .animation(.bjSnap, value: settings.teamMembers.map(\.id))
         }
     }
 
@@ -84,6 +104,167 @@ struct TeamView: View {
         }
         newName = ""
         newRole = ""
+    }
+}
+
+// The team's roster, read from the server. Nothing to type: people appear when they join.
+struct RosterSection: View {
+    @ObservedObject var cloud: CloudClient
+    @ObservedObject var settings: AppSettings
+    @State private var note: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel("Members")
+            if let note {
+                EmptyHint(text: note)
+            } else if cloud.roster.isEmpty {
+                EmptyHint(text: "Loading members.")
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(cloud.roster) { member in
+                        MemberRow(member: member, isMe: member.userID == cloud.session?.userID,
+                                  cloud: cloud, settings: settings)
+                    }
+                }
+            }
+        }
+        .task(id: cloud.org?.id) {
+            do {
+                try await cloud.refreshRoster()
+                note = nil
+            } catch {
+                note = error.localizedDescription
+            }
+        }
+    }
+}
+
+// A teammate. Their dictionary opens in the row, and words can be copied into yours.
+struct MemberRow: View {
+    var themeID = Appearance.current
+    let member: OrgMember
+    let isMe: Bool
+    @ObservedObject var cloud: CloudClient
+    @ObservedObject var settings: AppSettings
+    @State private var open = false
+    @State private var words: [String]?
+    @State private var loading = false
+    @State private var note: String?
+    @State private var picked: Set<String> = []
+
+    private var mine: Set<String> { Set(settings.dictionary.map { $0.lowercased() }) }
+    private var fresh: [String] { DictionaryWords.importable(theirs: words ?? [], mine: settings.dictionary) }
+    private var chosen: [String] { fresh.filter { picked.contains($0) } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                InitialCircle(letter: String(member.displayName.prefix(1)))
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(member.displayName)
+                            .font(.bj(13, weight: .medium))
+                            .foregroundStyle(Theme.ink)
+                        if member.isOwner {
+                            Text("Owner")
+                                .font(.bj(10.5, weight: .medium))
+                                .foregroundStyle(Theme.inkSubtle)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Theme.surfaceActive))
+                        }
+                    }
+                    if let email = member.email, !email.isEmpty {
+                        Text(email)
+                            .font(.bj(11))
+                            .foregroundStyle(Theme.inkSubtle)
+                    }
+                }
+                Spacer()
+                if !isMe {
+                    Button(open ? "Hide words" : "Their words", action: toggle)
+                        .buttonStyle(QuietButtonStyle())
+                }
+            }
+            if open {
+                panel
+                    .transition(.opacity)
+            }
+        }
+        .card(padding: 11)
+        .animation(.bjSoft, value: open)
+    }
+
+    @ViewBuilder
+    private var panel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if loading {
+                ProgressView().controlSize(.small)
+            } else if let note {
+                Text(note)
+                    .font(.bj(11.5))
+                    .foregroundStyle(Theme.red)
+            } else if let words, words.isEmpty {
+                Text("No words yet.")
+                    .font(.bj(12))
+                    .foregroundStyle(Theme.inkSubtle)
+            } else if let words {
+                WrapStack(spacing: 6) {
+                    ForEach(words, id: \.self) { word in chip(word) }
+                }
+                HStack(spacing: 8) {
+                    Button("Add selected") { add(chosen) }
+                        .buttonStyle(CapsuleButtonStyle())
+                        .disabled(chosen.isEmpty)
+                    Button("Add all \(fresh.count)") { add(fresh) }
+                        .buttonStyle(QuietButtonStyle())
+                        .disabled(fresh.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func chip(_ word: String) -> some View {
+        let have = mine.contains(word.lowercased())
+        let on = picked.contains(word)
+        return Button {
+            if on { picked.remove(word) } else { picked.insert(word) }
+        } label: {
+            Text(word)
+                .font(.bj(12.5))
+                .foregroundStyle(have ? Theme.inkSubtle : (on ? Theme.blue : Theme.ink))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(on && !have ? Theme.blueSoft : Theme.surfaceActive.opacity(have ? 0.5 : 1)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .handCursor(!have)
+        .disabled(have)
+        .help(have ? "Already in your dictionary" : "")
+    }
+
+    private func toggle() {
+        open.toggle()
+        guard open, words == nil, !loading else { return }
+        loading = true
+        note = nil
+        Task { @MainActor in
+            do {
+                words = DictionaryWords.clean(try await cloud.dictionaryWords(of: member.userID))
+            } catch {
+                note = error.localizedDescription
+            }
+            loading = false
+        }
+    }
+
+    private func add(_ list: [String]) {
+        withAnimation(.bjSnap) {
+            settings.addDictionaryWords(list)
+            picked.subtract(list)
+        }
     }
 }
 

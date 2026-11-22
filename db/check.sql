@@ -234,4 +234,130 @@ begin
         'a rejected code stays unused';
 end $$;
 
+--------------------------------------------------------------------------------
+-- Team features: rename, roster emails, shared dictionaries.
+--------------------------------------------------------------------------------
+insert into users (id, email, display_name)
+values ('55555555-5555-5555-5555-555555555555', 'eve@example.com', 'Eve');
+insert into dictionary_words (user_id, word) values
+    ('11111111-1111-1111-1111-111111111111', 'Kubernetes'),
+    ('22222222-2222-2222-2222-222222222222', 'Supabase');
+
+-- Bo is a plain member: the rename is silently filtered out by RLS.
+set local request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222"}';
+set local role authenticated;
+
+do $$
+declare
+    n integer;
+begin
+    update orgs set name = 'Hijacked' where id = 'aaaaaaaa-0000-0000-0000-000000000000';
+    get diagnostics n = row_count;
+    assert n = 0, 'a non-owner must not be able to rename the org';
+
+    assert (select email from users where id = '11111111-1111-1111-1111-111111111111')
+           = 'ada@example.com', 'a co-member can read a teammate''s email';
+    assert (select count(*) from users) = 4, 'Bo sees himself and his three teammates, not Eve';
+    assert not exists (select 1 from users where email = 'eve@example.com'),
+        'a user outside every shared org stays invisible';
+    assert (select u.email from org_members om join users u on u.id = om.user_id
+            where om.user_id = '11111111-1111-1111-1111-111111111111') = 'ada@example.com',
+        'the roster embed (org_members -> users) returns emails';
+    update users set display_name = 'Ada2' where id = '11111111-1111-1111-1111-111111111111';
+    get diagnostics n = row_count;
+    assert n = 0, 'seeing a teammate''s profile does not let you edit it';
+
+    assert (select count(*) from dictionary_words) = 2,
+        'a co-member reads their own and a teammate''s words';
+    assert (select word from dictionary_words
+            where user_id = '11111111-1111-1111-1111-111111111111') = 'Kubernetes',
+        'a co-member reads a teammate''s dictionary';
+
+    update dictionary_words set word = 'Hacked'
+    where user_id = '11111111-1111-1111-1111-111111111111';
+    get diagnostics n = row_count;
+    assert n = 0, 'a teammate''s words cannot be updated';
+    delete from dictionary_words where user_id = '11111111-1111-1111-1111-111111111111';
+    get diagnostics n = row_count;
+    assert n = 0, 'a teammate''s words cannot be deleted';
+
+    insert into dictionary_words (user_id, word)
+    values ('22222222-2222-2222-2222-222222222222', 'Postgres')
+    on conflict (user_id, word) do update set updated_at = now();
+    insert into dictionary_words (user_id, word)
+    values ('22222222-2222-2222-2222-222222222222', 'Postgres')
+    on conflict (user_id, word) do update set updated_at = now();
+    assert (select count(*) from dictionary_words
+            where user_id = '22222222-2222-2222-2222-222222222222') = 2,
+        'upserting your own word twice keeps one row';
+end $$;
+
+do $$
+begin
+    insert into dictionary_words (user_id, word)
+    values ('11111111-1111-1111-1111-111111111111', 'Planted');
+    raise exception 'a member must not be able to write words as another user';
+exception
+    when insufficient_privilege then null;
+end $$;
+
+do $$
+begin
+    insert into dictionary_words (user_id, word)
+    values ('22222222-2222-2222-2222-222222222222', '   ');
+    raise exception 'a blank word must be refused';
+exception
+    when check_violation then null;
+end $$;
+
+do $$
+begin
+    insert into dictionary_words (user_id, word)
+    values ('22222222-2222-2222-2222-222222222222', repeat('x', 201));
+    raise exception 'a word over 200 characters must be refused';
+exception
+    when check_violation then null;
+end $$;
+
+-- Ada owns the org: rename works, a blank name does not.
+reset role;
+set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111"}';
+set local role authenticated;
+
+do $$
+declare
+    n integer;
+begin
+    update orgs set name = 'Renamed Org' where id = 'aaaaaaaa-0000-0000-0000-000000000000';
+    get diagnostics n = row_count;
+    assert n = 1, 'the owner can rename the org';
+    assert (select name from orgs where id = 'aaaaaaaa-0000-0000-0000-000000000000') = 'Renamed Org',
+        'the new org name sticks';
+    begin
+        update orgs set name = '  ' where id = 'aaaaaaaa-0000-0000-0000-000000000000';
+        raise exception 'a blank org name must be refused';
+    exception when check_violation then null;
+    end;
+end $$;
+
+-- Eve shares no org with anyone: no emails, no words, no rename.
+reset role;
+set local request.jwt.claims = '{"sub":"55555555-5555-5555-5555-555555555555"}';
+set local role authenticated;
+
+do $$
+declare
+    n integer;
+begin
+    assert (select count(*) from users) = 1, 'an outsider sees only their own user row';
+    assert not exists (select 1 from users where email = 'ada@example.com'),
+        'an outsider cannot read a member''s email';
+    assert not exists (select 1 from dictionary_words), 'an outsider reads no dictionaries';
+    update orgs set name = 'Eve was here' where id = 'aaaaaaaa-0000-0000-0000-000000000000';
+    get diagnostics n = row_count;
+    assert n = 0, 'an outsider cannot rename the org';
+end $$;
+
+reset role;
+
 rollback;

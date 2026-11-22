@@ -22,10 +22,14 @@ alter table org_members     enable row level security;
 alter table invites         enable row level security;
 alter table dictations      enable row level security;
 alter table dictation_texts enable row level security;
+alter table dictionary_words enable row level security;
 
 -- Users: your own row, and the display name you chose.
 create policy users_read_self on users
     for select using (id = current_user_id());
+-- Teammates can see each other's name and email: the roster shows them.
+create policy users_read_comembers on users
+    for select using (shares_org_with(id));
 create policy users_update_self on users
     for update using (id = current_user_id()) with check (id = current_user_id());
 
@@ -85,6 +89,16 @@ create policy texts_own on dictation_texts
     with check (exists (select 1 from dictations d
                         where d.id = dictation_id and d.user_id = current_user_id()));
 
+-- Dictionary: readable by you and your teammates, writable only by you.
+create policy words_read_comembers on dictionary_words
+    for select using (shares_org_with(user_id));
+create policy words_insert_self on dictionary_words
+    for insert with check (user_id = current_user_id());
+create policy words_update_self on dictionary_words
+    for update using (user_id = current_user_id()) with check (user_id = current_user_id());
+create policy words_delete_self on dictionary_words
+    for delete using (user_id = current_user_id());
+
 -- Create an org and become its owner in one step.
 create function create_org(name text) returns uuid
 language plpgsql security definer set search_path = public as $$
@@ -142,6 +156,7 @@ grant select, insert, update, delete     on org_members     to authenticated;
 grant select, insert, update, delete     on invites         to authenticated;
 grant select, insert, update, delete     on dictations      to authenticated;
 grant select, insert, update, delete     on dictation_texts to authenticated;
+grant select, insert, update, delete     on dictionary_words to authenticated;
 grant select                             on leaderboard     to authenticated;
 
 -- member_days and member_streaks are owner-rights internals of the leaderboard

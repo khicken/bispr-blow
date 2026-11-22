@@ -33,6 +33,7 @@ enum VocabPacks {
 
 struct DictionaryView: View {
     @ObservedObject var settings: AppSettings
+    @ObservedObject private var cloud = CloudClient.shared
     @State private var newWord = ""
     @State private var search = ""
     @State private var recentFirst = false
@@ -65,7 +66,8 @@ struct DictionaryView: View {
     }
 
     var body: some View {
-        Page(title: "Dictionary", subtitle: "These words stay on this Mac.") {
+        Page(title: "Dictionary", subtitle: cloud.org == nil ? "These words stay on this Mac."
+                                                 : "Your team can see these words.") {
             if !introDismissed {
                 intro
             }
