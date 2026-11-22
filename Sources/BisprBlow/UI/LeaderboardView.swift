@@ -45,10 +45,12 @@ struct LeaderboardSection: View {
                     SectionLabel("Leaderboard")
                     if let name = cloud.org?.name {
                         Text(name)
-                            .font(.bj(11))
+                            .font(.bj(TypeSize.micro))
                             .foregroundStyle(Theme.inkTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
-                    Spacer()
+                    Spacer(minLength: 8)
                     if cloud.session != nil, cloud.org != nil { picker }
                 }
                 content
@@ -65,11 +67,11 @@ struct LeaderboardSection: View {
         // history rows are cards, so a bare form reads as unfinished rather than as a section.
         if cloud.session == nil {
             SignInView(cloud: cloud, showsBlurb: false)
-                .card(padding: 14)
+                .card(padding: Metric.cardPad)
         } else if cloud.org == nil {
             // The same create/join controls the Team page uses, not a copy of them.
             TeamCloudSection(cloud: cloud)
-                .card(padding: 14)
+                .card(padding: Metric.cardPad)
         } else {
             board
         }
@@ -77,22 +79,14 @@ struct LeaderboardSection: View {
 
     private var picker: some View {
         HStack(spacing: 8) {
-            ForEach(Period.allCases) { candidate in
-                let selected = candidate == period
-                Button {
-                    withAnimation(.bjSnap) { period = candidate }
-                } label: {
-                    Text(candidate.label)
-                        .font(.bj(12, weight: .medium))
-                        .foregroundStyle(selected ? Theme.blue : Theme.inkSubtle)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(selected ? Theme.blueSoft : Theme.tableHeader))
-                        .contentShape(Capsule())
+            Picker("Period", selection: $period.animation(.bjSnap)) {
+                ForEach(Period.allCases) { candidate in
+                    Text(candidate.label).tag(candidate)
                 }
-                .buttonStyle(.plain)
-                .handCursor()
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
             if loading {
                 ProgressView().controlSize(.small)
             }
@@ -143,18 +137,18 @@ private struct LeaderRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("\(rank)")
-                .font(.bj(13, weight: .semibold))
+                .font(.bj(TypeSize.body, weight: .semibold))
                 .monospacedDigit()
-                .foregroundStyle(rank == 1 ? Theme.blue : Theme.inkSubtle)
+                .foregroundStyle(rank == 1 ? Theme.accentText : Theme.inkTertiary)
                 .frame(width: 22, alignment: .center)
             InitialCircle(letter: String(row.displayName.prefix(1)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(isMe ? "\(row.displayName) (you)" : row.displayName)
-                    .font(.bj(13, weight: .medium))
+                    .font(.bj(TypeSize.body, weight: .medium))
                     .foregroundStyle(Theme.ink)
                 if let wpm = row.wpm {
                     Text("\(Int(wpm)) words a minute")
-                        .font(.bj(11))
+                        .font(.bj(TypeSize.micro))
                         .foregroundStyle(Theme.inkSubtle)
                 }
             }
@@ -162,9 +156,9 @@ private struct LeaderRow: View {
             if row.dayStreak > 1 {
                 HStack(spacing: 3) {
                     Image(systemName: "flame.fill")
-                        .font(.bj(10.5))
+                        .font(.bj(TypeSize.micro))
                     Text("\(row.dayStreak)")
-                        .font(.bj(12, weight: .medium))
+                        .font(.bj(TypeSize.caption, weight: .medium))
                         .monospacedDigit()
                 }
                 .foregroundStyle(Theme.red)
@@ -172,17 +166,17 @@ private struct LeaderRow: View {
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(row.words.formatted())
-                    .font(.bj(15, weight: .semibold))
+                    .font(.bj(TypeSize.headline, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(Theme.ink)
                 Text("words")
-                    .font(.bj(11))
+                    .font(.bj(TypeSize.micro))
                     .foregroundStyle(Theme.inkSubtle)
             }
         }
-        .padding(11)
+        .padding(Metric.rowPad)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10)
+        .background(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous)
             .fill(isMe ? Theme.blueSoft : Theme.tableHeader))
     }
 }

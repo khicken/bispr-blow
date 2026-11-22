@@ -93,22 +93,22 @@ struct DictionaryView: View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 11) {
                 Text("Teach it your words")
-                    .font(.bj(29, weight: .semibold, design: .serif))
-                    .foregroundStyle(.white)
+                    .font(.bj(TypeSize.title, weight: .semibold))
+                    .foregroundStyle(Theme.onHero)
                 Text("Add the names, tools, and jargon you say often.")
-                    .font(.bj(13))
-                    .foregroundStyle(.white.opacity(0.82))
+                    .font(.bj(TypeSize.body))
+                    .foregroundStyle(Theme.onHero.opacity(0.82))
                     .lineSpacing(2.5)
                     .frame(maxWidth: 520, alignment: .leading)
                 // Terms only, no action: the field to add one sits directly below this panel.
                 HStack(spacing: 8) {
                     ForEach(settings.dictionary.suffix(5).reversed(), id: \.self) { word in
                         Text(word)
-                            .font(.bj(12.5))
-                            .foregroundStyle(.white.opacity(0.92))
+                            .font(.bj(TypeSize.caption))
+                            .foregroundStyle(Theme.onHero.opacity(0.92))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(Capsule().fill(.white.opacity(0.16)))
+                            .background(Capsule().fill(Theme.onHero.opacity(0.16)))
                             .lineLimit(1)
                     }
                 }
@@ -117,16 +117,16 @@ struct DictionaryView: View {
             .padding(26)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(introBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous))
 
             Button {
                 withAnimation(.bjSoft) { introDismissed = true }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.bj(10, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .font(.bj(TypeSize.micro, weight: .bold))
+                    .foregroundStyle(Theme.onHero.opacity(0.75))
                     .frame(width: 26, height: 26)
-                    .background(Circle().fill(.white.opacity(0.14)))
+                    .background(Circle().fill(Theme.onHero.opacity(0.14)))
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -150,7 +150,7 @@ struct DictionaryView: View {
                                    startPoint: .leading, endPoint: .trailing)
                 )
         } else {
-            LinearGradient(colors: [Theme.blueDeep, Color(hex: 0x123A5C)],
+            LinearGradient(colors: [Theme.heroFrom, Theme.heroTo],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(
                     RadialGradient(colors: [Theme.blue.opacity(0.42), .clear],
@@ -184,12 +184,12 @@ struct DictionaryView: View {
                         if generating {
                             ProgressView().controlSize(.small)
                         } else {
-                            Image(systemName: "sparkles").font(.bj(10.5))
+                            Image(systemName: "sparkles").font(.bj(TypeSize.micro))
                         }
                         Text("Add words related to “\(topic)”")
-                            .font(.bj(12))
+                            .font(.bj(TypeSize.caption))
                     }
-                    .foregroundStyle(generating ? Theme.inkSubtle : Theme.blue)
+                    .foregroundStyle(generating ? Theme.inkSubtle : Theme.accentText)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -202,7 +202,7 @@ struct DictionaryView: View {
 
             if let note {
                 Text(note)
-                    .font(.bj(11.5))
+                    .font(.bj(TypeSize.micro))
                     .foregroundStyle(Theme.inkSubtle)
                     .padding(.leading, 2)
             }
@@ -222,15 +222,15 @@ struct DictionaryView: View {
                 if listIsLong {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
-                            .font(.bj(11))
+                            .font(.bj(TypeSize.micro))
                             .foregroundStyle(Theme.inkSubtle)
                         TextField("Search", text: $search)
                             .textFieldStyle(.plain)
-                            .font(.bj(12.5))
+                            .font(.bj(TypeSize.caption))
                             .frame(width: 130)
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .frame(height: Metric.controlHeight)
                     .background(FieldBackground())
                     Button(recentFirst ? "Newest" : "A–Z") {
                         withAnimation(.bjSnap) { recentFirst.toggle() }
@@ -247,7 +247,7 @@ struct DictionaryView: View {
                 EmptyHint(text: "No words yet. Add one or pick a pack.")
             } else if shown.isEmpty {
                 Text("No matches for “\(search)”.")
-                    .font(.bj(13))
+                    .font(.bj(TypeSize.body))
                     .foregroundStyle(Theme.inkTertiary)
                     .padding(.vertical, 6)
             } else if listIsLong {
@@ -258,12 +258,12 @@ struct DictionaryView: View {
                     rows(trailingInset: 10)
                 }
                 .frame(height: 340)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tableHeader))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .background(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous).fill(Theme.tableHeader))
+                .clipShape(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous))
             } else {
                 rows()
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tableHeader))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .background(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous).fill(Theme.tableHeader))
+                    .clipShape(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous))
             }
         }
     }
@@ -298,8 +298,8 @@ struct DictionaryView: View {
                         withAnimation(.bjSnap) { settings.addDictionaryWords(pack.terms) }
                     } label: {
                         Text(missing > 0 ? "\(pack.name) +\(missing)" : "\(pack.name) ✓")
-                            .font(.bj(12, weight: .medium))
-                            .foregroundStyle(missing > 0 ? Theme.blue : Theme.inkSubtle)
+                            .font(.bj(TypeSize.caption, weight: .medium))
+                            .foregroundStyle(missing > 0 ? Theme.accentText : Theme.inkSubtle)
                             .contentTransition(.numericText())
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
@@ -382,7 +382,7 @@ struct TermRow: View {
             }
             HStack(spacing: 8) {
                 Text(word)
-                    .font(.bj(13))
+                    .font(.bj(TypeSize.body))
                     .foregroundStyle(Theme.ink)
                 if editing {
                     TextField("Misheard as, comma separated", text: $draft)
@@ -392,7 +392,7 @@ struct TermRow: View {
                         .onExitCommand { editing = false }
                 } else if !heardAs.isEmpty {
                     Text("heard as \(heardAs.joined(separator: ", "))")
-                        .font(.bj(12))
+                        .font(.bj(TypeSize.caption))
                         .foregroundStyle(Theme.inkSubtle)
                         .lineLimit(1)
                 }
@@ -401,7 +401,7 @@ struct TermRow: View {
                 // height and wide enough to hit without aiming.
                 Button(action: onRemove) {
                     Image(systemName: "trash")
-                        .font(.bj(11.5))
+                        .font(.bj(TypeSize.micro))
                         .foregroundStyle(Theme.inkSubtle)
                         .frame(width: 30, height: 28)
                         .contentShape(Rectangle())

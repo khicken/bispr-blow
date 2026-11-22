@@ -118,17 +118,17 @@ struct ToastView: View {
                 HStack(spacing: 6) {
                     if controller.notice == nil {
                         Image(systemName: "mic.fill")
-                            .font(.bj(9, weight: .medium))
+                            .font(.bj(TypeSize.micro, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Text(message)
-                        .font(.bj(11, weight: .medium))
+                        .font(.bj(TypeSize.micro, weight: .medium))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                     if let action = controller.noticeAction {
                         Button(action.label) { action.run() }
                             .buttonStyle(.plain)
-                            .font(.bj(11, weight: .semibold))
+                            .font(.bj(TypeSize.micro, weight: .semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)

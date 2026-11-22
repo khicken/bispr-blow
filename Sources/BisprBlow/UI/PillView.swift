@@ -251,7 +251,7 @@ struct PillView: View {
                 model.tapped { controller.startHandsFree() }
             } label: {
                 Image(systemName: "mic.fill")
-                    .font(.bj(11, weight: .medium))
+                    .font(.bj(TypeSize.micro, weight: .medium))
                     .foregroundStyle(.white)
             }
             PillCircleButton(help: "Open BisprBlow", counterRotation: upright) {
@@ -263,7 +263,7 @@ struct PillView: View {
                 model.tapped { model.onOpenDashboard(.history) }
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.bj(11, weight: .medium))
+                    .font(.bj(TypeSize.micro, weight: .medium))
                     .foregroundStyle(.white)
             }
         }

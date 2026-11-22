@@ -24,7 +24,7 @@ struct AccountSection: View {
             HStack(spacing: 10) {
                 InitialCircle(letter: String(cloud.session?.email.prefix(1) ?? "?"))
                 Text(cloud.session?.email ?? "")
-                    .font(.bj(13, weight: .medium))
+                    .font(.bj(TypeSize.body, weight: .medium))
                     .foregroundStyle(Theme.ink)
                 Spacer()
                 Button("Sign out") {
@@ -89,7 +89,7 @@ struct TeamCloudSection: View {
     private var joinOrCreate: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(creating ? "Start a team" : "Join your team")
-                .font(.bj(15, weight: .semibold))
+                .font(.bj(TypeSize.headline, weight: .semibold))
                 .foregroundStyle(Theme.ink)
             HStack(spacing: 8) {
                 if creating {
@@ -142,10 +142,10 @@ struct TeamCloudSection: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Text(org.name)
-                                    .font(.bj(15, weight: .semibold))
+                                    .font(.bj(TypeSize.headline, weight: .semibold))
                                     .foregroundStyle(Theme.ink)
                                 Image(systemName: "pencil")
-                                    .font(.bj(11))
+                                    .font(.bj(TypeSize.micro))
                                     .foregroundStyle(Theme.inkSubtle)
                             }
                             .contentShape(Rectangle())
@@ -155,12 +155,12 @@ struct TeamCloudSection: View {
                         .help("Rename team")
                     } else {
                         Text(org.name)
-                            .font(.bj(15, weight: .semibold))
+                            .font(.bj(TypeSize.headline, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                     }
                     if !cloud.roster.isEmpty && !renaming {
                         Text(cloud.roster.count == 1 ? "1 member" : "\(cloud.roster.count) members")
-                            .font(.bj(12))
+                            .font(.bj(TypeSize.caption))
                             .foregroundStyle(Theme.inkSubtle)
                     }
                 }
@@ -185,20 +185,20 @@ struct TeamCloudSection: View {
                     } label: {
                         HStack(spacing: 10) {
                             Text(inviteCode)
-                                .font(.bj(14, weight: .semibold))
+                                .font(.bj(TypeSize.body, weight: .semibold))
                                 .monospaced()
                                 .foregroundStyle(Theme.ink)
                             Text("Send this to \(inviteFor)")
-                                .font(.bj(12))
+                                .font(.bj(TypeSize.caption))
                                 .foregroundStyle(Theme.inkSubtle)
                             Spacer()
                             Text(codeCopied ? "Copied" : "Copy")
-                                .font(.bj(12, weight: .medium))
-                                .foregroundStyle(codeCopied ? Theme.green : Theme.blue)
+                                .font(.bj(TypeSize.caption, weight: .medium))
+                                .foregroundStyle(codeCopied ? Theme.green : Theme.accentText)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.surfaceActive.opacity(0.6)))
+                        .background(RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous).fill(Theme.surfaceActive.opacity(0.6)))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -283,7 +283,7 @@ struct TeamCloudSection: View {
     private var noteLine: some View {
         if let note {
             Text(note)
-                .font(.bj(11.5))
+                .font(.bj(TypeSize.micro))
                 .foregroundStyle(Theme.red)
         }
     }
@@ -298,8 +298,8 @@ struct InitialCircle: View {
         ZStack {
             Circle().fill(Theme.blueSoft)
             Text(letter.uppercased())
-                .font(.bj(12.5, weight: .semibold))
-                .foregroundStyle(Theme.blue)
+                .font(.bj(TypeSize.caption, weight: .semibold))
+                .foregroundStyle(Theme.accentText)
         }
         .frame(width: 28, height: 28)
     }
@@ -322,17 +322,18 @@ struct FieldBackground: View {
     var themeID = Appearance.current
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8)
+        RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
             .fill(Theme.field)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous).stroke(Theme.border, lineWidth: 1))
     }
 }
 
 extension View {
     func bjField() -> some View {
         textFieldStyle(.plain)
-            .font(.bj(13))
-            .padding(10)
+            .font(.bj(TypeSize.body))
+            .padding(.horizontal, 10)
+            .frame(height: Metric.controlHeight)
             .background(FieldBackground())
     }
 }
@@ -375,12 +376,12 @@ struct SignInView: View {
         VStack(alignment: .leading, spacing: 10) {
             if showsBlurb {
                 Text("Sign in to back up stats and join a team.")
-                    .font(.bj(12))
+                    .font(.bj(TypeSize.caption))
                     .foregroundStyle(Theme.inkSubtle)
             }
             if let authNote = cloud.authNote {
                 Text(authNote)
-                    .font(.bj(11.5))
+                    .font(.bj(TypeSize.micro))
                     .foregroundStyle(Theme.red)
             }
             HStack(spacing: 8) {
@@ -406,13 +407,13 @@ struct SignInView: View {
             }
             if codeSent {
                 Text("Check \(trimmedEmail) for a code.")
-                    .font(.bj(11.5))
+                    .font(.bj(TypeSize.micro))
                     .foregroundStyle(Theme.inkSubtle)
             }
             HStack(spacing: 10) {
                 Rectangle().fill(Theme.border.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: 1)
                 Text("or")
-                    .font(.bj(11))
+                    .font(.bj(TypeSize.micro))
                     .foregroundStyle(Theme.inkTertiary)
                 Rectangle().fill(Theme.border.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: 1)
             }
@@ -427,7 +428,7 @@ struct SignInView: View {
             .disabled(busy == .email)
             if let note {
                 Text(note)
-                    .font(.bj(11.5))
+                    .font(.bj(TypeSize.micro))
                     .foregroundStyle(Theme.red)
             }
         }

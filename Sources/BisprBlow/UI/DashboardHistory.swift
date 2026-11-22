@@ -48,52 +48,71 @@ struct HistoryRow: View {
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateStyle = .medium
+        f.dateStyle = .none
         f.timeStyle = .short
         return f
     }()
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        return f
+    }()
+
+    // Time today, "Yesterday", else a short date: short and steady, so the row does not reflow.
+    private static func stamp(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return timeFormatter.string(from: date) }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return dayFormatter.string(from: date)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 Text(entry.appName.isEmpty ? "Unknown app" : entry.appName)
-                    .font(.bj(11, weight: .medium))
-                    .foregroundStyle(Theme.blue)
+                    .font(.bj(TypeSize.micro, weight: .medium))
+                    .foregroundStyle(Theme.accentText)
                 Spacer()
                 // Timestamp gives way to the copy affordance on hover — the row itself is the button.
-                Text(copied ? "Copied" : hovering ? "Click to copy" : Self.timeFormatter.string(from: entry.date))
-                    .font(.bj(11))
-                    .foregroundStyle(copied ? Theme.green : Theme.inkSubtle)
+                Text(copied ? "Copied" : Self.stamp(entry.date))
+                    .font(.bj(TypeSize.micro))
+                    .foregroundStyle(copied ? Theme.green : Theme.inkTertiary)
+                    .lineLimit(1)
+                    .frame(width: 64, alignment: .trailing)
                     .contentTransition(.opacity)
-                if copied {
-                    Image(systemName: "checkmark")
-                        .font(.bj(10, weight: .bold))
-                        .foregroundStyle(Theme.green)
-                        .transition(.scale(scale: 0.4).combined(with: .opacity))
-                }
+                // A fixed slot, so showing the icon on hover moves nothing.
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.bj(TypeSize.micro, weight: copied ? .bold : .regular))
+                    .foregroundStyle(copied ? Theme.green : Theme.inkTertiary)
+                    .frame(width: 14)
+                    .opacity(copied || hovering ? 1 : 0)
             }
             Text(entry.cleaned)
-                .font(.bj(13))
+                .font(.bj(TypeSize.body))
                 .foregroundStyle(Theme.inkSecondary)
                 .lineSpacing(2)
                 .lineLimit(showRaw ? nil : 3)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if showRaw, entry.raw != entry.cleaned {
                 Text(entry.raw)
-                    .font(.bj(12))
+                    .font(.bj(TypeSize.caption))
                     .foregroundStyle(Theme.inkSubtle)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .card(padding: 13)
+        .card(padding: Metric.rowPad)
+        .background(
+            RoundedRectangle(cornerRadius: Metric.radius, style: .continuous)
+                .fill(Theme.surfaceActive.opacity(hovering ? 0.5 : 0))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Metric.radius, style: .continuous)
                 .stroke(Theme.green.opacity(copied ? 0.45 : 0), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .handCursor()
-        .scaleEffect(copied ? 0.99 : hovering ? 1.008 : 1)
-        .shadow(color: Theme.ink.opacity(hovering ? 0.08 : 0), radius: 10, y: 4)
+        .scaleEffect(copied ? 0.99 : 1)
         .onTapGesture {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(entry.cleaned, forType: .string)

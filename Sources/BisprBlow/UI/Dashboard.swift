@@ -134,8 +134,8 @@ struct DashboardView: View {
             Spacer()
 
             Text(Self.versionLabel)
-                .font(.bj(10.5))
-                .foregroundStyle(Theme.inkSubtle.opacity(0.75))
+                .font(.bj(TypeSize.micro))
+                .foregroundStyle(Theme.inkTertiary)
                 .padding(.horizontal, 18)
                 .padding(.bottom, 16)
         }
@@ -149,11 +149,12 @@ struct DashboardView: View {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFill()
-                        .frame(height: 300)
+                        .frame(height: 200)
                         .frame(maxWidth: 250)
                         .clipped()
-                        .mask(LinearGradient(colors: [.clear, .black.opacity(0.55)],
+                        .mask(LinearGradient(colors: [.clear, .black.opacity(0.4), .clear],
                                              startPoint: .top, endPoint: .bottom))
+                        .padding(.bottom, 44)   // leaves the version label on flat surface
                 }
             }
         }
@@ -202,29 +203,29 @@ struct SidebarItem: View {
             // BrandLockup repeats both numbers; change one, change all four.
             HStack(spacing: 9) {
                 Image(systemName: item.icon)
-                    .font(.bj(12.5, weight: .medium))
+                    .font(.bj(TypeSize.caption, weight: .medium))
                     .frame(width: 18)
                     .symbolEffect(.bounce, options: .speed(1.5), value: bounce)
                 Text(item.rawValue)
-                    .font(.bj(13, weight: selected ? .semibold : .regular))
+                    .font(.bj(TypeSize.body, weight: selected ? .semibold : .regular))
                 Spacer()
             }
-            .foregroundStyle(selected ? Theme.blue : Theme.inkTertiary)
+            .foregroundStyle(selected ? Theme.accentText : Theme.inkTertiary)
             .padding(.horizontal, 10)
             .padding(.vertical, 10.5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 // One pill that slides between rows, rather than a fill per row.
                 if selected {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
                         .fill(Theme.blueSoft)
                         .matchedGeometryEffect(id: "navPill", in: namespace)
                 } else if hovering {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
                         .fill(Theme.surfaceActive.opacity(0.6))
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous))
             .offset(x: hovering && !selected ? 2 : 0)
         }
         .buttonStyle(.plain)
@@ -248,7 +249,7 @@ struct BrandLockup: View {
         HStack(spacing: 9) {
             LogoView(name: Appearance.current.isDark ? "Logo_Blue_Dark" : "Logo_Blue", size: 18)
             Text("BisprBlow")
-                .font(.bj(13.5, weight: .semibold))
+                .font(.bj(TypeSize.body, weight: .semibold))
                 .tracking(-0.2)
                 .foregroundStyle(Theme.ink)
         }
@@ -296,12 +297,12 @@ struct Page<Content: View>: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(title)
-                        .font(.bj(30, weight: .bold))
+                        .font(.bj(TypeSize.title, weight: .bold))
                         .tracking(-0.6)
                         .foregroundStyle(Theme.ink)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.bj(13.5))
+                            .font(.bj(TypeSize.body))
                             .foregroundStyle(Theme.inkTertiary)
                     }
                 }
