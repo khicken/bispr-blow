@@ -391,7 +391,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupMenuBar()
         setupQuitShortcut()
-        DictationController.requestPermissions()
         // Starting the monitor is what decides whether the macOS fn action gets suppressed:
         // it only happens while fn is one of the user's bindings.
         controller.start()
@@ -500,7 +499,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboard.show(.team)
         Task { @MainActor in
             do { try await CloudClient.shared.signIn(callback: callback) }
-            catch { logLine("cloud: email link sign-in failed: \(error.localizedDescription)") }
+            catch {
+                logLine("cloud: email link sign-in failed: \(error.localizedDescription)")
+                CloudClient.shared.authNote = "Sign-in failed: \(error.localizedDescription)"
+            }
         }
     }
 

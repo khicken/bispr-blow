@@ -8,6 +8,8 @@ import Security
 final class CloudClient: ObservableObject {
     static let shared = CloudClient()
 
+    // Why the last email-link sign-in failed. Shown above the sign-in form.
+    @Published var authNote: String?
     @Published private(set) var session: CloudSession?
     @Published private(set) var org: CloudOrg?
     @Published private(set) var roster: [OrgMember] = []

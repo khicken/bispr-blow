@@ -46,6 +46,7 @@ struct HomeView: View {
     var body: some View {
         Page(title: greeting, subtitle: subtitle) {
             UpdateBanner()
+            PermissionChecklist()
 
             // One strip with hairlines between the figures: three tiles read as three buttons.
             HStack(spacing: 0) {
@@ -164,5 +165,56 @@ struct EmptyHint: View {
                 .foregroundStyle(Theme.inkTertiary)
         }
         .card(padding: 18)
+    }
+}
+
+// First-run checklist. Hidden once every permission is granted; re-checks when the app is
+// reactivated (the user comes back from System Settings) and on a slow timer.
+struct PermissionChecklist: View {
+    @State private var granted: [Permission: Bool] = Permission.statuses()
+    private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Group {
+            if !granted.values.allSatisfy({ $0 }) {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionLabel("Allow access to get started")
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Permission.allCases) { permission in
+                            row(permission)
+                        }
+                    }
+                    .card(padding: 16)
+                }
+            }
+        }
+        .onReceive(refresh) { _ in granted = Permission.statuses() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            granted = Permission.statuses()
+        }
+    }
+
+    private func row(_ permission: Permission) -> some View {
+        let done = granted[permission] ?? false
+        return HStack(spacing: 10) {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(done ? Theme.blue : Theme.inkSubtle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(permission.title)
+                    .font(.bj(13, weight: .medium))
+                    .foregroundStyle(Theme.ink)
+                Text(permission.reason)
+                    .font(.bj(12))
+                    .foregroundStyle(Theme.inkSubtle)
+            }
+            Spacer(minLength: 8)
+            if !done {
+                Button(permission.needsSettings ? "Open Settings" : "Allow") {
+                    permission.request()
+                    granted = Permission.statuses()
+                }
+                .buttonStyle(CapsuleButtonStyle(filled: false))
+            }
+        }
     }
 }

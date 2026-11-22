@@ -25,13 +25,13 @@ struct SettingsView: View {
             if !micGranted || !axTrusted || !inputMonitoringGranted {
                 settingsGroup("Allow in Privacy & Security") {
                     if !micGranted {
-                        permissionRow("Microphone")
+                        permissionRow(.microphone)
                     }
                     if !axTrusted {
-                        permissionRow("Accessibility")
+                        permissionRow(.accessibility)
                     }
                     if !inputMonitoringGranted {
-                        permissionRow("Input Monitoring", hint: "Needed for shortcuts")
+                        permissionRow(.inputMonitoring, hint: "Needed for shortcuts")
                     }
                 }
             }
@@ -244,19 +244,27 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func permissionRow(_ name: String, hint: String? = nil) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(Theme.red)
-            Text(name)
-                .font(.bj(13, weight: .medium))
-                .foregroundStyle(Theme.ink)
-            if let hint {
-                Text(hint)
-                    .font(.bj(12))
+    private func permissionRow(_ permission: Permission, hint: String? = nil) -> some View {
+        Button(action: permission.openSettings) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(Theme.red)
+                Text(permission.title)
+                    .font(.bj(13, weight: .medium))
+                    .foregroundStyle(Theme.ink)
+                if let hint {
+                    Text(hint)
+                        .font(.bj(12))
+                        .foregroundStyle(Theme.inkSubtle)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11))
                     .foregroundStyle(Theme.inkSubtle)
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

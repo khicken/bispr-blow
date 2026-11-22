@@ -1,8 +1,6 @@
 import AppKit
 import AVFoundation
 import Combine
-import IOKit.hidsystem
-import Speech
 
 // Central state machine: shortcut gesture → record → transcribe → clean → insert → history.
 @MainActor
@@ -17,7 +15,9 @@ final class DictationController: ObservableObject {
     // Mic level for the pill's wave, ~43 a second while recording. A subject, not @Published, so
     // views that observe the controller for its state do not redraw at that rate.
     let levels = PassthroughSubject<Float, Never>()
-    @Published private(set) var lastError: String?
+    @Published private(set) var lastError: String? {
+        didSet { if let lastError { showNotice(lastError, for: 6) } }
+    }
     // Transient message shown on the pill (e.g. manual-paste fallback).
     @Published private(set) var notice: String?
     // A button on the current notice, when the notice is about something the app did on its own.
@@ -67,12 +67,14 @@ final class DictationController: ObservableObject {
         // keep a persistent hint on the pill and clear it the moment the grant lands.
         if !AXIsProcessTrusted() {
             notice = Self.accessibilityHint
+            noticeAction = Self.settingsAction(.accessibility)
             axPollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, AXIsProcessTrusted() else { return }
                     self.axPollTimer?.invalidate()
                     self.axPollTimer = nil
                     self.notice = nil
+                    self.noticeAction = nil
                     self.showNotice("Ready. \(AppSettings.shared.holdHint)")
                 }
             }
@@ -113,6 +115,10 @@ final class DictationController: ObservableObject {
 
     private static let accessibilityHint = "Allow Accessibility to insert text"
 
+    private static func settingsAction(_ permission: Permission) -> (label: String, run: () -> Void) {
+        ("Open Settings", { permission.openSettings() })
+    }
+
     private func showNotice(_ message: String, for seconds: TimeInterval = 4,
                            action: (label: String, run: () -> Void)? = nil) {
         notice = message
@@ -120,14 +126,22 @@ final class DictationController: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self, self.notice == message else { return }
             // The Accessibility hint stays until access is granted.
-            self.notice = self.axPollTimer == nil ? nil : Self.accessibilityHint
-            self.noticeAction = nil
+            let waitingOnAccess = self.axPollTimer != nil
+            self.notice = waitingOnAccess ? Self.accessibilityHint : nil
+            self.noticeAction = waitingOnAccess ? Self.settingsAction(.accessibility) : nil
         }
     }
 
     private func beginRecording(_ action: ShortcutAction) {
         guard state == .idle else {
             monitor.reset()
+            return
+        }
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if micStatus == .denied || micStatus == .restricted {
+            monitor.reset()
+            showNotice("Microphone access is off. Allow it to dictate.", for: 8,
+                       action: Self.settingsAction(.microphone))
             return
         }
         // Speaking again means the last dictation's edits are done, before this one's text can land beside them.
@@ -207,7 +221,12 @@ final class DictationController: ObservableObject {
             logLine("dictation discarded: no audio captured")
             sessionGeneration += 1
             cancelTranscriber()
-            showNotice("No audio from \(AudioRecorder.currentInputDeviceName())")
+            if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
+                showNotice("No audio from \(AudioRecorder.currentInputDeviceName())")
+            } else {
+                showNotice("Microphone access is off. Allow it to dictate.", for: 8,
+                           action: Self.settingsAction(.microphone))
+            }
             state = .idle
             sendEnter = false
             return
@@ -251,7 +270,11 @@ final class DictationController: ObservableObject {
                 if TextInserter.insert(cleaned, thenReturn: self.sendEnter) {
                     self.watchForCorrection(to: cleaned, raw: raw, heard: heard)
                 } else {
-                    self.showNotice("Copied. Press ⌘V to paste")
+                    let needsAccess = !AXIsProcessTrusted()
+                    self.showNotice(needsAccess ? "Copied. Press ⌘V to paste. Allow Accessibility to insert text."
+                                                : "Copied. Press ⌘V to paste",
+                                    for: needsAccess ? 8 : 4,
+                                    action: needsAccess ? Self.settingsAction(.accessibility) : nil)
                 }
                 self.history.add(DictationEntry(
                     id: UUID(),
@@ -430,19 +453,6 @@ final class DictationController: ObservableObject {
         } catch {
             logLine("command failed error=\(error.localizedDescription)")
             showNotice("Couldn't reach Jev")
-        }
-    }
-
-    // MARK: - Permissions
-
-    static func requestPermissions() {
-        AVCaptureDevice.requestAccess(for: .audio) { _ in }
-        SFSpeechRecognizer.requestAuthorization { _ in }
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
-        // Keyboard event taps additionally need Input Monitoring on modern macOS.
-        if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted {
-            IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
         }
     }
 }

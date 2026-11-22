@@ -378,6 +378,11 @@ struct SignInView: View {
                     .font(.bj(12))
                     .foregroundStyle(Theme.inkSubtle)
             }
+            if let authNote = cloud.authNote {
+                Text(authNote)
+                    .font(.bj(11.5))
+                    .foregroundStyle(Theme.red)
+            }
             HStack(spacing: 8) {
                 TextField("you@company.com", text: $email)
                     .bjField()
