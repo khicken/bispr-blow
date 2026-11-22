@@ -366,7 +366,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var tooltipUpdates: AnyCancellable?
     private var terminateSignal: DispatchSourceSignal?
-    private var quitMenu: NSMenu!
     private var appearanceObserver: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -443,11 +442,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Left-click opens the app; right-click is the one place Quit lives.
-        quitMenu = NSMenu()
-        quitMenu.addItem(withTitle: "Quit BisprBlow",
-                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
-
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -456,20 +450,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let settings = AppSettings.shared
             let hint = settings.holdHint
             let lock = settings.shortcuts(for: .pushToTalk).isEmpty ? "" : ", double-tap to lock"
-            self?.statusItem.button?.toolTip = "BisprBlow · \(hint.prefix(1).lowercased())\(hint.dropFirst())"
-                + "\(lock).\nRight-click to quit."
+            self?.statusItem.button?.toolTip = "BisprBlow · \(hint.prefix(1).lowercased())\(hint.dropFirst())\(lock)."
         }
     }
 
-    @objc private func statusItemClicked() {
-        let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
-            statusItem.menu = quitMenu          // attached for this click only…
-            statusItem.button?.performClick(nil)
-            statusItem.menu = nil               // …so a left-click never opens a menu
-        } else {
-            dashboard.show()
-        }
+    // Built fresh on each click so the status line names the shortcut as it is now.
+    @MainActor private func makeStatusMenu() -> NSMenu {
+        let menu = NSMenu()
+        let status = AppSettings.shared.holdPhrase.map { "\($0) to dictate" } ?? "Set a shortcut in Settings"
+        menu.addItem(withTitle: status, action: nil, keyEquivalent: "").isEnabled = false
+        menu.addItem(.separator())
+        let open = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "d")
+        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromMenu), keyEquivalent: ",")
+        for item in [open, settings] { item.target = self; menu.addItem(item) }
+        menu.addItem(.separator())
+        let version = UpdateChecker.current.map { "BisprBlow \($0)" } ?? "BisprBlow (dev build)"
+        menu.addItem(withTitle: version, action: nil, keyEquivalent: "").isEnabled = false
+        menu.addItem(withTitle: "Quit BisprBlow",
+                     action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        return menu
+    }
+
+    @objc private func openDashboardFromMenu() { dashboard.show() }
+    @objc private func openSettingsFromMenu() { dashboard.show(.settings) }
+
+    @MainActor @objc private func statusItemClicked() {
+        statusItem.menu = makeStatusMenu()      // attached for this click only
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
     }
 
     // Nothing in the UI offers Quit, but ⌘Q should still work while a window is focused —

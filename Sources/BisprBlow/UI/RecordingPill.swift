@@ -259,7 +259,7 @@ final class RecordingPillController {
     // made the pill stutter and slip out from under the cursor. The icon is drawn inside the
     // full-screen click-through overlay, so it costs no window of its own.
     private func dragChanged(to point: NSPoint) {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = NSScreen.underPointer else { return }
         let frame = Self.layoutFrame(screen)
         placement.screen = frame
         placement.full = screen.frame
@@ -275,7 +275,7 @@ final class RecordingPillController {
     }
 
     private func dragEnded(at point: NSPoint) {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = NSScreen.underPointer else { return }
         placement.placing = false
         placement.highlighted = nil
         placement.cursor = nil
@@ -359,7 +359,7 @@ final class RecordingPillController {
 
     func reposition() {
         // Follow the screen the user is working on (keyboard focus), not the launch screen.
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = NSScreen.underPointer else { return }
         let frame = Self.layoutFrame(screen)
         // Logged on change only: the right frame depends on the Dock's setting, the notch, and what
         // the frontmost app does in fullscreen, so this line says which frame it chose.

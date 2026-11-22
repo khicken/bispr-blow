@@ -20,6 +20,7 @@ final class DictationController: ObservableObject {
     }
     // Transient message shown on the pill (e.g. manual-paste fallback).
     @Published private(set) var notice: String?
+    var noticeHovered = false   // set by the toast; holds the auto-dismiss while the pointer is on it
     // A button on the current notice, when the notice is about something the app did on its own.
     // Only the learned-a-word message uses it: changing the user's dictionary without asking has to
     // offer the way back in the same breath.
@@ -123,13 +124,18 @@ final class DictationController: ObservableObject {
                            action: (label: String, run: () -> Void)? = nil) {
         notice = message
         noticeAction = action
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            guard let self, self.notice == message else { return }
-            // The Accessibility hint stays until access is granted.
-            let waitingOnAccess = self.axPollTimer != nil
-            self.notice = waitingOnAccess ? Self.accessibilityHint : nil
-            self.noticeAction = waitingOnAccess ? Self.settingsAction(.accessibility) : nil
+        func dismiss(after delay: TimeInterval) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.notice == message else { return }
+                if self.noticeHovered { return dismiss(after: 1) }
+                // The Accessibility hint stays until access is granted.
+                let waitingOnAccess = self.axPollTimer != nil
+                self.notice = waitingOnAccess ? Self.accessibilityHint : nil
+                self.noticeAction = waitingOnAccess ? Self.settingsAction(.accessibility) : nil
+                self.noticeHovered = false
+            }
         }
+        dismiss(after: action == nil ? seconds : max(seconds, 8))
     }
 
     private func beginRecording(_ action: ShortcutAction) {

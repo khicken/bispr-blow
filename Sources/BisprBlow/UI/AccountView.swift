@@ -96,13 +96,19 @@ struct TeamCloudSection: View {
                     field("Team name", text: $teamName, submit: createTeam)
                     Button(action: createTeam) { label("Create", for: .create) }
                         .buttonStyle(CapsuleButtonStyle())
+                        .keyboardShortcut(.defaultAction)
                         .disabled(busy != nil || teamName.trimmingCharacters(in: .whitespaces).isEmpty)
                 } else {
                     field("Invite code", text: $joinCode, submit: joinTeam)
                     Button(action: joinTeam) { label("Join", for: .join) }
                         .buttonStyle(CapsuleButtonStyle())
+                        .keyboardShortcut(.defaultAction)
                         .disabled(busy != nil || joinCode.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+            }
+            .onExitCommand {
+                guard creating else { return }
+                withAnimation(.bjSnap) { creating = false; teamName = ""; note = nil }
             }
             Button(creating ? "Join with a code" : "Start a new team") {
                 withAnimation(.bjSnap) {
@@ -203,6 +209,8 @@ struct TeamCloudSection: View {
                     }
                     .buttonStyle(.plain)
                     .handCursor()
+                    .focusable()
+                    .help("Copy invite code")
                     .transition(.opacity)
                 }
             }

@@ -38,6 +38,7 @@ struct DictionaryView: View {
     @State private var search = ""
     @State private var recentFirst = false
     @State private var generating = false
+    @State private var modelReady = true
     @State private var note: String?
     @State private var confirmClear = false
     @AppStorage("dictionaryIntroDismissed") private var introDismissed = false
@@ -171,10 +172,12 @@ struct DictionaryView: View {
                 TextField("Add words, separated by commas", text: $newWord)
                     .bjField()
                     .onSubmit(addWord)
+                    .onExitCommand { newWord = ""; note = nil }
                 // Return adds the literal words. Asking a model for thirty terms is slower to do by
                 // accident, so it costs a click.
                 Button("Add", action: addWord)
                     .buttonStyle(CapsuleButtonStyle())
+                    .keyboardShortcut(.defaultAction)
                     .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
@@ -194,8 +197,10 @@ struct DictionaryView: View {
                 }
                 .buttonStyle(.plain)
                 .handCursor()
-                .disabled(generating)
-                .help("Asks the local model for related terms.")
+                .disabled(generating || !modelReady)
+                .help(modelReady ? "Asks the local model for related terms."
+                                 : "No local model is available. Download one in Settings.")
+                .task { modelReady = await cleaner.hasModel() }
                 .padding(.leading, 2)
                 .transition(.opacity)
             }
