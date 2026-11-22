@@ -433,8 +433,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             // A copy, since the cached logo is shared with the dashboard.
-            if let logo = Theme.logo("Logo_Mono")?.copy() as? NSImage {
-                logo.size = NSSize(width: 18, height: 18)
+            if let logo = Theme.logo("Logo_Menu")?.copy() as? NSImage {
+                // Logo_Menu is Logo_Mono cropped to the artwork, so this centers the head in the bar
+                // instead of the square canvas leaving it high.
+                logo.size = NSSize(width: 16 * 829 / 916, height: 16)
                 logo.isTemplate = true  // adapts to menu bar light/dark
                 button.image = logo
             } else {
