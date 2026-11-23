@@ -29,6 +29,55 @@ Build, install, and relaunch with `./build.sh`. It installs one copy to
 Run `.build/release/BisprBlow --self-check` after touching the cleanup or
 dictionary text logic.
 
+## Working with Kaleb
+
+These are the patterns from building this app with him. They apply before every rule below.
+
+**He dictates his messages, so read for intent.** Typos and misheard words are normal ("kaelb",
+"mpushdpeloy"). Act on the clear meaning. Ask only when two readings lead to different work.
+
+**When he gives exact words, use them exactly.** Copy he dictates goes in verbatim, including his
+capitals and punctuation. Do not polish it.
+
+**No AI-sounding copy.** He calls generic marketing text "slop" and rejects it. Write short, plain,
+specific text. A one-word answer such as "Nope." is better than a careful paragraph. Do not add
+claims he did not make, such as an exception or a caveat about a feature.
+
+**Never name another product or company in user-facing text.** This includes the app, the
+website, the demo and the FAQ. No Supabase, Slack, NVIDIA, Qwen, Wispr Flow or similar. Say
+"a small open model" or "your team chat". Code, comments and bench notes may name them.
+
+**A screenshot with one word ("bug", "biug") is a bug report.** Find the root cause, fix it,
+then confirm it in the real installed app. Do not explain why it happens and stop.
+
+**Ship directly when he says so, and he usually does.** "commit/push", "push everything" and
+"deploy" mean do all of it now, without a check-in. For the landing page this is a standing
+approval: commit, push to master and check the Vercel deploy. "Everything" means every repo the
+work touched: the app, its tags, and the website.
+
+**"Done" means verified the way a user meets it.** Build it, install it, launch it. For a release,
+download-test it with the quarantine flag. For the website, confirm the live page after the
+deploy. Report what you checked and what you did not.
+
+**Go fast with parallel subagents.** For larger work, split it and give each piece to a Sonnet
+subagent in one turn. Speed matters more than tokens. Check their claims before relaying them.
+
+**Keep chat replies short.** He reads in a terminal. Lead with the result, then what he must do.
+
+**He does the security steps himself.** He runs `tccutil`, stores notarytool credentials, types
+passwords and uploads secrets. Prepare a script or command that reads keys from files, so no key
+text passes through chat. Ask before you generate any signing or update key.
+
+**Do not touch the remote Supabase beyond anonymous probes.** He applies SQL in the dashboard
+himself. Locally, never use ports 54321-54323 or 55321.
+
+**Motion: subtle, quick and snappy, never the stock fade-up.** The landing page uses a masked word
+lift for the headline and a clip-and-focus reveal for the rest, each about half a second. Respect
+reduced motion.
+
+**Defaults he chose:** fn is push to talk and Esc is cancel, with no ⌃⇧ binding. Everything runs on
+the Mac, and voice commands must too when they land. Updates install silently on quit.
+
 ## Shipping rules
 
 One person uses this app and one person writes it, so there is no reviewer to wait
@@ -223,12 +272,32 @@ anything it cannot parse as *not behind*, so an untagged build simply never nags
 `dmg.sh` default `VERSION` to the same tag, so an installer cannot claim a different version than
 the app inside it.
 
-**The update check tells the user and installs nothing, and Sparkle is not the next step until
-there is a Developer ID.** Sparkle's job is to replace `/Applications/BisprBlow.app` with a
-downloaded bundle — and a downloaded bundle is quarantined, an unnotarized one is refused, so a
-*successful* update would leave the user with an app that will not launch. Strictly worse than not
-updating. So `UpdateChecker` asks `api.github.com/repos/khicken/bispr-blow/releases/latest` once at
-launch, and a newer tag becomes one line on Home that opens the release page.
+**Sparkle installs updates, and `UpdateChecker` stays for installs that predate it.** v0.2.4 was
+the first build with Sparkle. `AppUpdater` starts it only when `Info.plist` has `SUPublicEDKey`. It
+reads `SUFeedURL`, which is `releases/latest/download/appcast.xml`, so each release carries its own
+feed and nothing else needs an edit. `SUAutomaticallyUpdate` downloads in the background and
+installs on quit. Sparkle compares `CFBundleVersion`, which build.sh sets to
+`git rev-list --count HEAD`, so a release must come from a commit with more history than the last
+one. The `updateFeedOverride` default points the feed at a local server for a test, and
+`AppUpdater.feedURLString` reads it. Remove it after the test. `UpdateChecker` asks
+`api.github.com/repos/khicken/bispr-blow/releases/latest` once at launch, and a newer tag becomes one
+line on Home. Its button now opens the Sparkle window.
+
+**The Sparkle EdDSA private key signs every feed, and losing it strands every install.** It is in
+the login Keychain and backed up in `~/.bisprblow-signing/sparkle_ed25519_private.key`, beside the
+Developer ID key. Never regenerate it: installed apps accept only feeds that this key signs.
+
+**Versions: a bug fix adds a digit to the last component, it does not bump it.** After v0.2.4, a fix
+release is v0.2.41, then v0.2.42. A feature release is v0.3. `UpdateChecker.isNewer` compares each
+component as a number, so 41 is newer than 4. The landing page download button
+(`khicken/website`, `src/app/bisprblow/page.tsx`) shows the version as text. Change it with each
+release.
+
+**Releases run in GitHub Actions on a pushed `v*` tag; see RELEASING.md.** `release.yml` builds,
+signs, notarizes, staples, then publishes `BisprBlow.dmg` and `appcast.xml`. It needs six repo
+secrets, which `~/.bisprblow-signing/set-github-secrets.sh` uploads. Kaleb runs that script, not an
+agent. Without the secrets, release from the Mac: tag, `./dmg.sh`, then
+`gh release create vX .build/BisprBlow.dmg .build/appcast.xml`.
 
 Every failure is silence, deliberately: offline is the normal case for this app, and the site says
 it works with the wifi off. The one other unbidden request is Parakeet's first-run model download
@@ -245,11 +314,11 @@ could only be exercised by cutting a second release. It runs on a RunLoop rather
 "0.9.0" as text, so the first release past .9 would tell nobody at all — which is exactly the
 release where nobody would think to check. `--self-check` covers that plus the unparseable tags.
 
-**Neither one opens on a stranger's Mac yet, and the .dmg makes that worse rather than better.** A
-disk image downloaded through a browser carries a quarantine flag, so Gatekeeper refuses the app
-outright — the failure is a dialog about an unverified developer, not a warning you can click past.
-That is the missing Developer ID membership, not a packaging bug; do not try to fix it by telling
-people to run `xattr -d com.apple.quarantine`.
+**Test a release the way a stranger gets it, with the quarantine flag.** A browser download carries
+`com.apple.quarantine`, and Gatekeeper refuses an unnotarized app with no way past the dialog. Copy
+the dmg and the app, add the flag with `xattr -w com.apple.quarantine`, then run
+`spctl -a -t open --context context:primary-signature` on the dmg and `spctl -a -t exec` on the app.
+Never tell people to remove the flag.
 
 **The Fast weights are not deselectable, and that is not timidity.** Fast means the smallest model
 installed, so a machine holding only the 1.7B resolves *Fast* to it as well — the Writing setting
@@ -286,12 +355,18 @@ leaves `/Applications/BisprBlow.app` owned by root, and build.sh's `rm -rf` then
 through it rather than at the start. The guard prints the `sudo rm -rf` plus `pkgutil --forget` to
 run; testing the installer and then iterating locally is the normal cycle, so expect it.
 
-**Nothing is notarized yet, but the scripts are: the only thing missing is the paid membership.**
-`build.sh` prefers a *Developer ID Application* certificate over the self-signed `Bluejay Wispr Dev`
-identity and adds `--options runtime --timestamp --entitlements` when it finds one; `package.sh`
-signs with a *Developer ID Installer* certificate and, if `notarytool` credentials are stored under
-the `bisprblow` profile, submits and staples. Every one of those is a no-op on a machine without the
-certificates, which is why the fallback path still ships today. Do not "simplify" the detection away.
+**Releases are signed with "Developer ID Application: Kaleb Kim (KJSH5ZMN74)" and notarized.** The
+certificate expires in December 2027. `build.sh` prefers it over the self-signed `Bluejay Wispr Dev`
+identity and adds `--options runtime --timestamp --entitlements`. It signs Sparkle's nested code
+inside-out before the app. `dmg.sh` signs the dmg, then notarizes and staples it when the
+`bisprblow` notarytool profile exists. On a machine without the certificate every step falls back,
+so contributors can still build. Do not "simplify" the detection away.
+
+**A signature change makes macOS forget the permission grants.** TCC keys Accessibility, Input
+Monitoring and Speech Recognition to the code requirement. After the move to the Developer ID, the
+app showed its permission notice while System Settings showed it granted. The fix is
+`tccutil reset <service> ai.getbluejay.bisprblow`, then grant again. That is a security setting, so
+Kaleb runs it.
 
 **The hardened runtime is why `BisprBlow.entitlements` exists, and it holds exactly one key.**
 `com.apple.security.device.audio-input` — under a hardened runtime the mic is blocked without it,
