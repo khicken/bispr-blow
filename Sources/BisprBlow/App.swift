@@ -398,6 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SyncEngine.shared.start()
         // One shot at launch, and silent about every failure — see UpdateChecker.
         Task { await UpdateChecker.shared.check() }
+        AppUpdater.shared.start()
 
         // First run: open the dashboard so permissions/setup are visible.
         if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
@@ -462,7 +463,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         let open = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "d")
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromMenu), keyEquivalent: ",")
-        for item in [open, settings] { item.target = self; menu.addItem(item) }
+        let update = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdatesFromMenu), keyEquivalent: "")
+        for item in [open, settings, update] { item.target = self; menu.addItem(item) }
         menu.addItem(.separator())
         let version = UpdateChecker.current.map { "BisprBlow \($0)" } ?? "BisprBlow (dev build)"
         menu.addItem(withTitle: version, action: nil, keyEquivalent: "").isEnabled = false
@@ -473,6 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openDashboardFromMenu() { dashboard.show() }
     @objc private func openSettingsFromMenu() { dashboard.show(.settings) }
+    @MainActor @objc private func checkForUpdatesFromMenu() { AppUpdater.shared.checkForUpdates() }
 
     @MainActor @objc private func statusItemClicked() {
         statusItem.menu = makeStatusMenu()      // attached for this click only

@@ -16,6 +16,8 @@ let package = Package(
         // Speech recognition (Parakeet on the Neural Engine). Pinned to the version benched in
         // bench/asr; a new FluidAudio means re-running bench/asr/run_all.sh before trusting it.
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.2"),
+        // Auto-updates. build.sh copies Sparkle.framework into Contents/Frameworks and signs it.
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
     ],
     targets: [
         .executableTarget(
@@ -24,10 +26,14 @@ let package = Package(
                 .product(name: "LocalLLMClient", package: "LocalLLMClient"),
                 .product(name: "LocalLLMClientMLX", package: "LocalLLMClient"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/BisprBlow",
             resources: [.copy("Resources")],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // The bundle keeps Sparkle.framework in Contents/Frameworks. SwiftPM's own
+            // @loader_path rpath still covers the bare CLI binary in .build/release.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         )
     ]
 )

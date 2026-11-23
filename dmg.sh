@@ -46,6 +46,34 @@ if [ -z "$DEVID" ]; then
 fi
 codesign --force -s "$DEVID" --timestamp "$DMG"
 
+# Sparkle's feed: one item for this build, signed with the EdDSA key in the login Keychain.
+# The app reads it from the latest GitHub release, so publish both files together:
+#   gh release create v$VERSION .build/BisprBlow.dmg .build/appcast.xml
+write_appcast() {
+    local sig build url
+    sig=$(.build/artifacts/sparkle/Sparkle/bin/sign_update "$DMG")
+    build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" .build/BisprBlow.app/Contents/Info.plist)
+    url="https://github.com/khicken/bispr-blow/releases/download/v$VERSION/BisprBlow.dmg"
+    cat > .build/appcast.xml <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>BisprBlow</title>
+    <item>
+      <title>$VERSION</title>
+      <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
+      <sparkle:version>$build</sparkle:version>
+      <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/khicken/bispr-blow/releases/tag/v$VERSION</sparkle:releaseNotesLink>
+      <enclosure url="$url" type="application/octet-stream" $sig />
+    </item>
+  </channel>
+</rss>
+XML
+    echo "Wrote .build/appcast.xml for $VERSION (build $build)."
+}
+
 PROFILE=${NOTARY_PROFILE:-bisprblow}
 if xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
     # --wait blocks until Apple answers, usually a few minutes for a file this size.
@@ -53,6 +81,7 @@ if xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
     xcrun stapler staple "$DMG"
     spctl -a -t open --context context:primary-signature -vv "$DMG"
     echo "Built, notarized and stapled $DMG ($(du -sh "$DMG" | cut -f1))."
+    write_appcast
 else
     echo "Built and signed $DMG, NOT notarized: no notarytool profile \"$PROFILE\"." >&2
 fi

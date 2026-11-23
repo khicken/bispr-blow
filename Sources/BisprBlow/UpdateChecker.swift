@@ -1,10 +1,9 @@
 import AppKit
 import Foundation
 
-// Asks GitHub once at launch whether a newer release exists, and tells the user. It does not
-// install anything, and Sparkle is not the next step until there is a Developer ID: an update
-// Sparkle downloaded would be quarantined and unnotarized, so macOS would refuse to launch what it
-// had just put in /Applications — strictly worse than not updating at all.
+// Asks GitHub once at launch whether a newer release exists, and shows the dashboard banner.
+// Sparkle (AppUpdater) does the download and install. This check stays because it also covers
+// installs older than the first Sparkle build, which can only learn about an update this way.
 //
 // Every failure is silence. Offline is the normal case for this app, and an app whose pitch is that
 // nothing leaves your machine cannot answer a dropped connection with an error.

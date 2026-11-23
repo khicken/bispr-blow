@@ -62,6 +62,10 @@ if [ -n "$VERSION" ]; then
     echo "Version $VERSION (build $BUILD)."
 fi
 cp AppIcon.icns "$APP/Contents/Resources/"
+# Sparkle is a dynamic framework. The binary looks for it in Contents/Frameworks (the rpath
+# in Package.swift). ditto keeps the framework's symlinks, which codesign needs.
+mkdir -p "$APP/Contents/Frameworks"
+ditto .build/release/Sparkle.framework "$APP/Contents/Frameworks/Sparkle.framework"
 
 # BUNDLE_WEIGHTS=1 puts the Fast weights inside the bundle, which is what dmg.sh needs and what
 # a .pkg does not: with them here the app writes nothing outside /Applications, so it can simply be
@@ -116,6 +120,16 @@ else
         echo "Signing ad-hoc — the trust step needs GUI approval, so permissions will re-prompt."
     fi
 fi
+# Sparkle's helpers are nested code. Sign them inside-out, before the app, as Sparkle's docs say.
+# Downloader.xpc keeps its own entitlements.
+SPK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+for item in "$SPK/XPCServices/Installer.xpc" "$SPK/XPCServices/Downloader.xpc" \
+            "$SPK/Autoupdate" "$SPK/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework"; do
+    [ -e "$item" ] || continue
+    EXTRA=()
+    [[ "$item" == *Downloader.xpc ]] && EXTRA=(--preserve-metadata=entitlements)
+    codesign --force -s "$SIGN_ID" "${HARDEN[@]+"${HARDEN[@]}"}" "${EXTRA[@]+"${EXTRA[@]}"}" "$item"
+done
 codesign --force -s "$SIGN_ID" "${HARDEN[@]+"${HARDEN[@]}"}" \
     ${DEVID:+--entitlements BisprBlow.entitlements} \
     --identifier ai.getbluejay.bisprblow "$APP"

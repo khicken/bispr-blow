@@ -33,6 +33,14 @@
 	<string>26.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/khicken/bispr-blow/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>JLwjtkOuix+FJ2Peg4jRUvKdkmhTkbCdXAYL5Qr9los=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>

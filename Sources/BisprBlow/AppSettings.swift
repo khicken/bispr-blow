@@ -125,7 +125,10 @@ final class AppSettings: ObservableObject {
     // default: an update nobody hears about is the same as no update, and an opt-in check that
     // nobody finds is dead code. Off, nothing is asked and nothing is sent.
     @Published var checkForUpdates: Bool {
-        didSet { defaults.set(checkForUpdates, forKey: "checkForUpdates") }
+        didSet {
+            defaults.set(checkForUpdates, forKey: "checkForUpdates")
+            Task { @MainActor in AppUpdater.shared.applySettings() }
+        }
     }
     // Which look the app draws in. Every colour, image and type face comes from the matching
     // `Palette`, so this is the only stored piece of a theme.

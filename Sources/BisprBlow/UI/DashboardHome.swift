@@ -91,7 +91,7 @@ struct UpdateBanner: View {
 
     var body: some View {
         if let latest = checker.latest {
-            Button { NSWorkspace.shared.open(UpdateChecker.releasePage) } label: {
+            Button { AppUpdater.shared.checkForUpdates() } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "arrow.down.circle")
                         .font(.bj(TypeSize.caption))
@@ -99,7 +99,7 @@ struct UpdateBanner: View {
                     Text("BisprBlow \(latest) is out")
                         .font(.bj(TypeSize.body, weight: .medium))
                         .foregroundStyle(Theme.ink)
-                    Text("Get it on GitHub")
+                    Text("Update now")
                         .font(.bj(TypeSize.caption))
                         .foregroundStyle(Theme.inkSubtle)
                     Spacer()
