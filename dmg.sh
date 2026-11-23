@@ -51,7 +51,10 @@ codesign --force -s "$DEVID" --timestamp "$DMG"
 #   gh release create v$VERSION .build/BisprBlow.dmg .build/appcast.xml
 write_appcast() {
     local sig build url
-    sig=$(.build/artifacts/sparkle/Sparkle/bin/sign_update "$DMG")
+    # CI has no login Keychain, so it passes the key as a file instead.
+    local key=()
+    [ -n "${SPARKLE_KEY_FILE:-}" ] && key=(--ed-key-file "$SPARKLE_KEY_FILE")
+    sig=$(.build/artifacts/sparkle/Sparkle/bin/sign_update "${key[@]+"${key[@]}"}" "$DMG")
     build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" .build/BisprBlow.app/Contents/Info.plist)
     url="https://github.com/khicken/bispr-blow/releases/download/v$VERSION/BisprBlow.dmg"
     cat > .build/appcast.xml <<XML
@@ -84,6 +87,8 @@ if xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
     write_appcast
 else
     echo "Built and signed $DMG, NOT notarized: no notarytool profile \"$PROFILE\"." >&2
+    # A release must never ship an unnotarized dmg, so CI stops here.
+    [ -n "${REQUIRE_NOTARIZE:-}" ] && exit 1
     # Still written, for a local update test against an unnotarized build. Do not publish it.
     write_appcast
 fi
