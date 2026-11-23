@@ -84,4 +84,6 @@ if xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
     write_appcast
 else
     echo "Built and signed $DMG, NOT notarized: no notarytool profile \"$PROFILE\"." >&2
+    # Still written, for a local update test against an unnotarized build. Do not publish it.
+    write_appcast
 fi
