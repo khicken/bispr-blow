@@ -133,6 +133,11 @@ done
 codesign --force -s "$SIGN_ID" "${HARDEN[@]+"${HARDEN[@]}"}" \
     ${DEVID:+--entitlements BisprBlow.entitlements} \
     --identifier ai.getbluejay.bisprblow "$APP"
+# CI only needs the signed bundle in .build, not an installed and running copy.
+if [ -n "${NO_INSTALL:-}" ]; then
+    echo "Built $APP (NO_INSTALL set, so not installed)."
+    exit 0
+fi
 DEST=/Applications/BisprBlow.app
 # A .pkg install leaves the bundle root-owned, and the rm below then fails halfway through it.
 if [ -e "$DEST" ] && [ ! -w "$DEST" ]; then
