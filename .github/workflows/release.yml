@@ -1,5 +1,6 @@
 # Builds, signs, notarizes and publishes BisprBlow when a v* tag is pushed.
 # Installed apps find the new version through appcast.xml on the latest release (Sparkle).
+# The windows job then adds BisprBlow-Windows.zip to that release (unsigned, no secrets).
 #
 # Secrets (see RELEASING.md):
 #   DEVID_P12_BASE64, DEVID_P12_PASSWORD      Developer ID Application certificate and key
@@ -107,3 +108,42 @@ jobs:
         run: |
           rm -f "$RUNNER_TEMP/sparkle.key" "$RUNNER_TEMP/devid.p12"
           security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
+
+  # After the mac job, so the release (and its `release` environment approval) exists first.
+  # Unsigned and secret-free: SmartScreen warns until there is a code-signing certificate.
+  windows:
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # build.ps1 stamps the version when HEAD is exactly on a tag.
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+
+      # No weights in the zip: the app fetches them on first run.
+      - name: Package
+        shell: pwsh
+        run: ./windows/package.ps1
+
+      - name: Self-check
+        shell: pwsh
+        run: |
+          # A GUI-subsystem exe: piping makes PowerShell wait for it and set the exit code.
+          & windows/bin/publish/BisprBlow.exe --self-check | Out-Host
+          if ($LASTEXITCODE) { throw "Self-check failed ($LASTEXITCODE)" }
+          # The tag must match the version stamped into the app.
+          $v = (Get-Item windows/bin/publish/BisprBlow.exe).VersionInfo.ProductVersion
+          if (-not "$v".StartsWith($env:GITHUB_REF_NAME.TrimStart('v'))) { throw "App says $v, tag is $env:GITHUB_REF_NAME" }
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$GITHUB_REF_NAME" .build/BisprBlow-Windows.zip --clobber

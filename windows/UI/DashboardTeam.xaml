@@ -1,0 +1,48 @@
+<UserControl x:Class="BisprBlow.DashboardTeam"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:BisprBlow">
+  <local:DashboardPage x:Name="Page" Title="Team">
+    <local:VStack Spacing="24">
+
+      <Border x:Name="SignInCard" Style="{DynamicResource Bj.Card}" Visibility="Collapsed">
+        <local:AccountView Mode="SignIn" ShowsBlurb="False"/>
+      </Border>
+
+      <Border x:Name="TeamCard" Style="{DynamicResource Bj.Card}" Visibility="Collapsed">
+        <local:AccountView Mode="Team"/>
+      </Border>
+
+      <!-- The cloud roster: who is on the team, and whose words can be added to mine. -->
+      <StackPanel x:Name="RosterSection" Visibility="Collapsed">
+        <TextBlock Text="Members" Style="{DynamicResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <StackPanel x:Name="RosterError" Orientation="Horizontal" Margin="0,0,0,8" Visibility="Collapsed">
+          <TextBlock Text="Couldn't load members." Style="{DynamicResource Bj.Micro}" Foreground="{DynamicResource Bj.Red}" VerticalAlignment="Center"/>
+          <Button Content="Try again" Style="{DynamicResource Bj.LinkButton}" Click="RetryRoster_Click"/>
+        </StackPanel>
+        <ContentControl x:Name="RosterHint" Style="{DynamicResource Bj.EmptyHint}" Visibility="Collapsed"/>
+        <StackPanel x:Name="RosterRows"/>
+      </StackPanel>
+
+      <!-- No account: names that get spelled right, kept on this PC. -->
+      <StackPanel x:Name="LocalSection" Visibility="Collapsed">
+        <TextBlock Text="Members" Style="{DynamicResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{DynamicResource Bj.Card}" Margin="0,0,0,10">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="NameField" Style="{DynamicResource Bj.TextField}" Tag="Name"/>
+            <TextBox x:Name="RoleField" Grid.Column="1" Style="{DynamicResource Bj.TextField}" Tag="Role (optional)" Margin="8,0,0,0"/>
+            <Button Grid.Column="2" Content="Add" Style="{DynamicResource Bj.PrimaryButton}" Margin="8,0,0,0" Click="AddLocal_Click"/>
+          </Grid>
+        </Border>
+        <ContentControl x:Name="LocalHint" Content="No names yet" Style="{DynamicResource Bj.EmptyHint}" Visibility="Collapsed"/>
+        <StackPanel x:Name="LocalRows"/>
+      </StackPanel>
+
+    </local:VStack>
+  </local:DashboardPage>
+</UserControl>

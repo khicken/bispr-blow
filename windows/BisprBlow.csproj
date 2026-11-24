@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Windows build of BisprBlow. One project, one file per Swift file it mirrors, so a change on
+       one platform has an obvious place to land on the other. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- NotifyIcon only: WPF has no tray icon of its own. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>BisprBlow</RootNamespace>
+    <AssemblyName>BisprBlow</AssemblyName>
+    <ApplicationIcon>Resources\AppIcon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- build.ps1 stamps the tag the build sits on over this; otherwise this is the version. -->
+    <Version>0.2.5</Version>
+    <Product>BisprBlow</Product>
+    <Company>Bluejay</Company>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <!-- Program.cs owns Main, for the CLI seams; App.xaml is an ordinary page. -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <StartupObject>BisprBlow.Program</StartupObject>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <!-- Both UI frameworks export a few of the same names; WPF's are the ones this app means. -->
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mic capture (WASAPI). -->
+    <PackageReference Include="NAudio.Wasapi" Version="3.3.0" />
+    <!-- Speech recognition: Parakeet TDT through ONNX Runtime, the same model family the Mac runs. -->
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="2.0.3" />
+    <!-- In-process cleanup model. MLX is Apple-only, so the Windows build runs GGUF through llama.cpp. -->
+    <PackageReference Include="LLamaSharp" Version="0.30.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.30.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\**\*.png;Resources\**\*.jpg;Resources\**\*.ico" />
+    <Content Include="Resources\words.txt" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Resources\words.txt')" />
+  </ItemGroup>
+
+</Project>

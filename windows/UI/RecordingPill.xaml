@@ -1,0 +1,101 @@
+<Window x:Class="BisprBlow.RecordingPill"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BisprBlow" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" ShowActivated="False" Topmost="True" ResizeMode="NoResize"
+        SnapsToDevicePixels="True" UseLayoutRounding="True" Focusable="False">
+  <Window.Resources>
+    <!-- A 26pt circle button on the hover row, lighter under the pointer. -->
+    <Style x:Key="PillCircle" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Width" Value="26"/>
+      <Setter Property="Height" Value="26"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Grid Background="Transparent">
+              <Ellipse x:Name="Disc" Fill="White" Opacity="0.14"/>
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Disc" Property="Opacity" Value="0.28"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="PillGlyph" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource Bj.IconFont}"/>
+      <Setter Property="FontSize" Value="{StaticResource Bj.SizeMicro}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+    </Style>
+  </Window.Resources>
+
+  <!-- The window is a fixed size, large enough for the biggest state. Only the capsule inside it
+       animates, so there is no second frame to keep in step with it. On a side anchor the stage is
+       turned 90° about its centre, which is exactly the transposed window. -->
+  <Canvas x:Name="Root">
+    <Grid x:Name="Stage" RenderTransformOrigin="0.5,0.5">
+      <Grid.RenderTransform>
+        <RotateTransform x:Name="Turn"/>
+      </Grid.RenderTransform>
+      <Grid.ContextMenu>
+        <ContextMenu>
+          <MenuItem Header="Open BisprBlow" Click="OpenHome"/>
+          <Separator/>
+          <MenuItem Header="Quit" Click="Quit"/>
+        </ContextMenu>
+      </Grid.ContextMenu>
+
+      <Grid x:Name="Capsule" Margin="6" HorizontalAlignment="Center" VerticalAlignment="Bottom">
+        <Border x:Name="Back" Background="{DynamicResource Bj.PillBackground}">
+          <Border.Effect>
+            <DropShadowEffect BlurRadius="4" ShadowDepth="1" Direction="270" Opacity="0.35" Color="Black"/>
+          </Border.Effect>
+        </Border>
+
+        <!-- Idle: three buttons, shown while the pointer is on the capsule. -->
+        <StackPanel x:Name="HoverRow" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Opacity="0" IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
+          <StackPanel.RenderTransform><ScaleTransform x:Name="HoverScale" ScaleX="0.86" ScaleY="0.86"/></StackPanel.RenderTransform>
+          <Button x:Name="HandsFree" Style="{StaticResource PillCircle}" Click="StartHandsFree">
+            <TextBlock Style="{StaticResource PillGlyph}" Text="&#xE720;"/>
+          </Button>
+          <Button x:Name="Open" Style="{StaticResource PillCircle}" Margin="7,0" ToolTip="Open BisprBlow" Click="OpenHome">
+            <Rectangle Width="13" Height="13" Fill="White" RenderTransformOrigin="0.5,0.5">
+              <Rectangle.OpacityMask><ImageBrush ImageSource="{StaticResource Bj.Logo.Mono}"/></Rectangle.OpacityMask>
+            </Rectangle>
+          </Button>
+          <Button x:Name="Recent" Style="{StaticResource PillCircle}" ToolTip="Recent dictations" Click="OpenHistory">
+            <TextBlock Style="{StaticResource PillGlyph}" Text="&#xE81C;"/>
+          </Button>
+        </StackPanel>
+
+        <!-- Recording: the level wave, and a stop button once hands-free. -->
+        <StackPanel x:Name="RecordingRow" Orientation="Horizontal" Margin="13,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Opacity="0" IsHitTestVisible="False">
+          <StackPanel x:Name="Wave" Orientation="Horizontal" Height="20"/>
+          <Button x:Name="Stop" Margin="8,0,0,0" Width="24" Height="24" Cursor="Hand" Focusable="False" ToolTip="Stop and insert"
+                  Visibility="Collapsed" Click="StopHandsFree">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Grid Background="Transparent">
+                  <Ellipse Width="16" Height="16" Fill="{DynamicResource Bj.Red}"/>
+                  <Border Width="6" Height="6" CornerRadius="1.5" Background="White"/>
+                </Grid>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
+        </StackPanel>
+
+        <!-- Processing: three softly pulsing dots. -->
+        <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Opacity="0" IsHitTestVisible="False"/>
+      </Grid>
+    </Grid>
+  </Canvas>
+</Window>

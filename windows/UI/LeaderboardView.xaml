@@ -1,0 +1,35 @@
+<UserControl x:Class="BisprBlow.LeaderboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:BisprBlow">
+  <StackPanel x:Name="Root">
+    <Grid Margin="0,0,0,10">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <TextBlock Text="Leaderboard" Style="{DynamicResource Bj.SectionLabel}" VerticalAlignment="Center"/>
+      <TextBlock x:Name="OrgName" Grid.Column="1" Style="{DynamicResource Bj.Caption}" Margin="8,0" VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis"/>
+      <StackPanel x:Name="Periods" Grid.Column="2" Orientation="Horizontal"/>
+    </Grid>
+
+    <Border x:Name="SignInCard" Style="{DynamicResource Bj.Card}" Visibility="Collapsed">
+      <local:AccountView Mode="SignIn" ShowsBlurb="False"/>
+    </Border>
+    <Border x:Name="TeamCard" Style="{DynamicResource Bj.Card}" Visibility="Collapsed">
+      <local:AccountView Mode="Team"/>
+    </Border>
+
+    <StackPanel x:Name="Board" Visibility="Collapsed">
+      <StackPanel x:Name="ErrorRow" Orientation="Horizontal" Margin="0,0,0,8" Visibility="Collapsed">
+        <TextBlock x:Name="ErrorText" Style="{DynamicResource Bj.Micro}" Foreground="{DynamicResource Bj.Red}"
+                   VerticalAlignment="Center"/>
+        <Button Content="Try again" Style="{DynamicResource Bj.LinkButton}" Click="Retry_Click"/>
+      </StackPanel>
+      <ContentControl x:Name="EmptyHint" Style="{DynamicResource Bj.EmptyHint}" Visibility="Collapsed"/>
+      <StackPanel x:Name="Rows"/>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

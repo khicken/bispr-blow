@@ -1,0 +1,131 @@
+<UserControl x:Class="BisprBlow.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:BisprBlow">
+  <local:DashboardPage Title="Settings">
+    <local:VStack Spacing="24">
+
+      <!-- Only shown while something actually needs the user's attention. -->
+      <StackPanel x:Name="Access" Visibility="Collapsed">
+        <TextBlock Text="Allow in Privacy &amp; Security" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}" Padding="5">
+          <Button Style="{StaticResource Bj.RowButton}" Padding="11,8" Click="OnOpenMicrophoneSettings">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="&#xE8A7;" Style="{StaticResource Bj.Icon}" FontSize="{StaticResource Bj.SizeMicro}"
+                         Foreground="{DynamicResource Bj.InkSubtle}" VerticalAlignment="Center"/>
+              <TextBlock Text="&#xE783;" Style="{StaticResource Bj.Icon}" Foreground="{DynamicResource Bj.Red}" VerticalAlignment="Center"/>
+              <TextBlock Text="Microphone" Style="{StaticResource Bj.Body}" FontWeight="Medium" Margin="8,0,0,0" VerticalAlignment="Center"/>
+            </DockPanel>
+          </Button>
+        </Border>
+      </StackPanel>
+
+      <StackPanel>
+        <TextBlock Text="Shortcuts" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}" Padding="10"><local:ShortcutRows/></Border>
+      </StackPanel>
+
+      <!-- Swatches rather than a menu: a theme is the one setting whose value you can only judge by
+           looking at it. -->
+      <StackPanel>
+        <TextBlock Text="Appearance" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}"><WrapPanel x:Name="Themes"/></Border>
+      </StackPanel>
+
+      <!-- Not "Transcription": nothing here reaches the recognizer, so that heading would promise Accurate
+           mishears fewer words. Not "Cleanup" either, which is our word for our second stage. Both settings
+           decide how the app writes what it heard. -->
+      <StackPanel>
+        <TextBlock Text="Writing" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}" Padding="5">
+          <StackPanel>
+            <RadioButton x:Name="ChoiceFast" Style="{StaticResource Bj.ChoiceRow}" GroupName="writing" Content="Fast" Click="OnChoice"/>
+            <RadioButton x:Name="ChoiceAccurate" Style="{StaticResource Bj.ChoiceRow}" GroupName="writing" Content="Accurate" Click="OnChoice"/>
+            <Grid x:Name="DownloadRow" Margin="11,0,11,6" Visibility="Collapsed">
+              <StackPanel Orientation="Horizontal">
+                <ProgressBar x:Name="DownloadBar" Style="{StaticResource Bj.Progress}" Width="180" Maximum="1" VerticalAlignment="Center"/>
+                <TextBlock x:Name="DownloadText" Style="{StaticResource Bj.Micro}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+              </StackPanel>
+              <Button Content="Stop" Style="{StaticResource Bj.LinkButton}" HorizontalAlignment="Right" Click="OnStopDownload"/>
+            </Grid>
+            <TextBlock x:Name="DownloadFailure" Style="{StaticResource Bj.Micro}" Margin="11,0,11,6" Visibility="Collapsed"/>
+            <!-- Two of the three rows are one choice; the rule says so, so the switch does not read as a third mode. -->
+            <Rectangle Style="{StaticResource Bj.Divider}" Margin="11,3"/>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="Start sentences in lowercase"
+                      ToolTip="Names, acronyms, and your dictionary keep their capitals."
+                      IsChecked="{Binding LowercaseSentences, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="End with a period"
+                      ToolTip="When off, only the final period is dropped."
+                      IsChecked="{Binding EndWithPeriod, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <StackPanel>
+        <TextBlock Text="App" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}" Padding="5">
+          <StackPanel>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="Start with Windows"
+                      ToolTip="Starts BisprBlow when you sign in."
+                      IsChecked="{Binding LaunchAtLogin, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="Always show the bar"
+                      ToolTip="When off, the bar shows only while you dictate."
+                      IsChecked="{Binding AlwaysShowPill, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="Play sounds"
+                      ToolTip="A click when the mic opens and when text lands."
+                      IsChecked="{Binding SoundsEnabled, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="Voice commands"
+                      ToolTip="Hold your voice command shortcut and say what to do. Sends your words, its button and field names, and your open app names to TypeSafe. Asks before delete, send or pay."
+                      IsChecked="{Binding VoiceCommands, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="Check for updates"
+                      ToolTip="Checks GitHub at launch. Sends nothing about you."
+                      IsChecked="{Binding CheckForUpdates, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <StackPanel>
+        <TextBlock Text="Microphone" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}" Padding="5">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="11,8">
+              <TextBlock Text="&#xE720;" Style="{StaticResource Bj.Icon}" Foreground="{DynamicResource Bj.Blue}" VerticalAlignment="Center"/>
+              <ComboBox x:Name="Mic" Style="{StaticResource Bj.ComboBox}" Width="320" Margin="8,0,0,0" SelectionChanged="OnMicChanged"/>
+            </StackPanel>
+            <Rectangle Style="{StaticResource Bj.Divider}" Margin="11,3"/>
+            <CheckBox Style="{StaticResource Bj.ToggleRow}" Content="Keep mic volume up"
+                      ToolTip="Turns the mic back up after call apps lower it."
+                      IsChecked="{Binding RestoreMicVolume, Source={x:Static local:AppSettings.Shared}, Mode=TwoWay}"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- Only on a PC that has Wispr Flow's data, for the same reason as Account below. -->
+      <StackPanel x:Name="Wispr" Visibility="Collapsed">
+        <TextBlock Text="Wispr Flow" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}" ToolTip="Leaves Wispr Flow's data unchanged.">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Image x:Name="WisprIcon" Width="34" Height="34" Margin="0,0,12,0"/>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="Import from Wispr Flow" Style="{StaticResource Bj.Body}" FontWeight="Medium"/>
+              <TextBlock x:Name="WisprResult" Text="Your dictionary and corrected names." Style="{StaticResource Bj.Caption}" Foreground="{DynamicResource Bj.InkSubtle}" Margin="0,2,0,0"/>
+            </StackPanel>
+            <Button x:Name="WisprButton" Grid.Column="2" Content="Import" Style="{StaticResource Bj.PrimaryButton}" Margin="12,0,0,0" Click="OnImportWispr"/>
+          </Grid>
+        </Border>
+      </StackPanel>
+
+      <!-- Only in builds where a project is configured: an Account section that can never sign in is a
+           promise the app cannot keep. -->
+      <StackPanel x:Name="Account" Visibility="Collapsed">
+        <TextBlock Text="Account" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}" Padding="5"><local:AccountView Mode="Account"/></Border>
+      </StackPanel>
+    </local:VStack>
+  </local:DashboardPage>
+</UserControl>
