@@ -24,7 +24,7 @@ if (-not (Test-Path $words)) {
 $version = @()
 # cmd swallows git's "no tag" stderr, which Windows PowerShell would otherwise raise under Stop.
 $tag = cmd /c 'git describe --tags --exact-match 2>nul'
-if ($tag -match '^v(.+)$') { $version = "-p:Version=$($Matches[1])"; Write-Host "Version $($Matches[1])." }
+if ($tag -match '^v(.+)$') { $version = @("-p:Version=$($Matches[1])"); Write-Host "Version $($Matches[1])." }
 dotnet publish -c Release -r win-x64 --self-contained -o bin\publish @version
 if ($LASTEXITCODE) { throw 'dotnet publish failed.' }
 
