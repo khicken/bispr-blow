@@ -11,3 +11,9 @@ bench/asr/clips/
 bench/asr/clips48/
 bench/asr/models/
 bench/asr/logs/
+
+# Windows build
+windows/bin/
+windows/obj/
+.artifacts/
+windows/Resources/words.txt
