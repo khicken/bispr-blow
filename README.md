@@ -16,3 +16,8 @@ git clone https://github.com/khicken/bispr-blow
 cd bispr-blow
 ./build.sh
 ```
+
+## Windows
+
+There's a Windows version too (Windows 10/11, x64). Needs the .NET 10 SDK, then `windows\build.ps1`.
+Details in [windows/README.md](windows/README.md).

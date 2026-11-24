@@ -17,3 +17,6 @@ windows/bin/
 windows/obj/
 .artifacts/
 windows/Resources/words.txt
+# Visual Studio
+.vs/
+*.user

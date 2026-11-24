@@ -54,13 +54,15 @@ public sealed class AppSettings : INotifyPropertyChanged
         public Dictionary<string, List<Shortcut>>? Bindings { get; set; }
     }
 
-    public static readonly AppSettings Shared = new();
     static readonly string FilePath = Path.Combine(AppPaths.Support, "settings.json");
     static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
+
+    // After FilePath and Json: static initialisers run in order, and the constructor reads both.
+    public static readonly AppSettings Shared = new();
 
     readonly Stored s;
 
@@ -73,8 +75,8 @@ public sealed class AppSettings : INotifyPropertyChanged
             s = new();
         }
         s.Bindings ??= Enum.GetValues<ShortcutAction>().ToDictionary(a => a.Key(), a => a.Defaults().ToList());
-        Appearance = AppearanceFor(s.Appearance);
-        SystemIsDark = ReadSystemIsDark();
+        appearance = AppearanceFor(s.Appearance);
+        systemIsDark = ReadSystemIsDark();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -93,7 +95,7 @@ public sealed class AppSettings : INotifyPropertyChanged
             File.WriteAllText(tmp, JsonSerializer.Serialize(s, Json));
             File.Move(tmp, FilePath, overwrite: true);
         }
-        catch (IOException e) { Log.Line($"settings save failed: {e.Message}"); }
+        catch (Exception e) { Log.Line($"settings save failed: {e.Message}"); }
     }
 
     public Cleanup Cleanup { get => s.Cleanup; set { s.Cleanup = value; Changed(); } }

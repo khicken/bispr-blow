@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -34,8 +35,9 @@ static class Program
     static string? Arg(string[] args, string flag) =>
         Array.IndexOf(args, flag) is var i and >= 0 && i + 1 < args.Length ? args[i + 1] : null;
 
+    // Windows PowerShell pipes a byte-order mark ahead of the text.
     static JsonObject Stdin() =>
-        JsonNode.Parse(Console.In.ReadToEnd() is { Length: > 0 } s ? s : "{}") as JsonObject ?? [];
+        JsonNode.Parse(Console.In.ReadToEnd().TrimStart('﻿') is { Length: > 0 } s ? s : "{}") as JsonObject ?? [];
 
     static void Print(object value) => Console.WriteLine(JsonSerializer.Serialize(value));
 
@@ -52,10 +54,10 @@ static class Program
             {
                 var recorder = new AudioRecorder();
                 Console.WriteLine($"device: {AudioRecorder.CurrentInputDeviceName()}");
-                var started = DateTime.Now;
+                var started = Stopwatch.StartNew();
                 try { recorder.Start(); }
                 catch (Exception e) { Console.WriteLine($"FAIL — start threw: {e.Message}"); return 1; }
-                Console.WriteLine($"startup: {(int)(DateTime.Now - started).TotalMilliseconds}ms");
+                Console.WriteLine($"startup: {(int)started.ElapsedMilliseconds}ms");
                 await Task.Delay(2000);
                 var frames = recorder.CapturedFrames;
                 recorder.Stop();
@@ -81,20 +83,20 @@ static class Program
                         transcriber.Feed(samples[offset..Math.Min(offset + step, samples.Length)], rate, channels);
                         await Task.Delay(100);
                     }
-                    var start = DateTime.Now;
+                    var start = Stopwatch.StartNew();
                     var text = await transcriber.FinishSessionAsync() ?? "FAILED";
-                    Print(new { file = Path.GetFileName(path), text, ms = (int)(DateTime.Now - start).TotalMilliseconds });
+                    Print(new { file = Path.GetFileName(path), text, ms = (int)start.ElapsedMilliseconds });
                 }
                 return 0;
             }
 
             // bench/bench.py reads the real prompts from here so they can never drift from the app.
             case "--print-prompt":
-                Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string>
+                Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, List<ChatMessage>>
                 {
                     ["default"] = LLMCleaner.StaticPrefix(settings.Vocabulary, lowTouch: false),
                     ["lowTouch"] = LLMCleaner.StaticPrefix(settings.Vocabulary, lowTouch: true),
-                }, new JsonSerializerOptions { WriteIndented = true }));
+                }, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
                 return 0;
 
             // The dictionary respeller alone, against the real dictionary, one line of stdin per case.
@@ -116,7 +118,7 @@ static class Program
                 Print(new
                 {
                     lossy = why != null,
-                    reworded = why == "reworded",
+                    reworded = why == LLMCleaner.Reworded,
                     reason = why,
                     text = why != null ? LLMCleaner.RuleClean(raw) : LLMCleaner.StripFillers(result),
                 });
@@ -144,13 +146,13 @@ static class Program
                     var request = JsonNode.Parse(line)!;
                     var messages = request["messages"]!.AsArray()
                         .Select(m => new ChatMessage((string)m!["role"]!, (string)m["content"]!)).ToList();
-                    var started = DateTime.Now;
+                    var started = Stopwatch.StartNew();
                     try
                     {
                         var content = await LocalEngine.Shared.CompleteAsync((string)request["model"]!, messages);
-                        Print(new { content, ms = (int)(DateTime.Now - started).TotalMilliseconds });
+                        Print(new { content, ms = (int)started.ElapsedMilliseconds });
                     }
-                    catch (Exception e) { Print(new { error = e.Message, ms = (int)(DateTime.Now - started).TotalMilliseconds }); }
+                    catch (Exception e) { Print(new { error = e.Message, ms = (int)started.ElapsedMilliseconds }); }
                 }
                 return 0;
 

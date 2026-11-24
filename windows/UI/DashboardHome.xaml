@@ -1,0 +1,82 @@
+<UserControl x:Class="BisprBlow.HomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:BisprBlow">
+  <local:DashboardPage x:Name="Page">
+    <local:VStack Spacing="24">
+      <!-- A newer release exists. One line, on the page they already open, and only while it is true. -->
+      <Grid x:Name="Banner" Visibility="Collapsed">
+        <Border Style="{StaticResource Bj.Card}"/>
+        <Button Style="{StaticResource Bj.RowButton}" Padding="16" Click="OnUpdateClick">
+          <Button.Resources><CornerRadius x:Key="Bj.RowRadius">12</CornerRadius></Button.Resources>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE896;" Style="{StaticResource Bj.Icon}" Foreground="{DynamicResource Bj.Blue}" VerticalAlignment="Center"/>
+            <TextBlock x:Name="BannerText" Style="{StaticResource Bj.Body}" FontWeight="Medium" Margin="9,0,0,0" VerticalAlignment="Center"/>
+            <TextBlock Text="Update now" Style="{StaticResource Bj.Caption}" Margin="9,0,0,0" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+      </Grid>
+
+      <StackPanel x:Name="Access" Visibility="Collapsed">
+        <TextBlock Text="Allow access to get started" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <Border Style="{StaticResource Bj.Card}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="&#xEA3A;" Style="{StaticResource Bj.Icon}" FontSize="{StaticResource Bj.SizeBody}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="Microphone" Style="{StaticResource Bj.Body}" FontWeight="Medium"/>
+              <TextBlock Text="Hear your voice when you dictate." Style="{StaticResource Bj.Caption}" Margin="0,2,0,0"/>
+            </StackPanel>
+            <Button Grid.Column="2" Content="Open Settings" Style="{StaticResource Bj.SecondaryButton}" Margin="8,0,0,0" Click="OnOpenMicrophoneSettings"/>
+          </Grid>
+        </Border>
+      </StackPanel>
+
+      <!-- One strip with hairlines between the figures: three tiles read as three buttons. -->
+      <Border Style="{StaticResource Bj.Card}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel>
+            <TextBlock x:Name="Words" Style="{StaticResource Bj.H1}"/>
+            <TextBlock Text="Words" Style="{StaticResource Bj.Caption}" Margin="0,3,0,0"/>
+          </StackPanel>
+          <Rectangle Grid.Column="1" Width="1" Height="40" Fill="{DynamicResource Bj.Border}" Opacity="0.6" Margin="0,0,18,0"/>
+          <StackPanel Grid.Column="2">
+            <TextBlock x:Name="Wpm" Style="{StaticResource Bj.H1}"/>
+            <TextBlock Text="Words per minute" Style="{StaticResource Bj.Caption}" Margin="0,3,0,0"/>
+          </StackPanel>
+          <Rectangle Grid.Column="3" Width="1" Height="40" Fill="{DynamicResource Bj.Border}" Opacity="0.6" Margin="0,0,18,0"/>
+          <StackPanel Grid.Column="4">
+            <TextBlock x:Name="Streak" Style="{StaticResource Bj.H1}"/>
+            <TextBlock Text="Day streak" Style="{StaticResource Bj.Caption}" Margin="0,3,0,0"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <local:LeaderboardView/>
+
+      <StackPanel>
+        <TextBlock Text="Recent" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,10"/>
+        <ContentControl x:Name="Empty" Style="{StaticResource Bj.EmptyHint}" Visibility="Collapsed"/>
+        <ItemsControl x:Name="Recent" Focusable="False">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><local:VStack Spacing="6"/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate><local:HistoryRow/></DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </local:VStack>
+  </local:DashboardPage>
+</UserControl>

@@ -1,0 +1,111 @@
+<Window x:Class="BisprBlow.DashboardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BisprBlow"
+        Title="BisprBlow" Width="920" Height="640" MinWidth="760" MinHeight="520"
+        Background="{DynamicResource Bj.Cream}" FontFamily="{DynamicResource Bj.Font}" FontSize="13"
+        Foreground="{DynamicResource Bj.Ink}" UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal">
+  <Window.Resources>
+    <!-- A sidebar row. Icon at 18 from the sidebar edge (8 outer + 10 inner), label at 45 (18 + 18 + 9).
+         The wordmark repeats both numbers; change one, change both. -->
+    <Style x:Key="NavItem" TargetType="RadioButton">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FontFamily" Value="{DynamicResource Bj.Font}"/>
+      <Setter Property="FontSize" Value="{StaticResource Bj.SizeBody}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Bj.InkTertiary}"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Margin" Value="8,0,8,2"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Grid Background="Transparent">
+              <Grid.RenderTransform><TranslateTransform x:Name="Nudge"/></Grid.RenderTransform>
+              <Border x:Name="Pill" CornerRadius="8" Background="{DynamicResource Bj.SurfaceActive}" Opacity="0"/>
+              <StackPanel Orientation="Horizontal" Margin="10,10.5">
+                <TextBlock x:Name="Glyph" Text="{TemplateBinding Tag}" Width="18" Style="{StaticResource Bj.Icon}"
+                           Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                <ContentPresenter x:Name="Label" Margin="9,0,0,0" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Pill" Property="Opacity" Value="0.6"/>
+                <Trigger.EnterActions>
+                  <BeginStoryboard><Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Nudge" Storyboard.TargetProperty="X" To="2"
+                                     Duration="{StaticResource Bj.Snap}" EasingFunction="{StaticResource Bj.Ease}"/>
+                  </Storyboard></BeginStoryboard>
+                </Trigger.EnterActions>
+                <Trigger.ExitActions>
+                  <BeginStoryboard><Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Nudge" Storyboard.TargetProperty="X" To="0"
+                                     Duration="{StaticResource Bj.Snap}" EasingFunction="{StaticResource Bj.Ease}"/>
+                  </Storyboard></BeginStoryboard>
+                </Trigger.ExitActions>
+              </Trigger>
+              <!-- The selected row is the one place blue shows, and it is a tint, not a fill. -->
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Pill" Property="Background" Value="{DynamicResource Bj.BlueSoft}"/>
+                <Setter TargetName="Pill" Property="Opacity" Value="1"/>
+                <Setter Property="Foreground" Value="{DynamicResource Bj.AccentText}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="250"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- Sidebar -->
+    <Grid Background="{DynamicResource Bj.Surface}">
+      <!-- A theme with brand imagery puts it here, faded into the rail's colour so the nav never sits on a
+           picture. Themes without imagery get the flat surface. -->
+      <Image x:Name="SidebarImage" Height="200" VerticalAlignment="Bottom" Stretch="UniformToFill" Margin="0,0,0,44" Visibility="Collapsed">
+        <Image.OpacityMask>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#00000000" Offset="0"/>
+            <GradientStop Color="#66000000" Offset="0.5"/>
+            <GradientStop Color="#00000000" Offset="1"/>
+          </LinearGradientBrush>
+        </Image.OpacityMask>
+      </Image>
+      <Rectangle HorizontalAlignment="Right" Width="1" Fill="{DynamicResource Bj.Border}" Opacity="0.55"/>
+
+      <DockPanel>
+        <TextBlock x:Name="VersionLabel" DockPanel.Dock="Bottom" Style="{StaticResource Bj.Micro}" Foreground="{DynamicResource Bj.InkTertiary}"
+                   Margin="18,0,0,16"/>
+        <StackPanel>
+          <!-- Wordmark: 18 symbol on the nav icons' 18 column, 9 spacing putting the text on their 45 label column. -->
+          <StackPanel Orientation="Horizontal" Margin="18,42,0,26">
+            <Image x:Name="Logo" Width="18" Height="18"/>
+            <TextBlock Text="BisprBlow" Style="{StaticResource Bj.Body}" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center"/>
+          </StackPanel>
+
+          <!-- Dictionary and Team share a header because both feed names to the recognizer; Settings keeps
+               its own so the last row reads as the end of a list. -->
+          <TextBlock Text="Activity" Style="{StaticResource Bj.SectionLabel}" Margin="18,0,0,7"/>
+          <RadioButton x:Name="NavHome" Style="{StaticResource NavItem}" GroupName="nav" Tag="&#xE80F;" Content="Home" Checked="NavChecked"/>
+          <RadioButton x:Name="NavHistory" Style="{StaticResource NavItem}" GroupName="nav" Tag="&#xE81C;" Content="History" Checked="NavChecked"/>
+          <TextBlock Text="Vocabulary" Style="{StaticResource Bj.SectionLabel}" Margin="18,22,0,7"/>
+          <RadioButton x:Name="NavDictionary" Style="{StaticResource NavItem}" GroupName="nav" Tag="&#xE82D;" Content="Dictionary" Checked="NavChecked"/>
+          <RadioButton x:Name="NavTeam" Style="{StaticResource NavItem}" GroupName="nav" Tag="&#xE716;" Content="Team" Checked="NavChecked"/>
+          <TextBlock Text="App" Style="{StaticResource Bj.SectionLabel}" Margin="18,22,0,7"/>
+          <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" GroupName="nav" Tag="&#xE713;" Content="Settings" Checked="NavChecked"/>
+        </StackPanel>
+      </DockPanel>
+    </Grid>
+
+    <!-- Content -->
+    <ContentControl x:Name="Host" Grid.Column="1" Focusable="False" IsTabStop="False" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+      <ContentControl.RenderTransform><TranslateTransform x:Name="Rise"/></ContentControl.RenderTransform>
+    </ContentControl>
+  </Grid>
+</Window>

@@ -1,0 +1,108 @@
+<UserControl x:Class="BisprBlow.DictionaryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:BisprBlow">
+  <UserControl.Resources>
+    <!-- A pack: tinted while it still has terms to add, flat once it is all in. -->
+    <Style x:Key="Chip" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="FontFamily" Value="{DynamicResource Bj.Font}"/>
+      <Setter Property="FontSize" Value="{StaticResource Bj.SizeCaption}"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="20" Padding="12,7">
+              <ContentPresenter HorizontalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Opacity" Value="0.8"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Cursor" Value="Arrow"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+
+  <local:DashboardPage x:Name="Page" Title="Dictionary">
+    <local:VStack Spacing="24">
+      <!-- What the page is for, said once, and dismissible. -->
+      <Grid x:Name="Intro">
+        <Border x:Name="Hero" CornerRadius="{StaticResource Bj.Radius}" ClipToBounds="True" Background="{DynamicResource Bj.HeroGradient}">
+          <Grid>
+            <Border x:Name="Scrim" Visibility="Collapsed">
+              <Border.Background>
+                <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                  <GradientStop Color="#9E000000" Offset="0"/>
+                  <GradientStop Color="#38000000" Offset="1"/>
+                </LinearGradientBrush>
+              </Border.Background>
+            </Border>
+            <StackPanel Margin="26">
+              <TextBlock Text="Teach it your words" Style="{StaticResource Bj.H1}" Foreground="{DynamicResource Bj.OnHero}"/>
+              <TextBlock Text="Add the names, tools, and jargon you say often." Style="{StaticResource Bj.Body}" Foreground="{DynamicResource Bj.OnHero}"
+                         Opacity="0.82" MaxWidth="520" HorizontalAlignment="Left" TextWrapping="Wrap" Margin="0,11,0,0"/>
+              <!-- Terms only, no action: the field to add one sits directly below. -->
+              <WrapPanel x:Name="IntroChips" Margin="0,14,0,0"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+        <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Width="26" Height="26" Cursor="Hand"
+                ToolTip="Hide this" Click="OnDismissIntro" FocusVisualStyle="{x:Null}">
+          <Button.Template>
+            <ControlTemplate TargetType="Button">
+              <Grid Background="Transparent">
+                <Ellipse Fill="{DynamicResource Bj.OnHero}" Opacity="0.14"/>
+                <TextBlock Text="&#xE711;" Style="{StaticResource Bj.Icon}" FontSize="{StaticResource Bj.SizeMicro}"
+                           Foreground="{DynamicResource Bj.OnHero}" Opacity="0.75" VerticalAlignment="Center"/>
+              </Grid>
+            </ControlTemplate>
+          </Button.Template>
+        </Button>
+      </Grid>
+
+      <!-- One field, always visible, and the page's only place to type. -->
+      <StackPanel>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="NewWord" Style="{StaticResource Bj.TextField}" Tag="Add words, separated by commas"
+                   TextChanged="OnNewWordChanged" KeyDown="OnNewWordKey"/>
+          <Button x:Name="AddButton" Grid.Column="1" Content="Add" Style="{StaticResource Bj.PrimaryButton}" Margin="8,0,0,0" IsEnabled="False" Click="OnAdd"/>
+        </Grid>
+        <Button x:Name="Generate" Style="{StaticResource Bj.LinkButton}" HorizontalAlignment="Left" Margin="0,8,0,0" Visibility="Collapsed" Click="OnGenerate">
+          <TextBlock x:Name="GenerateText" Style="{StaticResource Bj.Caption}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+        </Button>
+        <TextBlock x:Name="Note" Style="{StaticResource Bj.Micro}" Margin="2,8,0,0" Visibility="Collapsed"/>
+      </StackPanel>
+
+      <StackPanel>
+        <Grid Margin="0,0,0,10">
+          <TextBlock x:Name="Count" Style="{StaticResource Bj.SectionLabel}" VerticalAlignment="Center"/>
+          <StackPanel x:Name="Tools" Orientation="Horizontal" HorizontalAlignment="Right" Visibility="Collapsed">
+            <TextBox x:Name="Search" Style="{StaticResource Bj.TextField}" Tag="Search" Width="150" TextChanged="OnSearchChanged"/>
+            <Button x:Name="Sort" Style="{StaticResource Bj.LinkButton}" Margin="10,0,0,0" Click="OnSort"/>
+            <Button Content="Clear all" Style="{StaticResource Bj.LinkButton}" Margin="10,0,0,0" Click="OnClearAll"/>
+          </StackPanel>
+        </Grid>
+        <ContentControl x:Name="Empty" Style="{StaticResource Bj.EmptyHint}" Content="No words yet. Add one or pick a pack."/>
+        <TextBlock x:Name="NoMatches" Style="{StaticResource Bj.Body}" Foreground="{DynamicResource Bj.InkTertiary}" Margin="0,6" Visibility="Collapsed"/>
+        <!-- A long list scrolls inside itself, so the search field and the packs stay on the page. -->
+        <Border x:Name="ListBox" Background="{DynamicResource Bj.TableHeader}" CornerRadius="{StaticResource Bj.Radius}" SizeChanged="OnListSized" Visibility="Collapsed">
+          <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" Focusable="False">
+            <StackPanel x:Name="Rows"/>
+          </ScrollViewer>
+        </Border>
+      </StackPanel>
+
+      <StackPanel>
+        <TextBlock Text="Packs" Style="{StaticResource Bj.SectionLabel}" Margin="0,0,0,9"/>
+        <WrapPanel x:Name="Packs"/>
+      </StackPanel>
+    </local:VStack>
+  </local:DashboardPage>
+</UserControl>

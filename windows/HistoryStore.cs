@@ -38,7 +38,13 @@ public sealed class HistoryStore
         }
         // A history that will not load is said out loud: an empty one looks exactly like a new
         // install, which is how the Mac once lost 432 dictations without anyone noticing.
-        catch (Exception e) { Log.Line($"history load failed: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Line($"history load failed: {e.Message}");
+            // Kept aside so the first Persist() cannot overwrite the only copy.
+            try { File.Copy(FilePath, FilePath + ".bad", overwrite: true); }
+            catch (Exception copy) { Log.Line($"history backup failed: {copy.Message}"); }
+        }
     }
 
     public int TotalWords => Entries.Sum(e => e.Cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length);
@@ -64,6 +70,6 @@ public sealed class HistoryStore
             File.WriteAllText(tmp, JsonSerializer.Serialize(Entries, Json));
             File.Move(tmp, FilePath, overwrite: true);
         }
-        catch (IOException e) { Log.Line($"history save failed: {e.Message}"); }
+        catch (Exception e) { Log.Line($"history save failed: {e.Message}"); }
     }
 }

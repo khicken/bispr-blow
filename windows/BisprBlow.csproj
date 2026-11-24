@@ -16,19 +16,18 @@
     <AssemblyName>BisprBlow</AssemblyName>
     <ApplicationIcon>Resources\AppIcon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- build.ps1 stamps the newest git tag over this, the same way build.sh stamps Info.plist.
-         This is only the fallback for a tree with no tags. -->
+    <!-- build.ps1 stamps the tag the build sits on over this; otherwise this is the version. -->
     <Version>0.2.5</Version>
     <Product>BisprBlow</Product>
     <Company>Bluejay</Company>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
-    <!-- Both UI frameworks export a few of the same names; WPF's are the ones this app means. -->
     <!-- Program.cs owns Main, for the CLI seams; App.xaml is an ordinary page. -->
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <StartupObject>BisprBlow.Program</StartupObject>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
+  <!-- Both UI frameworks export a few of the same names; WPF's are the ones this app means. -->
 
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />

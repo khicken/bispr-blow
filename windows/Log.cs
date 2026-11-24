@@ -45,7 +45,7 @@ static class Log
                 }
                 System.IO.File.AppendAllText(File, line + Environment.NewLine);
             }
-            catch (IOException) { }
+            catch (Exception) { }
         }
     }
 }
